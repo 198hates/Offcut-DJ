@@ -73,12 +73,20 @@ export function importFromRekordboxDb(
   }
 
   try {
+    // RB7 normalised artist/album/genre/key into lookup tables — use LEFT JOINs
     const tracks = rb
       .prepare(`
-        SELECT c.ID, c.FolderPath, c.Title, c.ArtistName, c.AlbumName, c.GenreName,
-               c.BPM, c.Tonality, c.StockDate, c.Rating, c.Commnt, c.Length,
-               c.ColorID
+        SELECT c.ID, c.FolderPath, c.Title,
+               ar.Name  AS ArtistName,
+               al.Name  AS AlbumName,
+               g.Name   AS GenreName,
+               k.ScaleName AS Tonality,
+               c.BPM, c.StockDate, c.Rating, c.Commnt, c.Length
         FROM djmdContent c
+        LEFT JOIN djmdArtist ar ON ar.ID = c.ArtistID
+        LEFT JOIN djmdAlbum  al ON al.ID = c.AlbumID
+        LEFT JOIN djmdGenre  g  ON g.ID  = c.GenreID
+        LEFT JOIN djmdKey    k  ON k.ID  = c.KeyID
         WHERE c.FolderPath IS NOT NULL AND c.FolderPath != ''
       `)
       .all() as Record<string, unknown>[]
@@ -88,12 +96,14 @@ export function importFromRekordboxDb(
     for (const row of tracks) {
       try {
         const rbId = String(row.ID)
+        // RB7: Hot column replaced by Kind (0=memory,1=hotcue,4=loop,5=hot-loop)
+        // and ColorTableIndex for the hotcue slot number
         const cues = rb
           .prepare(`
-            SELECT InMsec, Kind, Hot, Color, Comment
+            SELECT InMsec, Kind, ColorTableIndex, Color, Comment
             FROM djmdCue
             WHERE ContentID = ?
-            ORDER BY CASE WHEN Hot IS NOT NULL THEN 0 ELSE 1 END, InMsec
+            ORDER BY Kind, InMsec
           `)
           .all(rbId) as Record<string, unknown>[]
 
@@ -206,25 +216,19 @@ export function exportToRekordboxDb(
       .all() as Record<string, unknown>[]
 
     const updateTrack = rb.transaction((track: Track, rbId: string) => {
+      // RB7: ArtistName/AlbumName/GenreName/Tonality are now in lookup tables —
+      // only update fields that still live directly on djmdContent
       rb.prepare(`
         UPDATE djmdContent SET
           Title = ?,
-          ArtistName = ?,
-          AlbumName = ?,
-          GenreName = ?,
           BPM = ?,
-          Tonality = ?,
           Rating = ?,
           Commnt = ?,
           updated_at = datetime('now')
         WHERE ID = ?
       `).run(
         track.title,
-        track.artist,
-        track.album,
-        track.genre,
         track.bpm != null ? Math.round(track.bpm * 100) : null,
-        track.key ?? null,
         starsToRbRating(track.rating),
         track.comment,
         rbId
@@ -233,14 +237,15 @@ export function exportToRekordboxDb(
       if (track.cuePoints.length > 0) {
         rb.prepare('DELETE FROM djmdCue WHERE ContentID = ?').run(rbId)
         const insertCue = rb.prepare(`
-          INSERT INTO djmdCue (ContentID, InMsec, Kind, Hot, Color, Comment, updated_at)
+          INSERT INTO djmdCue (ContentID, InMsec, Kind, ColorTableIndex, Color, Comment, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
         `)
         for (const cue of track.cuePoints) {
+          const kind = cue.type === 'loop' ? 4 : cue.type === 'hotcue' ? 1 : 0
           insertCue.run(
             rbId,
             cue.positionMs,
-            cue.type === 'loop' ? 4 : cue.type === 'hotcue' ? 0 : 1,
+            kind,
             cue.type === 'hotcue' ? cue.index : null,
             hexToRbColor(cue.color),
             cue.label
@@ -274,9 +279,13 @@ function decodeRbPath(path: string): string {
 }
 
 function rbCueToPoint(row: Record<string, unknown>, fallbackIndex: number): CuePoint {
+  // RB7: Kind 1=hotcue, 4=loop, 5=hot-loop; ColorTableIndex is the hotcue slot
+  const kind = Number(row.Kind ?? 0)
+  const isHot = kind === 1 || kind === 5
+  const isLoop = kind === 4 || kind === 5
   return {
-    index: row.Hot != null ? Number(row.Hot) : fallbackIndex,
-    type: row.Hot != null ? 'hotcue' : 'memory',
+    index: isHot ? Number(row.ColorTableIndex ?? fallbackIndex) : fallbackIndex,
+    type: isLoop ? 'loop' : isHot ? 'hotcue' : 'memory',
     positionMs: Number(row.InMsec ?? 0),
     color: rbColorIdToHex(row.Color as number | null),
     label: String(row.Comment ?? '')
