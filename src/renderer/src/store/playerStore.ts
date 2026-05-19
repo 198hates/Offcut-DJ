@@ -14,13 +14,17 @@ interface PlayerStore {
   isPlaying: boolean
   currentTime: number
   duration: number
-  waveformPeaks: Float32Array | null
+  waveformPeaks: Float32Array | null       // overview (1000 buckets)
+  detailPeaks: Float32Array | null         // scrolling detail (8000 buckets)
   isLoading: boolean
+  mainCueTime: number | null               // Rekordbox-style main CUE point
   loadTrack: (track: Track) => Promise<void>
   togglePlay: () => void
   seek: (time: number) => void
   setVolume: (v: number) => void
-  // Cue editing
+  // Main CUE (Rekordbox-style)
+  pressCue: () => void
+  // Hotcue editing
   setCue: (index: number) => Promise<void>
   clearCue: (index: number) => Promise<void>
   jumpToCue: (index: number) => void
@@ -49,14 +53,16 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     currentTime: 0,
     duration: 0,
     waveformPeaks: null,
+    detailPeaks: null,
     isLoading: false,
+    mainCueTime: null,
 
     loadTrack: async (track) => {
-      set({ isLoading: true, currentTrack: track, waveformPeaks: null, currentTime: 0 })
+      set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, currentTime: 0, mainCueTime: null })
       try {
         const ab = await window.api.audio.readFile(track.filePath)
-        const { peaks, duration } = await audioEngine.load(ab)
-        set({ waveformPeaks: peaks, duration, isLoading: false })
+        const { peaks, detailPeaks, duration } = await audioEngine.load(ab)
+        set({ waveformPeaks: peaks, detailPeaks, duration, isLoading: false })
         audioEngine.play()
         set({ isPlaying: true })
       } catch (err) {
@@ -82,6 +88,24 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     },
 
     setVolume: (v) => { audioEngine.volume = v },
+
+    pressCue: () => {
+      const { isPlaying, currentTime, mainCueTime } = get()
+      if (isPlaying) {
+        // Return to cue point and pause
+        const t = mainCueTime ?? 0
+        audioEngine.seek(t)
+        audioEngine.pause()
+        set({ isPlaying: false, currentTime: t })
+      } else if (mainCueTime !== null && Math.abs(currentTime - mainCueTime) < 0.05) {
+        // Already at cue — play
+        audioEngine.play()
+        set({ isPlaying: true })
+      } else {
+        // Set new cue point here
+        set({ mainCueTime: currentTime })
+      }
+    },
 
     setCue: async (index) => {
       const { currentTrack, currentTime } = get()

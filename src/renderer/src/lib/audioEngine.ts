@@ -1,5 +1,6 @@
 export interface WaveformData {
-  peaks: Float32Array
+  peaks: Float32Array        // overview — 1000 buckets
+  detailPeaks: Float32Array  // scrolling detail — 8000 buckets
   duration: number
 }
 
@@ -33,10 +34,13 @@ class AudioEngine {
   async load(arrayBuffer: ArrayBuffer): Promise<WaveformData> {
     const ctx = this.getCtx()
     this.stop()
-    // decodeAudioData consumes the buffer — copy it first so caller keeps theirs
     this.buffer = await ctx.decodeAudioData(arrayBuffer.slice(0))
     this.pausedAt = 0
-    return { peaks: computePeaks(this.buffer, 2000), duration: this.buffer.duration }
+    return {
+      peaks: computePeaks(this.buffer, 1000),
+      detailPeaks: computePeaks(this.buffer, 8000),
+      duration: this.buffer.duration
+    }
   }
 
   play(from?: number): void {
