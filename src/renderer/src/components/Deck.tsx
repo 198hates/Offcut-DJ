@@ -1,4 +1,5 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
+import { useLibraryStore } from '../store/libraryStore'
 import type { StoreApi, UseBoundStore } from 'zustand'
 import type { DeckStore } from '../store/playerStore'
 import { HOT_CUE_COLORS, HOT_CUE_LABELS, type AnalysisState } from '../store/playerStore'
@@ -29,7 +30,7 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
     currentTrack, isPlaying, currentTime, duration,
     waveformPeaks, detailPeaks, isLoading, mainCueTime,
     loopStart, loopEnd, isLooping, playbackRate, analysisState,
-    togglePlay, seek, pressCue,
+    loadTrack, togglePlay, seek, pressCue,
     setCue, clearCue, jumpToCue, setMemoryCue,
     setLoopIn, setLoopOut, beatLoop, toggleLoop, clearLoop, setPlaybackRate,
     analyzeCurrentTrack
@@ -61,6 +62,34 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
     return () => window.removeEventListener('keydown', handleKey)
   }, [handleKey])
 
+  const tracks = useLibraryStore((s) => s.tracks)
+  const [isDragOver, setIsDragOver] = useState(false)
+
+  // ── Drag-to-load: drop a track from the library onto this deck ────────
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('application/x-crate-track-ids')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Only clear when leaving the deck entirely (not a child element)
+    if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+      setIsDragOver(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    try {
+      const ids: string[] = JSON.parse(e.dataTransfer.getData('application/x-crate-track-ids'))
+      const track = tracks.find((t) => t.id === ids[0])
+      if (track) loadTrack(track)
+    } catch { /* malformed data */ }
+  }, [tracks, loadTrack])
+
   const hotcues = HOT_CUE_LABELS.map((lbl, i) => ({
     label: lbl, index: i,
     cue: currentTrack?.cuePoints.find((c) => c.type === 'hotcue' && c.index === i),
@@ -70,7 +99,19 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
   const remaining = duration - currentTime
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+    <div
+      className={`flex-1 min-w-0 flex flex-col overflow-hidden relative transition-colors ${isDragOver ? 'bg-accent/10 ring-1 ring-inset ring-accent/40' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragOver && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+          <div className="bg-accent/90 text-white text-sm font-bold px-4 py-2 rounded-lg shadow-lg">
+            Load to Deck {label}
+          </div>
+        </div>
+      )}
 
       {/* ── Track info + BPM + time ──────────────────────────────────── */}
       <div className={`flex items-start gap-3 px-3 pt-2 pb-1.5 border-b border-white/[0.04] ${isRight ? 'flex-row-reverse' : ''}`}>

@@ -249,7 +249,9 @@ function PlaylistItem({
   const addTracksToPlaylist = useLibraryStore((s) => s.addTracksToPlaylist)
 
   const handleDragOver = (e: React.DragEvent): void => {
-    if (!isDraggingTracks || playlist.isSmart) return
+    if (playlist.isSmart) return
+    // Accept if tracks are being dragged (check both store state and dataTransfer)
+    if (!isDraggingTracks && !e.dataTransfer.types.includes('application/x-crate-track-ids')) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
     setIsDragOver(true)
@@ -258,9 +260,13 @@ function PlaylistItem({
   const handleDrop = (e: React.DragEvent): void => {
     e.preventDefault()
     setIsDragOver(false)
-    if (draggingTrackIds.length > 0 && !playlist.isSmart) {
-      addTracksToPlaylist(playlist.id, draggingTrackIds)
+    if (playlist.isSmart) return
+    // Use store state first, fall back to dataTransfer
+    let ids = draggingTrackIds
+    if (ids.length === 0) {
+      try { ids = JSON.parse(e.dataTransfer.getData('application/x-crate-track-ids')) } catch { /* ignore */ }
     }
+    if (ids.length > 0) addTracksToPlaylist(playlist.id, ids)
   }
 
   if (isRenaming) {
