@@ -53,7 +53,7 @@ export function Player(): JSX.Element {
   const remaining = duration - currentTime
 
   return (
-    <div className="bg-surface-900 border-t border-white/[0.06] shrink-0 select-none" style={{ minHeight: 220 }}>
+    <div className="bg-surface-900 border-t border-white/[0.06] shrink-0 select-none" style={{ minHeight: 260 }}>
 
       {/* ── Row 1: Track info + BPM + time ─────────────────────────────── */}
       <div className="flex items-start gap-4 px-4 pt-2.5 pb-1.5 border-b border-white/[0.04]">
@@ -96,7 +96,7 @@ export function Player(): JSX.Element {
       </div>
 
       {/* ── Row 2: Overview waveform ───────────────────────────────────── */}
-      <div className="px-2 py-0.5 bg-black/20">
+      <div className="px-2 bg-black/25 border-y border-white/[0.04]">
         <OverviewWaveform
           peaks={waveformPeaks}
           duration={duration}
@@ -108,7 +108,7 @@ export function Player(): JSX.Element {
       </div>
 
       {/* ── Row 3: Scrolling detail waveform ──────────────────────────── */}
-      <div className="px-2 py-1 flex" style={{ height: 80 }}>
+      <div className="px-2 py-1.5 flex" style={{ height: 124 }}>
         <Waveform
           peaks={detailPeaks}
           duration={duration}
@@ -121,12 +121,12 @@ export function Player(): JSX.Element {
       </div>
 
       {/* ── Row 4: Transport + hotcue pads ───────────────────────────── */}
-      <div className="flex items-center gap-2 px-3 pb-2.5">
+      <div className="flex items-center gap-2 px-3 pb-3 pt-1">
         {/* CUE button */}
         <button
           onClick={pressCue}
           disabled={!currentTrack}
-          className="h-8 px-3 rounded text-xs font-bold tracking-widest transition-colors disabled:opacity-30 border border-white/20 text-white/80 hover:bg-white/10 hover:text-white"
+          className="h-9 px-3.5 rounded text-xs font-black tracking-widest transition-colors disabled:opacity-30 border border-white/20 text-white/80 hover:bg-white/10 hover:text-white"
         >
           CUE
         </button>
@@ -135,7 +135,7 @@ export function Player(): JSX.Element {
         <button
           onClick={togglePlay}
           disabled={!currentTrack}
-          className="h-8 w-10 rounded flex items-center justify-center text-white transition-colors disabled:opacity-30 bg-accent hover:bg-accent-hover text-sm font-bold"
+          className="h-9 w-11 rounded flex items-center justify-center text-white transition-colors disabled:opacity-30 bg-accent hover:bg-accent-hover text-sm font-bold"
           title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
         >
           {isPlaying ? '❚❚' : '▶'}
@@ -165,7 +165,7 @@ export function Player(): JSX.Element {
           onClick={setMemoryCue}
           disabled={!currentTrack}
           title="Set memory cue at current position"
-          className="h-8 px-2.5 rounded text-xs font-bold border transition-colors disabled:opacity-30 border-amber-500/40 text-amber-400/80 hover:bg-amber-500/20 hover:text-amber-300"
+          className="h-9 px-2.5 rounded text-xs font-bold border transition-colors disabled:opacity-30 border-amber-500/40 text-amber-400/80 hover:bg-amber-500/20 hover:text-amber-300"
         >
           MEM
         </button>
@@ -216,7 +216,7 @@ function HotCuePad({ label, index, cue, color, disabled, onPress, onSet, onClear
           ? `${label} · ${fmt(cue.positionMs / 1000, true)} — click to jump · right-click to clear`
           : `${label} · empty — right-click to set · Shift+${index + 1} shortcut`
       }
-      className="relative h-8 w-9 rounded text-xs font-black tracking-wider transition-all disabled:opacity-25 disabled:cursor-default"
+      className="relative h-9 w-11 rounded text-xs font-black tracking-wider transition-all disabled:opacity-25 disabled:cursor-default"
       style={
         cue
           ? {

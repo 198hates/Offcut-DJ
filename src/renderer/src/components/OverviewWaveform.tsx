@@ -34,19 +34,31 @@ export function OverviewWaveform({ peaks, duration, currentTime, cuePoints, main
     ctx.fillStyle = 'rgba(0,160,255,0.08)'
     ctx.fillRect(0, 0, progress * cw, ch)
 
+    // Background gradient for unplayed region
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, ch)
+    bgGrad.addColorStop(0,   'rgba(0,80,160,0.0)')
+    bgGrad.addColorStop(0.5, 'rgba(0,140,220,0.12)')
+    bgGrad.addColorStop(1,   'rgba(0,80,160,0.0)')
+    ctx.fillStyle = bgGrad
+    ctx.fillRect(progress * cw, 0, cw, ch)
+
     // Bars
     const barW = cw / peaks.length
+    const uGrad = ctx.createLinearGradient(0, 0, 0, ch)
+    uGrad.addColorStop(0,   'rgba(0,140,220,0.5)')
+    uGrad.addColorStop(0.5, 'rgba(80,210,255,0.95)')
+    uGrad.addColorStop(1,   'rgba(0,140,220,0.5)')
+    const pGrad = ctx.createLinearGradient(0, 0, 0, ch)
+    pGrad.addColorStop(0,   'rgba(50,80,110,0.4)')
+    pGrad.addColorStop(0.5, 'rgba(90,130,160,0.7)')
+    pGrad.addColorStop(1,   'rgba(50,80,110,0.4)')
+
     for (let i = 0; i < peaks.length; i++) {
       const x = i * barW
-      const bh = peaks[i] * mid * 0.85
+      const bh = peaks[i] * mid * 0.92
       if (bh < 0.5) continue
-      const frac = i / peaks.length
-      if (frac < progress) {
-        ctx.fillStyle = 'rgba(0,180,255,0.65)'
-      } else {
-        ctx.fillStyle = 'rgba(0,100,180,0.4)'
-      }
-      ctx.fillRect(x, mid - bh, Math.max(1, barW - 0.3), bh * 2)
+      ctx.fillStyle = (i / peaks.length) < progress ? pGrad : uGrad
+      ctx.fillRect(x, mid - bh, Math.max(1, barW), bh * 2)
     }
 
     // Cue markers
@@ -100,7 +112,7 @@ export function OverviewWaveform({ peaks, duration, currentTime, cuePoints, main
     <canvas
       ref={canvasRef}
       className="w-full block cursor-pointer"
-      style={{ height: 28 }}
+      style={{ height: 40 }}
       onClick={handleClick}
     />
   )
