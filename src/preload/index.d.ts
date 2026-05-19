@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, AppSettings } from '../shared/types'
+import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, AppSettings, SmartRule } from '../shared/types'
 
 declare global {
   interface Window {
@@ -16,6 +16,8 @@ declare global {
         importFromPath: (integrationId: IntegrationId, filePath?: string) => Promise<ImportResult>
         exportToPath: (integrationId: IntegrationId, filePath?: string) => Promise<ExportResult>
         createPlaylist: (name: string) => Promise<Playlist>
+        createSmartPlaylist: (name: string, rules: SmartRule[]) => Promise<Playlist>
+        updateSmartPlaylistRules: (id: string, name: string, rules: SmartRule[]) => Promise<void>
         renamePlaylist: (id: string, name: string) => Promise<void>
         deletePlaylist: (id: string) => Promise<void>
         addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<void>

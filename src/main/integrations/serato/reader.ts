@@ -3,6 +3,7 @@ import { join, basename } from 'path'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { insertOrUpdateTrack } from '../../library/db'
+import { parseSeratoTagsFromFile } from './geob'
 import type { Track, ImportResult } from '../../../shared/types'
 
 export function importFromIntegration(appDb: Database.Database, seratoDir: string): ImportResult {
@@ -38,6 +39,7 @@ export function importFromIntegration(appDb: Database.Database, seratoDir: strin
 
         const trackId = existingRow?.id ?? (() => {
           const id = randomUUID()
+          const geob = parseSeratoTagsFromFile(filePath)
           const track: Track = {
             id,
             filePath,
@@ -45,15 +47,15 @@ export function importFromIntegration(appDb: Database.Database, seratoDir: strin
             artist: '',
             album: '',
             genre: '',
-            bpm: null,
+            bpm: geob.bpm,
             key: null,
             durationSeconds: null,
             rating: 0,
             dateAdded: new Date().toISOString(),
             comment: '',
             tags: [],
-            cuePoints: [],
-            beatgrid: [],
+            cuePoints: geob.cuePoints,
+            beatgrid: geob.beatgrid,
             sourceIds: { serato: filePath }
           }
           insertTrack(track)

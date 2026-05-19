@@ -22,8 +22,8 @@ export function exportToIntegration(appDb: Database.Database, outputPath: string
   const lines: string[] = []
 
   lines.push('<?xml version="1.0" encoding="UTF-8" standalone="no" ?>')
-  lines.push(`<NML Version="19" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://10.0.0.1/" MODIFIED_BY="DJ Library Manager">`)
-  lines.push(`  <HEAD COMPANY="DJ Library Manager" PROGRAM="DJ Library Manager"></HEAD>`)
+  lines.push(`<NML Version="19" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://10.0.0.1/" MODIFIED_BY="Crate">`)
+  lines.push(`  <HEAD COMPANY="Crate" PROGRAM="Crate"></HEAD>`)
   lines.push(`  <MUSICFOLDERS></MUSICFOLDERS>`)
   lines.push(`  <COLLECTION ENTRIES="${tracks.length}">`)
 
@@ -73,7 +73,6 @@ export function exportToIntegration(appDb: Database.Database, outputPath: string
 
 function trackToNml(track: Track, dateModified: string): string {
   const { volume, dir, file } = splitTraktorPath(track.filePath)
-  const bpm = track.bpm != null ? (track.bpm * 100).toFixed(6) : '0.000000'
   const ranking = starsToTraktorRanking(track.rating)
   const key = track.key ? nameToTraktorKey(track.key) : ''
 

@@ -1,4 +1,4 @@
-export type IntegrationId = 'rekordbox' | 'serato' | 'traktor' | 'apple-music'
+export type IntegrationId = 'rekordbox' | 'serato' | 'traktor' | 'apple-music' | 'engine-dj' | 'm3u'
 
 export interface CuePoint {
   index: number
@@ -32,10 +32,21 @@ export interface Track {
   sourceIds: Partial<Record<IntegrationId, string>>
 }
 
+export type SmartRuleField = 'bpm' | 'key' | 'genre' | 'artist' | 'album' | 'rating' | 'title' | 'comment' | 'durationSeconds' | 'dateAdded'
+export type SmartRuleOp = 'is' | 'is_not' | 'contains' | 'not_contains' | 'greater_than' | 'less_than' | 'between' | 'in_last_days'
+
+export interface SmartRule {
+  field: SmartRuleField
+  op: SmartRuleOp
+  value: string | number | [number, number]
+}
+
 export interface Playlist {
   id: string
   name: string
   isFolder: boolean
+  isSmart: boolean
+  rules: SmartRule[]
   parentId: string | null
   sortOrder: number
   trackIds: string[]

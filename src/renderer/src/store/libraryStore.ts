@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useToastStore } from './toastStore'
-import type { Track, Playlist, LibraryStats, IntegrationId, ImportResult, ExportResult } from '@shared/types'
+import type { Track, Playlist, LibraryStats, IntegrationId, ImportResult, ExportResult, SmartRule } from '@shared/types'
 
 export interface Filters {
   bpmMin: number | null
@@ -29,6 +29,8 @@ interface LibraryState {
   isLoading: boolean
   isImporting: boolean
   isExporting: boolean
+  isDraggingTracks: boolean
+  draggingTrackIds: string[]
 
   loadLibrary: () => Promise<void>
   updateTrack: (patch: Partial<Track> & { id: string }) => Promise<void>
@@ -38,11 +40,15 @@ interface LibraryState {
   importFromIntegration: (integrationId: IntegrationId, filePath?: string) => Promise<ImportResult>
   exportToIntegration: (integrationId: IntegrationId, filePath?: string) => Promise<ExportResult>
   createPlaylist: (name: string) => Promise<void>
+  createSmartPlaylist: (name: string, rules: SmartRule[]) => Promise<void>
+  updateSmartPlaylistRules: (id: string, name: string, rules: SmartRule[]) => Promise<void>
   renamePlaylist: (id: string, name: string) => Promise<void>
   deletePlaylist: (id: string) => Promise<void>
   addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<void>
   setSelectedTrackIds: (ids: Set<string>) => void
   setActivePlaylistId: (id: string | null) => void
+  setDragging: (ids: string[]) => void
+  clearDragging: () => void
   setSearchQuery: (q: string) => void
   setFilters: (f: Partial<Filters>) => void
   resetFilters: () => void
@@ -62,6 +68,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   isLoading: false,
   isImporting: false,
   isExporting: false,
+  isDraggingTracks: false,
+  draggingTrackIds: [],
 
   loadLibrary: async () => {
     set({ isLoading: true })
@@ -158,6 +166,16 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     set((s) => ({ playlists: [...s.playlists, pl] }))
   },
 
+  createSmartPlaylist: async (name, rules) => {
+    const pl = await window.api.library.createSmartPlaylist(name, rules)
+    set((s) => ({ playlists: [...s.playlists, pl] }))
+  },
+
+  updateSmartPlaylistRules: async (id, name, rules) => {
+    await window.api.library.updateSmartPlaylistRules(id, name, rules)
+    await get().loadLibrary()
+  },
+
   renamePlaylist: async (id, name) => {
     await window.api.library.renamePlaylist(id, name)
     set((s) => ({ playlists: s.playlists.map((p) => (p.id === id ? { ...p, name } : p)) }))
@@ -184,6 +202,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   setSelectedTrackIds: (ids) => set({ selectedTrackIds: ids }),
   setActivePlaylistId: (id) => set({ activePlaylistId: id }),
+  setDragging: (ids) => set({ isDraggingTracks: true, draggingTrackIds: ids }),
+  clearDragging: () => set({ isDraggingTracks: false, draggingTrackIds: [] }),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setFilters: (f) => set((s) => ({ filters: { ...s.filters, ...f } })),
   resetFilters: () => set({ filters: DEFAULT_FILTERS }),

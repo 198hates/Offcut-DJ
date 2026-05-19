@@ -14,7 +14,7 @@ export function exportToIntegration(appDb: Database.Database, outputPath: string
   const lines: string[] = []
   lines.push('<?xml version="1.0" encoding="UTF-8"?>')
   lines.push('<DJ_PLAYLISTS Version="1.0.0">')
-  lines.push(`  <PRODUCT Name="DJ Library Manager" Version="0.1.0" Company="Between the Bridges"/>`)
+  lines.push(`  <PRODUCT Name="Crate" Version="0.1.0" Company="Between the Bridges"/>`)
   lines.push(`  <COLLECTION Entries="${tracks.length}">`)
 
   for (const track of tracks) {
@@ -113,7 +113,7 @@ function trackToXml(track: Track): string {
   ].join('\n')
 }
 
-function cueToXml(cue: CuePoint, fallbackIndex: number): string {
+function cueToXml(cue: CuePoint, _fallbackIndex: number): string {
   const num = cue.type === 'hotcue' ? cue.index : -1
   const start = (cue.positionMs / 1000).toFixed(3)
   const type = cue.type === 'loop' ? '4' : cue.type === 'hotcue' ? '0' : '1'

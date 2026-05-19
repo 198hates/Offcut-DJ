@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
-import { SCHEMA_SQL } from './schema'
+import { applySchema } from './schema'
 import type { Track, Playlist } from '../../shared/types'
 
 let _db: Database.Database | null = null
@@ -13,7 +13,7 @@ export function getLibraryDb(): Database.Database {
   _db = new Database(dbPath)
   _db.pragma('journal_mode = WAL')
   _db.pragma('foreign_keys = ON')
-  _db.exec(SCHEMA_SQL)
+  applySchema(_db)
 
   return _db
 }
@@ -47,6 +47,8 @@ export function rowToPlaylist(
     id: row.id as string,
     name: row.name as string,
     isFolder: Boolean(row.is_folder),
+    isSmart: Boolean(row.is_smart),
+    rules: JSON.parse((row.rules as string) || '[]'),
     parentId: (row.parent_id as string) || null,
     sortOrder: row.sort_order as number,
     trackIds,

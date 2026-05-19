@@ -127,7 +127,7 @@ function WelcomeStep({ onGetStarted, onSkip }: { onGetStarted: () => void; onSki
     <div className="text-center space-y-6">
       <div className="space-y-2">
         <div className="text-5xl mb-4">🎵</div>
-        <h1 className="text-2xl font-bold text-white">Welcome to DJ Library Manager</h1>
+        <h1 className="text-2xl font-bold text-white">Welcome to Crate</h1>
         <p className="text-white/50 text-sm leading-relaxed">
           Your central hub for managing music across Rekordbox, Serato, Traktor and Apple Music.
           Let's connect your existing DJ software.

@@ -36,7 +36,14 @@
       "Bash(kill 59863)",
       "Bash(ps -p 60049 -o pid,ppid,state,command)",
       "Bash(ELECTRON_RUN_AS_NODE='' node -e ' *)",
-      "Bash(ELECTRON_RUN_AS_NODE= node /tmp/test-sqlcipher.js)"
+      "Bash(ELECTRON_RUN_AS_NODE= node /tmp/test-sqlcipher.js)",
+      "Bash(python3 scripts/generate-icons.py)",
+      "Bash(ELECTRON_RUN_AS_NODE= npm run build)",
+      "Bash(ELECTRON_RUN_AS_NODE= npm run dev)",
+      "Bash(node -e \"const E = require\\('./node_modules/better-sqlite3-multiple-ciphers'\\); const db = new E\\(':memory:'\\); console.log\\('module loads OK'\\); db.close\\(\\)\")",
+      "Bash(pkill -f \"electron.*crate\")",
+      "Bash(pkill -f \"electron-vite\")",
+      "Bash(defaults read *)"
     ]
   }
 }

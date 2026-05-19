@@ -1,5 +1,5 @@
 import { writeFileSync, mkdirSync, existsSync } from 'fs'
-import { join, basename } from 'path'
+import { join } from 'path'
 import Database from 'better-sqlite3'
 import { rowToTrack } from '../../library/db'
 import type { Track, ExportResult } from '../../../shared/types'

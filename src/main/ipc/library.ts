@@ -1,7 +1,8 @@
 import { ipcMain, dialog } from 'electron'
 import { existsSync } from 'fs'
 import { randomUUID } from 'crypto'
-import { getLibraryDb, rowToTrack, rowToPlaylist, insertOrUpdateTrack } from '../library/db'
+import { getLibraryDb, rowToTrack, rowToPlaylist } from '../library/db'
+import { resolveSmartPlaylist } from '../library/smart-playlist'
 import { importFromIntegration as importRekordbox } from '../integrations/rekordbox/reader'
 import { exportToIntegration as exportRekordbox } from '../integrations/rekordbox/writer'
 import {
@@ -15,23 +16,32 @@ import { exportToIntegration as exportTraktor } from '../integrations/traktor/wr
 import { importFromIntegration as importAppleMusic } from '../integrations/apple-music/reader'
 import { importFromIntegration as importSerato } from '../integrations/serato/reader'
 import { exportToIntegration as exportSerato } from '../integrations/serato/writer'
-import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId } from '../../shared/types'
+import {
+  importFromIntegration as importEngineDj,
+  exportToIntegration as exportEngineDj,
+  getDefaultEngineDbPath
+} from '../integrations/engine-dj/reader'
+import { exportToIntegration as exportM3u } from '../integrations/m3u/writer'
+import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule } from '../../shared/types'
 import type Database from 'better-sqlite3'
 
 type IntegrationReader = (db: Database.Database, path: string) => ImportResult
 type IntegrationWriter = (db: Database.Database, path: string) => ExportResult
 
-const READERS: Record<IntegrationId, IntegrationReader> = {
+const READERS: Partial<Record<IntegrationId, IntegrationReader>> = {
   rekordbox: importRekordbox,
   traktor: importTraktor,
   'apple-music': importAppleMusic,
-  serato: importSerato
+  serato: importSerato,
+  'engine-dj': importEngineDj
 }
 
 const WRITERS: Partial<Record<IntegrationId, IntegrationWriter>> = {
   rekordbox: exportRekordbox,
   traktor: exportTraktor,
-  serato: exportSerato
+  serato: exportSerato,
+  'engine-dj': exportEngineDj,
+  m3u: exportM3u
 }
 
 const COL_MAP: Record<string, string> = {
@@ -53,6 +63,11 @@ export function registerLibraryHandlers(): void {
   ipcMain.handle('library:getPlaylists', (): Playlist[] => {
     const rows = db.prepare('SELECT * FROM playlists ORDER BY sort_order, name').all() as Record<string, unknown>[]
     return rows.map((pl) => {
+      if (pl.is_smart) {
+        const rules: SmartRule[] = JSON.parse((pl.rules as string) || '[]')
+        const trackIds = resolveSmartPlaylist(db, rules)
+        return rowToPlaylist(pl, trackIds)
+      }
       const trackRows = db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order').all(pl.id as string) as { track_id: string }[]
       return rowToPlaylist(pl, trackRows.map((r) => r.track_id))
     })
@@ -107,6 +122,20 @@ export function registerLibraryHandlers(): void {
     return rowToPlaylist(row, [])
   })
 
+  ipcMain.handle('library:createSmartPlaylist', (_e, name: string, rules: SmartRule[]): Playlist => {
+    const id = randomUUID()
+    db.prepare(
+      "INSERT INTO playlists (id, name, is_folder, is_smart, rules, sort_order, source_ids) VALUES (?, ?, 0, 1, ?, 0, '{}')"
+    ).run(id, name, JSON.stringify(rules))
+    const row = db.prepare('SELECT * FROM playlists WHERE id = ?').get(id) as Record<string, unknown>
+    const trackIds = resolveSmartPlaylist(db, rules)
+    return rowToPlaylist(row, trackIds)
+  })
+
+  ipcMain.handle('library:updateSmartPlaylistRules', (_e, id: string, name: string, rules: SmartRule[]): void => {
+    db.prepare("UPDATE playlists SET name = ?, rules = ?, updated_at = datetime('now') WHERE id = ?").run(name, JSON.stringify(rules), id)
+  })
+
   ipcMain.handle('library:renamePlaylist', (_e, id: string, name: string): void => {
     db.prepare("UPDATE playlists SET name = ?, updated_at = datetime('now') WHERE id = ?").run(name, id)
   })
@@ -126,16 +155,20 @@ export function registerLibraryHandlers(): void {
 
   // ── Import ────────────────────────────────────────────────────────────────
   ipcMain.handle('library:importFromPath', async (_e, integrationId: IntegrationId, filePath?: string): Promise<ImportResult> => {
+    const reader = READERS[integrationId]
+    if (!reader) return { tracksImported: 0, playlistsImported: 0, errors: [`Import from ${integrationId} not supported`] }
+
     let resolvedPath = filePath
     if (!resolvedPath) {
+      const isDirectory = integrationId === 'serato'
       const res = await dialog.showOpenDialog({
-        properties: integrationId === 'serato' ? ['openDirectory'] : ['openFile'],
-        filters: integrationId === 'serato' ? [] : getImportFilters(integrationId)
+        properties: isDirectory ? ['openDirectory'] : ['openFile'],
+        filters: isDirectory ? [] : getImportFilters(integrationId)
       })
       if (res.canceled) return { tracksImported: 0, playlistsImported: 0, errors: ['Import cancelled'] }
       resolvedPath = res.filePaths[0]
     }
-    return READERS[integrationId](db, resolvedPath)
+    return reader(db, resolvedPath)
   })
 
   // ── Export ────────────────────────────────────────────────────────────────
@@ -145,10 +178,17 @@ export function registerLibraryHandlers(): void {
 
     let resolvedPath = filePath
     if (!resolvedPath) {
-      if (integrationId === 'serato') {
+      if (integrationId === 'serato' || integrationId === 'm3u') {
+        const title = integrationId === 'm3u' ? 'Choose export folder for M3U playlists' : 'Choose your _Serato_ folder'
+        const res = await dialog.showOpenDialog({ title, properties: ['openDirectory'] })
+        if (res.canceled) return { tracksExported: 0, playlistsExported: 0, errors: [], cancelled: true }
+        resolvedPath = res.filePaths[0]
+      } else if (integrationId === 'engine-dj') {
+        const defaultPath = getDefaultEngineDbPath()
         const res = await dialog.showOpenDialog({
-          title: 'Choose your _Serato_ folder',
-          properties: ['openDirectory']
+          title: 'Select Engine DJ database (m.db)',
+          defaultPath: existsSync(defaultPath) ? defaultPath : undefined,
+          filters: [{ name: 'Engine DJ Database', extensions: ['db'] }]
         })
         if (res.canceled) return { tracksExported: 0, playlistsExported: 0, errors: [], cancelled: true }
         resolvedPath = res.filePaths[0]
@@ -212,13 +252,14 @@ export function registerLibraryHandlers(): void {
 }
 
 function getImportFilters(id: IntegrationId): Electron.FileFilter[] {
-  const map: Record<IntegrationId, Electron.FileFilter> = {
+  const map: Partial<Record<IntegrationId, Electron.FileFilter>> = {
     rekordbox: { name: 'Rekordbox XML', extensions: ['xml'] },
     traktor: { name: 'Traktor Collection', extensions: ['nml'] },
     'apple-music': { name: 'iTunes Library XML', extensions: ['xml'] },
-    serato: { name: 'All Files', extensions: ['*'] }
+    serato: { name: 'All Files', extensions: ['*'] },
+    'engine-dj': { name: 'Engine DJ Database', extensions: ['db'] }
   }
-  return [map[id]]
+  return [map[id] ?? { name: 'All Files', extensions: ['*'] }]
 }
 
 function getExportFilters(id: IntegrationId): Electron.FileFilter[] {

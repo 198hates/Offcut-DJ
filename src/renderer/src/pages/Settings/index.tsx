@@ -42,10 +42,6 @@ export function SettingsPage(): JSX.Element {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const choose = async (key: keyof AppSettings, title: string, isDir: boolean): Promise<void> => {
-    const p = await window.api.settings.choosePath(title, isDir)
-    if (p) patch({ [key]: p } as SettingsPatch)
-  }
 
   if (!settings) {
     return (

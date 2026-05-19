@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useLibraryStore, type Filters } from '../store/libraryStore'
+import { useLibraryStore } from '../store/libraryStore'
 
 export function FilterBar(): JSX.Element {
   const { filters, setFilters, resetFilters, availableKeys, availableGenres, searchQuery, setSearchQuery } = useLibraryStore()

@@ -64,7 +64,7 @@ function setupAutoUpdater(): void {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('co.betweenthebridges.dj-library-manager')
+  electronApp.setAppUserModelId('co.betweenthebridges.crate')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

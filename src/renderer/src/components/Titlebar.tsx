@@ -8,7 +8,7 @@ export function Titlebar(): JSX.Element {
       }`}
     >
       <span className="no-drag text-white/60 text-xs font-medium tracking-wide select-none">
-        DJ Library Manager
+        Crate
       </span>
     </div>
   )

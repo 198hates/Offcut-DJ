@@ -16,7 +16,7 @@ import { join } from 'path'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import SqlCipherDatabase from 'better-sqlite3-multiple-ciphers'
-import { getLibraryDb, rowToTrack, insertOrUpdateTrack } from '../../library/db'
+import { rowToTrack, insertOrUpdateTrack } from '../../library/db'
 import type { Track, CuePoint, ImportResult, ExportResult } from '../../../shared/types'
 
 export const RB_KEY = '402fd482c38817c35ffa8ffb8c7d93143b749e7d315df7a81732a1ff43608497'
@@ -33,6 +33,63 @@ export function isRekordboxDbAvailable(dbPath?: string): boolean {
   return existsSync(path)
 }
 
+// ── Cipher negotiation ───────────────────────────────────────────────────────
+// Tries every known SQLCipher opening sequence. Logs results to the terminal.
+// Returns an open, verified database or null.
+
+// Each attempt uses exec() (sqlite3_exec) rather than pragma() (sqlite3_prepare_v2)
+// because SQLCipher key pragmas must be executed via sqlite3_exec before page reads.
+const CIPHER_ATTEMPTS: { label: string; setup: (db: InstanceType<typeof SqlCipherDatabase>) => void }[] = [
+  // exec() path — bypasses better-sqlite3's prepared-statement layer
+  { label: 'exec: sqlcipher+legacy4+hexkey',      setup: (db) => db.exec(`PRAGMA cipher='sqlcipher'; PRAGMA legacy=4; PRAGMA hexkey="${RB_KEY}"`) },
+  { label: 'exec: compat4+hexkey',                setup: (db) => db.exec(`PRAGMA cipher_compatibility=4; PRAGMA hexkey="${RB_KEY}"`) },
+  { label: "exec: sqlcipher+legacy4+key-x",       setup: (db) => db.exec(`PRAGMA cipher='sqlcipher'; PRAGMA legacy=4; PRAGMA key="x'${RB_KEY}'"`) },
+  { label: "exec: compat4+key-x",                 setup: (db) => db.exec(`PRAGMA cipher_compatibility=4; PRAGMA key="x'${RB_KEY}'"`) },
+  { label: "exec: key-x only",                    setup: (db) => db.exec(`PRAGMA key="x'${RB_KEY}'"`) },
+  { label: 'exec: sqlcipher+legacy3+hexkey',      setup: (db) => db.exec(`PRAGMA cipher='sqlcipher'; PRAGMA legacy=3; PRAGMA hexkey="${RB_KEY}"`) },
+  // pragma() path — uses prepared statements
+  { label: 'pragma: sqlcipher+legacy4+hexkey',    setup: (db) => { db.pragma("cipher='sqlcipher'"); db.pragma('legacy=4'); db.pragma(`hexkey="${RB_KEY}"`) } },
+  { label: 'pragma: compat4+hexkey',              setup: (db) => { db.pragma('cipher_compatibility=4'); db.pragma(`hexkey="${RB_KEY}"`) } },
+  { label: "pragma: sqlcipher+legacy4+key-x",     setup: (db) => { db.pragma("cipher='sqlcipher'"); db.pragma('legacy=4'); db.pragma(`key="x'${RB_KEY}'"`) } },
+]
+
+function openRekordboxDb(
+  masterDbPath: string,
+  readonly: boolean
+): InstanceType<typeof SqlCipherDatabase> | null {
+  // Write to a log file because Electron child process stdout isn't always captured
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { appendFileSync } = require('fs') as typeof import('fs')
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { tmpdir } = require('os') as typeof import('os')
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { join } = require('path') as typeof import('path')
+  const logPath = join(tmpdir(), 'crate-rekordbox.log')
+  const log = (msg: string): void => {
+    const line = `[${new Date().toISOString()}] ${msg}\n`
+    process.stdout.write(line)
+    try { appendFileSync(logPath, line) } catch { /* ignore */ }
+  }
+
+  log(`Trying to open: ${masterDbPath}`)
+
+  for (const attempt of CIPHER_ATTEMPTS) {
+    let db: InstanceType<typeof SqlCipherDatabase> | null = null
+    try {
+      db = new SqlCipherDatabase(masterDbPath, { readonly })
+      attempt.setup(db)
+      const row = db.prepare('SELECT COUNT(*) as c FROM djmdContent').get() as { c: number }
+      log(`SUCCESS with "${attempt.label}" — ${row.c} tracks`)
+      return db
+    } catch (err) {
+      log(`FAIL "${attempt.label}" → ${(err as Error).message}`)
+      try { db?.close() } catch { /* ignore */ }
+    }
+  }
+  log(`All attempts failed. Full log at: ${logPath}`)
+  return null
+}
+
 // ── Import (Rekordbox → Internal library) ────────────────────────────────────
 
 export function importFromRekordboxDb(
@@ -41,14 +98,9 @@ export function importFromRekordboxDb(
 ): ImportResult {
   const result: ImportResult = { tracksImported: 0, playlistsImported: 0, errors: [] }
 
-  let rb: InstanceType<typeof SqlCipherDatabase>
-  try {
-    rb = new SqlCipherDatabase(masterDbPath, { readonly: true })
-    rb.pragma(`key="${RB_KEY}"`)
-    // Quick sanity check
-    rb.prepare('SELECT COUNT(*) FROM djmdContent').get()
-  } catch (err) {
-    result.errors.push(`Cannot open Rekordbox database: ${(err as Error).message}`)
+  const rb = openRekordboxDb(masterDbPath, true)
+  if (!rb) {
+    result.errors.push('Cannot open Rekordbox database: no cipher sequence worked — see terminal for details')
     return result
   }
 
@@ -167,11 +219,11 @@ export function exportToRekordboxDb(
 
   let rb: InstanceType<typeof SqlCipherDatabase>
   try {
-    rb = new SqlCipherDatabase(masterDbPath)
-    rb.pragma(`key="${RB_KEY}"`)
+    const rbW = openRekordboxDb(masterDbPath, false)
+    if (!rbW) throw new Error('no cipher sequence worked — see terminal for details')
+    rb = rbW
     rb.pragma('journal_mode = WAL')
     rb.pragma('foreign_keys = ON')
-    rb.prepare('SELECT COUNT(*) FROM djmdContent').get()
   } catch (err) {
     result.errors.push(`Cannot open Rekordbox database for writing: ${(err as Error).message}`)
     return result

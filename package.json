@@ -1,7 +1,7 @@
 {
-  "name": "dj-library-manager",
+  "name": "crate",
   "version": "0.1.0",
-  "description": "Cross-platform DJ library manager for Rekordbox, Serato, Traktor and Apple Music",
+  "description": "Cross-platform DJ library manager — sync Rekordbox, Serato, Traktor, Apple Music and Engine DJ",
   "main": "out/main/index.js",
   "private": true,
   "scripts": {
@@ -44,41 +44,71 @@
     "vite": "^5.4.2"
   },
   "build": {
-    "appId": "co.betweenthebridges.dj-library-manager",
-    "productName": "DJ Library Manager",
+    "appId": "co.betweenthebridges.crate",
+    "productName": "Crate",
     "copyright": "Copyright © 2026 Between the Bridges",
     "directories": {
-      "buildResources": "resources"
+      "buildResources": "resources",
+      "output": "dist"
     },
     "files": [
       "out/**/*"
     ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*.node",
+      "**/node_modules/better-sqlite3-multiple-ciphers/**/*.node"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "BtwBridges",
+      "repo": "DJ",
+      "releaseType": "release"
+    },
     "mac": {
       "category": "public.app-category.music",
+      "icon": "resources/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.plist",
       "target": [
         {
           "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
         }
       ]
     },
+    "dmg": {
+      "title": "${productName} ${version}",
+      "artifactName": "${productName}-${version}-mac-${arch}.dmg"
+    },
     "win": {
+      "icon": "resources/icon.ico",
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
-      ]
+      ],
+      "artifactName": "${productName}-${version}-win-setup.exe"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DJ Library Manager"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "resources/icon.icns",
+      "category": "Audio",
+      "artifactName": "${productName}-${version}-linux-${arch}.AppImage"
     }
   }
 }

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, IntegrationId, AppSettings } from '../shared/types'
+import type { Track, IntegrationId, AppSettings, SmartRule } from '../shared/types'
 
 const api = {
   library: {
@@ -18,6 +18,10 @@ const api = {
     exportToPath: (integrationId: IntegrationId, filePath?: string) =>
       ipcRenderer.invoke('library:exportToPath', integrationId, filePath),
     createPlaylist: (name: string) => ipcRenderer.invoke('library:createPlaylist', name),
+    createSmartPlaylist: (name: string, rules: SmartRule[]) =>
+      ipcRenderer.invoke('library:createSmartPlaylist', name, rules),
+    updateSmartPlaylistRules: (id: string, name: string, rules: SmartRule[]) =>
+      ipcRenderer.invoke('library:updateSmartPlaylistRules', id, name, rules),
     renamePlaylist: (id: string, name: string) =>
       ipcRenderer.invoke('library:renamePlaylist', id, name),
     deletePlaylist: (id: string) => ipcRenderer.invoke('library:deletePlaylist', id),
