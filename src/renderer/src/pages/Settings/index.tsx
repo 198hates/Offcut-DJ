@@ -134,6 +134,33 @@ export function SettingsPage(): JSX.Element {
         </div>
       </Section>
 
+      {/* Engine DJ */}
+      <Section title="Engine DJ" icon="◆">
+        <PathField
+          label="Engine Library database (m.db)"
+          description="Used by Pioneer standalone hardware (CDJ-3000, XDJ-XZ, PRIME series) and Algoriddim djay Pro"
+          value={settings.engineDjDbPath}
+          detected={detected.engineDjDb}
+          onChange={(v) => patch({ engineDjDbPath: v })}
+          isDirectory={false}
+        />
+      </Section>
+
+      {/* M3U Playlists */}
+      <Section title="M3U Playlists" icon="≡">
+        <PathField
+          label="Export folder"
+          description="Folder where .m3u8 playlist files will be written (one file per playlist)"
+          value={settings.m3uExportDir}
+          onChange={(v) => patch({ m3uExportDir: v })}
+          isDirectory
+        />
+        <div className="flex items-start gap-2 text-xs text-white/40 bg-white/[0.03] border border-white/10 rounded-lg p-3">
+          <span className="shrink-0">ℹ</span>
+          <span>M3U export only. Supported by VLC, djay Pro, and most media players.</span>
+        </div>
+      </Section>
+
       {/* Export defaults */}
       <Section title="Export Defaults" icon="↑">
         <PathField
@@ -164,7 +191,7 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* Quick import shortcuts using saved paths */}
-      {(settings.traktorCollectionPath || settings.seratoDir || settings.rekordboxXmlPath) && (
+      {(settings.traktorCollectionPath || settings.seratoDir || settings.rekordboxXmlPath || settings.engineDjDbPath) && (
         <Section title="Quick Import" icon="↓">
           <p className="text-xs text-white/40 mb-2">Import directly from your detected integrations</p>
           <div className="flex flex-wrap gap-2">
@@ -184,6 +211,12 @@ export function SettingsPage(): JSX.Element {
               <QuickImportButton
                 label="Serato"
                 onClick={() => window.api.library.importFromPath('serato', settings.seratoDir)}
+              />
+            )}
+            {settings.engineDjDbPath && (
+              <QuickImportButton
+                label="Engine DJ"
+                onClick={() => window.api.library.importFromPath('engine-dj', settings.engineDjDbPath)}
               />
             )}
           </div>

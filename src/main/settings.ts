@@ -9,6 +9,8 @@ export interface AppSettings {
   traktorCollectionPath: string
   seratoDir: string
   appleMusicXmlPath: string
+  engineDjDbPath: string
+  m3uExportDir: string
   // Preferences
   theme: 'dark' | 'light' | 'system'
   defaultExportDir: string
@@ -24,6 +26,8 @@ const DEFAULTS: AppSettings = {
   traktorCollectionPath: autoDetectTraktorCollection(),
   seratoDir: autoDetectSeratoDir(),
   appleMusicXmlPath: '',
+  engineDjDbPath: autoDetectEngineDjDb(),
+  m3uExportDir: '',
   theme: 'dark',
   defaultExportDir: '',
   showWelcomeOnStartup: true,
@@ -108,11 +112,21 @@ export function autoDetectAppleMusicXml(): string {
   return existsSync(candidate) ? candidate : ''
 }
 
+export function autoDetectEngineDjDb(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
+  const candidate =
+    process.platform === 'win32'
+      ? join(home, 'Music', 'Engine Library', 'Database2', 'm.db')
+      : join(home, 'Music', 'Engine Library', 'Database2', 'm.db')
+  return existsSync(candidate) ? candidate : ''
+}
+
 export function getDetectedPaths(): Record<string, string> {
   return {
     rekordboxDb: autoDetectRekordboxDb(),
     traktorCollection: autoDetectTraktorCollection(),
     seratoDir: autoDetectSeratoDir(),
-    appleMusicXml: autoDetectAppleMusicXml()
+    appleMusicXml: autoDetectAppleMusicXml(),
+    engineDjDb: autoDetectEngineDjDb()
   }
 }

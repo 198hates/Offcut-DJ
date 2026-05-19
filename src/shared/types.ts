@@ -77,6 +77,8 @@ export interface AppSettings {
   traktorCollectionPath: string
   seratoDir: string
   appleMusicXmlPath: string
+  engineDjDbPath: string
+  m3uExportDir: string
   theme: 'dark' | 'light' | 'system'
   defaultExportDir: string
   showWelcomeOnStartup: boolean
