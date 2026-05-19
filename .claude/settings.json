@@ -43,7 +43,8 @@
       "Bash(node -e \"const E = require\\('./node_modules/better-sqlite3-multiple-ciphers'\\); const db = new E\\(':memory:'\\); console.log\\('module loads OK'\\); db.close\\(\\)\")",
       "Bash(pkill -f \"electron.*crate\")",
       "Bash(pkill -f \"electron-vite\")",
-      "Bash(defaults read *)"
+      "Bash(defaults read *)",
+      "Bash(./node_modules/.bin/tsc --noEmit -p tsconfig.node.json --composite false)"
     ]
   }
 }
