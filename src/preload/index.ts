@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, Playlist, IntegrationId } from '../shared/types'
+import type { Track, IntegrationId, AppSettings } from '../shared/types'
 
 const api = {
   library: {
@@ -23,7 +23,23 @@ const api = {
     deletePlaylist: (id: string) => ipcRenderer.invoke('library:deletePlaylist', id),
     addTracksToPlaylist: (playlistId: string, trackIds: string[]) =>
       ipcRenderer.invoke('library:addTracksToPlaylist', playlistId, trackIds),
-    scanMissingFiles: () => ipcRenderer.invoke('library:scanMissingFiles')
+    scanMissingFiles: () => ipcRenderer.invoke('library:scanMissingFiles'),
+    rekordboxDbStatus: () => ipcRenderer.invoke('library:rekordboxDbStatus'),
+    importFromRekordboxDb: (dbPath?: string) =>
+      ipcRenderer.invoke('library:importFromRekordboxDb', dbPath),
+    exportToRekordboxDb: (dbPath?: string) =>
+      ipcRenderer.invoke('library:exportToRekordboxDb', dbPath)
+  },
+  settings: {
+    get: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
+    save: (patch: Partial<AppSettings>): Promise<AppSettings> =>
+      ipcRenderer.invoke('settings:save', patch),
+    getDetectedPaths: (): Promise<Record<string, string>> =>
+      ipcRenderer.invoke('settings:getDetectedPaths'),
+    choosePath: (title: string, isDirectory: boolean): Promise<string | null> =>
+      ipcRenderer.invoke('settings:choosePath', title, isDirectory),
+    openInFinder: (path: string): Promise<void> =>
+      ipcRenderer.invoke('settings:openInFinder', path)
   }
 }
 

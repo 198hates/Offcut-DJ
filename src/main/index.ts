@@ -1,12 +1,20 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import { registerLibraryHandlers } from './ipc/library'
+import { registerSettingsHandlers } from './ipc/settings'
+import { loadSettings, saveSettings } from './settings'
 
 function createWindow(): void {
+  const settings = loadSettings()
+  const bounds = settings.windowBounds
+
   const mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: bounds?.width ?? 1280,
+    height: bounds?.height ?? 800,
+    x: bounds?.x,
+    y: bounds?.y,
     minWidth: 900,
     minHeight: 600,
     show: false,
@@ -22,6 +30,13 @@ function createWindow(): void {
     mainWindow.show()
   })
 
+  // Persist window size/position on close
+  mainWindow.on('close', () => {
+    const [width, height] = mainWindow.getSize()
+    const [x, y] = mainWindow.getPosition()
+    saveSettings({ windowBounds: { x, y, width, height } })
+  })
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
@@ -34,6 +49,20 @@ function createWindow(): void {
   }
 }
 
+function setupAutoUpdater(): void {
+  if (is.dev) return
+
+  autoUpdater.checkForUpdatesAndNotify()
+
+  autoUpdater.on('update-available', () => {
+    ipcMain.emit('updater:update-available')
+  })
+
+  autoUpdater.on('update-downloaded', () => {
+    ipcMain.emit('updater:update-downloaded')
+  })
+}
+
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('co.betweenthebridges.dj-library-manager')
 
@@ -42,6 +71,8 @@ app.whenReady().then(() => {
   })
 
   registerLibraryHandlers()
+  registerSettingsHandlers()
+  setupAutoUpdater()
   createWindow()
 
   app.on('activate', () => {

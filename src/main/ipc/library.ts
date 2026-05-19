@@ -4,10 +4,17 @@ import { randomUUID } from 'crypto'
 import { getLibraryDb, rowToTrack, rowToPlaylist, insertOrUpdateTrack } from '../library/db'
 import { importFromIntegration as importRekordbox } from '../integrations/rekordbox/reader'
 import { exportToIntegration as exportRekordbox } from '../integrations/rekordbox/writer'
+import {
+  importFromRekordboxDb,
+  exportToRekordboxDb,
+  isRekordboxDbAvailable,
+  getDefaultRekordboxDbPath
+} from '../integrations/rekordbox/db-reader'
 import { importFromIntegration as importTraktor } from '../integrations/traktor/reader'
 import { exportToIntegration as exportTraktor } from '../integrations/traktor/writer'
 import { importFromIntegration as importAppleMusic } from '../integrations/apple-music/reader'
 import { importFromIntegration as importSerato } from '../integrations/serato/reader'
+import { exportToIntegration as exportSerato } from '../integrations/serato/writer'
 import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId } from '../../shared/types'
 import type Database from 'better-sqlite3'
 
@@ -23,7 +30,8 @@ const READERS: Record<IntegrationId, IntegrationReader> = {
 
 const WRITERS: Partial<Record<IntegrationId, IntegrationWriter>> = {
   rekordbox: exportRekordbox,
-  traktor: exportTraktor
+  traktor: exportTraktor,
+  serato: exportSerato
 }
 
 const COL_MAP: Record<string, string> = {
@@ -137,12 +145,21 @@ export function registerLibraryHandlers(): void {
 
     let resolvedPath = filePath
     if (!resolvedPath) {
-      const res = await dialog.showSaveDialog({
-        filters: getExportFilters(integrationId),
-        defaultPath: `library-${integrationId}-${new Date().toISOString().slice(0, 10)}`
-      })
-      if (res.canceled || !res.filePath) return { tracksExported: 0, playlistsExported: 0, errors: [], cancelled: true }
-      resolvedPath = res.filePath
+      if (integrationId === 'serato') {
+        const res = await dialog.showOpenDialog({
+          title: 'Choose your _Serato_ folder',
+          properties: ['openDirectory']
+        })
+        if (res.canceled) return { tracksExported: 0, playlistsExported: 0, errors: [], cancelled: true }
+        resolvedPath = res.filePaths[0]
+      } else {
+        const res = await dialog.showSaveDialog({
+          filters: getExportFilters(integrationId),
+          defaultPath: `library-${integrationId}-${new Date().toISOString().slice(0, 10)}`
+        })
+        if (res.canceled || !res.filePath) return { tracksExported: 0, playlistsExported: 0, errors: [], cancelled: true }
+        resolvedPath = res.filePath
+      }
     }
     return writer(db, resolvedPath)
   })
@@ -154,6 +171,44 @@ export function registerLibraryHandlers(): void {
       .filter((r) => !existsSync(r.file_path as string))
       .map(rowToTrack)
   })
+
+  // ── Rekordbox direct DB sync ──────────────────────────────────────────────
+  ipcMain.handle('library:rekordboxDbStatus', () => ({
+    available: isRekordboxDbAvailable(),
+    path: getDefaultRekordboxDbPath()
+  }))
+
+  ipcMain.handle(
+    'library:importFromRekordboxDb',
+    async (_e, dbPath?: string): Promise<ImportResult> => {
+      let resolvedPath = dbPath ?? getDefaultRekordboxDbPath()
+      if (!existsSync(resolvedPath)) {
+        const res = await dialog.showOpenDialog({
+          title: 'Select Rekordbox master.db',
+          filters: [{ name: 'SQLite Database', extensions: ['db'] }]
+        })
+        if (res.canceled) return { tracksImported: 0, playlistsImported: 0, errors: ['Cancelled'] }
+        resolvedPath = res.filePaths[0]
+      }
+      return importFromRekordboxDb(db, resolvedPath)
+    }
+  )
+
+  ipcMain.handle(
+    'library:exportToRekordboxDb',
+    async (_e, dbPath?: string): Promise<ExportResult> => {
+      let resolvedPath = dbPath ?? getDefaultRekordboxDbPath()
+      if (!existsSync(resolvedPath)) {
+        const res = await dialog.showOpenDialog({
+          title: 'Select Rekordbox master.db',
+          filters: [{ name: 'SQLite Database', extensions: ['db'] }]
+        })
+        if (res.canceled) return { tracksExported: 0, playlistsExported: 0, errors: [], cancelled: true }
+        resolvedPath = res.filePaths[0]
+      }
+      return exportToRekordboxDb(db, resolvedPath)
+    }
+  )
 }
 
 function getImportFilters(id: IntegrationId): Electron.FileFilter[] {

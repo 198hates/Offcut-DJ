@@ -9,12 +9,14 @@
     "start": "ELECTRON_RUN_AS_NODE= electron-vite preview",
     "build": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
+    "rebuild:sqlcipher": "node scripts/rebuild-sqlcipher.js",
     "build:mac": "npm run build && electron-builder --mac",
     "build:win": "npm run build && electron-builder --win",
     "build:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",
+    "better-sqlite3-multiple-ciphers": "^12.9.0",
     "electron-updater": "^6.3.0",
     "fast-xml-parser": "^4.4.1",
     "zustand": "^4.5.4"
@@ -29,14 +31,14 @@
     "@types/node": "^20.16.0",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
     "electron": "^35.0.0",
     "electron-builder": "^26.10.0",
     "electron-vite": "^5.0.0",
     "postcss": "^8.4.41",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4",
     "vite": "^5.4.2"
@@ -56,7 +58,10 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     },
@@ -64,7 +69,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },

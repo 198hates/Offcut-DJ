@@ -35,7 +35,8 @@
       "Bash(ps -p 59410 -o pid,ppid,state,command)",
       "Bash(kill 59863)",
       "Bash(ps -p 60049 -o pid,ppid,state,command)",
-      "Bash(ELECTRON_RUN_AS_NODE='' node -e ' *)"
+      "Bash(ELECTRON_RUN_AS_NODE='' node -e ' *)",
+      "Bash(ELECTRON_RUN_AS_NODE= node /tmp/test-sqlcipher.js)"
     ]
   }
 }

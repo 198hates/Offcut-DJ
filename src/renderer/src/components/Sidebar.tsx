@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
+import { RekordboxSync } from './RekordboxSync'
 import type { IntegrationId, Playlist } from '@shared/types'
 
 interface Integration {
@@ -12,13 +13,13 @@ interface Integration {
 const INTEGRATIONS: Integration[] = [
   { id: 'rekordbox', label: 'Rekordbox', icon: '◈', canExport: true },
   { id: 'traktor', label: 'Traktor', icon: '◉', canExport: true },
-  { id: 'serato', label: 'Serato', icon: '◎', canExport: false },
+  { id: 'serato', label: 'Serato', icon: '◎', canExport: true },
   { id: 'apple-music', label: 'Apple Music', icon: '♪', canExport: false }
 ]
 
 interface SidebarProps {
-  activePage: 'library' | 'settings'
-  onNavigate: (page: 'library' | 'settings') => void
+  activePage: 'library' | 'health' | 'settings'
+  onNavigate: (page: 'library' | 'health' | 'settings') => void
 }
 
 export function Sidebar({ activePage, onNavigate }: SidebarProps): JSX.Element {
@@ -130,6 +131,8 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps): JSX.Element {
         </div>
       </div>
 
+      <RekordboxSync />
+
       <div className="p-2 border-t border-white/5 shrink-0">
         <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-white/30">Import</p>
         <div className="space-y-0.5 mb-2">
@@ -162,6 +165,16 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps): JSX.Element {
         </div>
 
         <button
+          onClick={() => onNavigate('health')}
+          className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
+            activePage === 'health'
+              ? 'bg-white/10 text-white'
+              : 'text-white/50 hover:bg-white/5 hover:text-white'
+          }`}
+        >
+          Library Health
+        </button>
+        <button
           onClick={() => onNavigate('settings')}
           className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
             activePage === 'settings'
@@ -169,7 +182,7 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps): JSX.Element {
               : 'text-white/50 hover:bg-white/5 hover:text-white'
           }`}
         >
-          Library Health
+          Settings
         </button>
       </div>
     </aside>
