@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
+import { usePlayerStore } from '../../store/playerStore'
 import { FilterBar } from '../../components/FilterBar'
 import { BulkEditBar } from '../../components/BulkEditBar'
 import type { Track } from '@shared/types'
@@ -24,6 +25,7 @@ type SortDir = 'asc' | 'desc'
 
 export function LibraryPage(): JSX.Element {
   const { isLoading, selectedTrackIds, setSelectedTrackIds, setDragging, clearDragging } = useLibraryStore()
+  const loadTrack = usePlayerStore((s) => s.loadTrack)
   const filteredTracks = useLibraryStore((s) => s.filteredTracks())
 
   const [sortKey, setSortKey] = useState<SortKey>('artist')
@@ -246,6 +248,7 @@ export function LibraryPage(): JSX.Element {
                 track={track}
                 isSelected={selectedTrackIds.has(track.id)}
                 onClick={handleRowClick}
+                onDoubleClick={(t) => loadTrack(t)}
                 onCheckbox={(checked) => {
                   const next = new Set(selectedTrackIds)
                   checked ? next.add(track.id) : next.delete(track.id)
@@ -271,16 +274,18 @@ interface TrackRowProps {
   track: Track
   isSelected: boolean
   onClick: (e: React.MouseEvent, id: string) => void
+  onDoubleClick: (track: Track) => void
   onCheckbox: (checked: boolean) => void
   onDragStart: (e: React.DragEvent, track: Track) => void
   onDragEnd: () => void
 }
 
-function TrackRow({ track, isSelected, onClick, onCheckbox, onDragStart, onDragEnd }: TrackRowProps): JSX.Element {
+function TrackRow({ track, isSelected, onClick, onDoubleClick, onCheckbox, onDragStart, onDragEnd }: TrackRowProps): JSX.Element {
   return (
     <tr
       draggable
       onClick={(e) => onClick(e, track.id)}
+      onDoubleClick={() => onDoubleClick(track)}
       onDragStart={(e) => onDragStart(e, track)}
       onDragEnd={onDragEnd}
       style={{ height: ROW_HEIGHT }}

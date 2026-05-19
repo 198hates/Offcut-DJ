@@ -44,7 +44,36 @@
       "Bash(pkill -f \"electron.*crate\")",
       "Bash(pkill -f \"electron-vite\")",
       "Bash(defaults read *)",
-      "Bash(./node_modules/.bin/tsc --noEmit -p tsconfig.node.json --composite false)"
+      "Bash(./node_modules/.bin/tsc --noEmit -p tsconfig.node.json --composite false)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('build',{}\\), indent=2\\)\\)\")",
+      "Bash(pkill -f \"electron\")",
+      "Bash(ELECTRON_ENABLE_LOGGING=1 ./node_modules/.bin/electron out/main/index.js --enable-logging)",
+      "Bash(jobs)",
+      "Bash(pkill -f \"electron\" 2>/dev/null; sleep 1 *)",
+      "Bash(./node_modules/.bin/electron-vite dev *)",
+      "Bash(osascript -e 'tell application \"System Events\" to count windows of every process whose name is \"Electron\"')",
+      "Bash(pkill -f \"electron-vite\\\\|vite\")",
+      "Bash(osascript -e 'tell application \"System Events\" to get name of every process whose name contains \"Electron\"')",
+      "Bash(pkill -f \"electron-vite\\\\|electron\\\\|vite\")",
+      "Bash(find /private/var/folders -name \"crate-rekordbox.log\" 2>/dev/null | head -3)",
+      "Read(//private/var/folders/**)",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\('version:',d['version']\\)\")",
+      "Bash(./node_modules/.bin/electron -e ' *)",
+      "Bash(brew list *)",
+      "Bash(python3 -m pip show pysqlcipher3)",
+      "Bash(brew install *)",
+      "Bash(/opt/homebrew/bin/brew install *)",
+      "Bash(find /usr /opt /home -name \"brew\" -maxdepth 5 2>/dev/null | head -3 *)",
+      "Read(//usr/**)",
+      "Read(//usr/local/bin/**)",
+      "Bash(xxd ~/Library/Pioneer/rekordbox/product.db)",
+      "Bash(xxd ~/Library/Pioneer/rekordbox/networkRecommend.db)",
+      "Bash(pkill -f \"electron scripts\")",
+      "Bash(./node_modules/.bin/electron scripts/test-cipher.js)",
+      "Bash(./node_modules/.bin/tsc --noEmit -p tsconfig.web.json --composite false)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
     ]
   }
 }

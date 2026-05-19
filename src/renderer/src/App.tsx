@@ -7,6 +7,7 @@ import { Titlebar } from './components/Titlebar'
 import { TrackDetail } from './components/TrackDetail'
 import { Toast } from './components/Toast'
 import { Onboarding } from './components/Onboarding'
+import { Player } from './components/Player'
 import { useLibraryStore } from './store/libraryStore'
 
 type Page = 'library' | 'health' | 'settings'
@@ -61,6 +62,7 @@ export default function App(): JSX.Element {
           )}
         </main>
       </div>
+      <Player />
       <Toast />
       {showOnboarding && (
         <Onboarding onComplete={() => setShowOnboarding(false)} />

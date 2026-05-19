@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
 import { registerLibraryHandlers } from './ipc/library'
 import { registerSettingsHandlers } from './ipc/settings'
+import { registerAudioHandlers } from './ipc/audio'
 import { loadSettings, saveSettings } from './settings'
 
 function createWindow(): void {
@@ -72,6 +73,7 @@ app.whenReady().then(() => {
 
   registerLibraryHandlers()
   registerSettingsHandlers()
+  registerAudioHandlers()
   setupAutoUpdater()
   createWindow()
 

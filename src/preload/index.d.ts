@@ -26,6 +26,9 @@ declare global {
         importFromRekordboxDb: (dbPath?: string) => Promise<ImportResult>
         exportToRekordboxDb: (dbPath?: string) => Promise<ExportResult>
       }
+      audio: {
+        readFile: (filePath: string) => Promise<ArrayBuffer>
+      }
       settings: {
         get: () => Promise<AppSettings>
         save: (patch: Partial<AppSettings>) => Promise<AppSettings>

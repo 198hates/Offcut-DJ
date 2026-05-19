@@ -34,6 +34,10 @@ const api = {
     exportToRekordboxDb: (dbPath?: string) =>
       ipcRenderer.invoke('library:exportToRekordboxDb', dbPath)
   },
+  audio: {
+    readFile: (filePath: string): Promise<ArrayBuffer> =>
+      ipcRenderer.invoke('audio:readFile', filePath)
+  },
   settings: {
     get: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
     save: (patch: Partial<AppSettings>): Promise<AppSettings> =>
