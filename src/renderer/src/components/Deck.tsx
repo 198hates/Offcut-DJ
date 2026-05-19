@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from 'react'
 import type { StoreApi, UseBoundStore } from 'zustand'
 import type { DeckStore } from '../store/playerStore'
-import { HOT_CUE_COLORS, HOT_CUE_LABELS } from '../store/playerStore'
+import { HOT_CUE_COLORS, HOT_CUE_LABELS, type AnalysisState } from '../store/playerStore'
 import { Waveform } from './Waveform'
 import { OverviewWaveform } from './OverviewWaveform'
 import type { CuePoint } from '@shared/types'
@@ -28,10 +28,11 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
   const {
     currentTrack, isPlaying, currentTime, duration,
     waveformPeaks, detailPeaks, isLoading, mainCueTime,
-    loopStart, loopEnd, isLooping, playbackRate,
+    loopStart, loopEnd, isLooping, playbackRate, analysisState,
     togglePlay, seek, pressCue,
     setCue, clearCue, jumpToCue, setMemoryCue,
-    setLoopIn, setLoopOut, beatLoop, toggleLoop, clearLoop, setPlaybackRate
+    setLoopIn, setLoopOut, beatLoop, toggleLoop, clearLoop, setPlaybackRate,
+    analyzeCurrentTrack
   } = useStore()
 
   const isRight = label === 'B'
@@ -83,10 +84,13 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           <p className={`text-sm font-semibold text-white truncate leading-tight ${isRight ? 'text-right' : ''}`}>
             {currentTrack?.title || <span className="text-white/20 italic font-normal text-xs">No track loaded</span>}
           </p>
-          <p className={`text-xs text-white/45 truncate mt-0.5 ${isRight ? 'text-right' : ''}`}>
-            {currentTrack?.artist || ''}
-            {currentTrack?.album ? ` · ${currentTrack.album}` : ''}
-          </p>
+          <div className={`flex items-center gap-2 mt-0.5 ${isRight ? 'flex-row-reverse' : ''}`}>
+            <p className="text-xs text-white/45 truncate">
+              {currentTrack?.artist || ''}
+              {currentTrack?.album ? ` · ${currentTrack.album}` : ''}
+            </p>
+            <AnalysisIndicator state={analysisState} onAnalyze={analyzeCurrentTrack} hasTrack={!!currentTrack} />
+          </div>
         </div>
 
         {/* Key */}
@@ -247,6 +251,35 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
 }
 
 // ── HotCuePad ─────────────────────────────────────────────────────────────────
+
+// ── Analysis indicator ────────────────────────────────────────────────────────
+
+function AnalysisIndicator({ state, onAnalyze, hasTrack }: {
+  state: AnalysisState
+  onAnalyze: () => void
+  hasTrack: boolean
+}): JSX.Element | null {
+  if (!hasTrack) return null
+  if (state === 'reading-tags' || state === 'analyzing') {
+    return (
+      <span className="text-[10px] text-white/30 shrink-0 animate-pulse">
+        {state === 'reading-tags' ? 'reading tags…' : 'analysing…'}
+      </span>
+    )
+  }
+  if (state === 'idle' || state === 'error') {
+    return (
+      <button
+        onClick={onAnalyze}
+        className="text-[10px] text-accent/60 hover:text-accent shrink-0 transition-colors"
+        title="Analyse BPM and key from audio"
+      >
+        {state === 'error' ? 'retry analysis' : 'analyse'}
+      </button>
+    )
+  }
+  return null
+}
 
 interface HotCuePadProps {
   label: string; index?: number; cue: CuePoint | undefined

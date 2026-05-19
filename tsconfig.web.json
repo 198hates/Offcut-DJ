@@ -3,6 +3,7 @@
   "include": ["src/renderer/src/**/*", "src/shared/**/*", "src/preload/index.d.ts"],
   "compilerOptions": {
     "composite": true,
+    "types": ["vite/client"],
     "paths": {
       "@renderer/*": ["./src/renderer/src/*"],
       "@shared/*": ["./src/shared/*"]

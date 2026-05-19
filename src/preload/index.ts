@@ -36,7 +36,9 @@ const api = {
   },
   audio: {
     readFile: (filePath: string): Promise<ArrayBuffer> =>
-      ipcRenderer.invoke('audio:readFile', filePath)
+      ipcRenderer.invoke('audio:readFile', filePath),
+    readTags: (filePath: string) =>
+      ipcRenderer.invoke('audio:readTags', filePath)
   },
   settings: {
     get: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),

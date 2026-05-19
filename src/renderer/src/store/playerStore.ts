@@ -8,6 +8,8 @@ export const HOT_CUE_COLORS = [
 ]
 export const HOT_CUE_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
+export type AnalysisState = 'idle' | 'reading-tags' | 'analyzing' | 'done' | 'error'
+
 export interface DeckStore {
   currentTrack: Track | null
   isPlaying: boolean
@@ -23,6 +25,9 @@ export interface DeckStore {
   isLooping: boolean
   // Pitch
   playbackRate: number
+  // Analysis
+  analysisState: AnalysisState
+  analyzeCurrentTrack: () => Promise<void>
   loadTrack: (track: Track) => Promise<void>
   togglePlay: () => void
   seek: (time: number) => void
@@ -78,16 +83,21 @@ function createDeckStore(deckId: 'A' | 'B') {
       loopEnd: null,
       isLooping: false,
       playbackRate: 1.0,
+      analysisState: 'idle' as AnalysisState,
       _engine: engine,
 
       loadTrack: async (track) => {
-        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0 })
+        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, analysisState: 'idle' })
         try {
           const ab = await window.api.audio.readFile(track.filePath)
           const { peaks, detailPeaks, duration } = await engine.load(ab)
           set({ waveformPeaks: peaks, detailPeaks, duration, isLoading: false })
           engine.play()
           set({ isPlaying: true })
+          // Auto-analyze if BPM or key is missing
+          if (!track.bpm || !track.key) {
+            get().analyzeCurrentTrack()
+          }
         } catch (err) {
           console.error(`Deck ${deckId}: failed to load`, err)
           set({ isLoading: false })
@@ -206,6 +216,63 @@ function createDeckStore(deckId: 'A' | 'B') {
       clearLoop: () => {
         engine.clearLoop()
         set({ loopStart: null, loopEnd: null, isLooping: false })
+      },
+
+      // ── Analysis ──────────────────────────────────────────────────────
+      analyzeCurrentTrack: async () => {
+        const { currentTrack } = get()
+        if (!currentTrack) return
+
+        // 1. Try reading existing tags first (fast)
+        set({ analysisState: 'reading-tags' })
+        try {
+          const tags = await window.api.audio.readTags(currentTrack.filePath)
+          if (tags) {
+            const patch: Partial<Track> = {}
+            if (!currentTrack.bpm && tags.bpm) patch.bpm = tags.bpm
+            if (!currentTrack.key && tags.key) patch.key = tags.key
+            if (Object.keys(patch).length > 0) {
+              const updated = await window.api.library.updateTrack({ id: currentTrack.id, ...patch })
+              set({ currentTrack: updated })
+              const { useLibraryStore } = await import('./libraryStore')
+              useLibraryStore.setState((s) => ({ tracks: s.tracks.map((t) => t.id === updated.id ? updated : t) }))
+              // If we got both, we're done
+              const refreshed = get().currentTrack!
+              if (refreshed.bpm && refreshed.key) { set({ analysisState: 'done' }); return }
+            }
+          }
+        } catch { /* tags unreadable, fall through to audio analysis */ }
+
+        // 2. Full audio analysis (uses the already-decoded buffer via audioEngine)
+        set({ analysisState: 'analyzing' })
+        try {
+          const { analyzeAudio } = await import('../lib/analyzer')
+          // Re-read the file to get the AudioBuffer for analysis
+          const ab = await window.api.audio.readFile(currentTrack.filePath)
+          const ctx = new AudioContext()
+          const buffer = await ctx.decodeAudioData(ab)
+          ctx.close()
+
+          const result = await analyzeAudio(buffer)
+          const { currentTrack: latest } = get()
+          if (!latest) return
+
+          const patch: Partial<Track> = {}
+          if (!latest.bpm && result.bpm) patch.bpm = result.bpm
+          if (!latest.key && result.key) patch.key = result.key
+
+          if (Object.keys(patch).length > 0) {
+            const updated = await window.api.library.updateTrack({ id: latest.id, ...patch })
+            set({ currentTrack: updated, analysisState: 'done' })
+            const { useLibraryStore } = await import('./libraryStore')
+            useLibraryStore.setState((s) => ({ tracks: s.tracks.map((t) => t.id === updated.id ? updated : t) }))
+          } else {
+            set({ analysisState: 'done' })
+          }
+        } catch (err) {
+          console.error(`Deck ${deckId}: analysis failed`, err)
+          set({ analysisState: 'error' })
+        }
       },
 
       // ── Pitch ─────────────────────────────────────────────────────────

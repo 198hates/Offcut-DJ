@@ -28,6 +28,11 @@ declare global {
       }
       audio: {
         readFile: (filePath: string) => Promise<ArrayBuffer>
+        readTags: (filePath: string) => Promise<{
+          bpm: number | null; key: string | null; title: string | null
+          artist: string | null; album: string | null; genre: string | null
+          comment: string | null
+        } | null>
       }
       settings: {
         get: () => Promise<AppSettings>

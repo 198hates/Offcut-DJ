@@ -19,6 +19,7 @@
     "better-sqlite3-multiple-ciphers": "^12.9.0",
     "electron-updater": "^6.3.0",
     "fast-xml-parser": "^4.4.1",
+    "music-metadata": "^11.12.3",
     "zustand": "^4.5.4"
   },
   "devDependencies": {
@@ -74,11 +75,17 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     },
@@ -91,7 +98,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "artifactName": "${productName}-${version}-win-setup.exe"
@@ -105,7 +114,9 @@
       "shortcutName": "DJ Library Manager"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "icon": "resources/icon.icns",
       "category": "Audio",
       "artifactName": "${productName}-${version}-linux-${arch}.AppImage"
