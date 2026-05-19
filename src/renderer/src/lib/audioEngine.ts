@@ -1,6 +1,6 @@
 export interface WaveformData {
-  peaks: Float32Array        // overview — 1000 buckets
-  detailPeaks: Float32Array  // scrolling detail — 8000 buckets
+  peaks: Float32Array
+  detailPeaks: Float32Array
   duration: number
 }
 
@@ -12,13 +12,27 @@ class AudioEngine {
   private buffer: AudioBuffer | null = null
   private source: AudioBufferSourceNode | null = null
   private gainNode: GainNode | null = null
-  private startedAt = 0
-  private pausedAt = 0
+
+  // Playback tracking
+  private startPos = 0            // buffer position when source last started
+  private startedAt = 0           // ctx.currentTime when source last started
   private _playing = false
+
+  // Settings that persist across play() calls
   private _volume = 0.8
+  private _rate = 1.0
+  private _looping = false
+  private _loopStart = 0
+  private _loopEnd = 0
+
+  // Paused position
+  private pausedAt = 0
+
   private rafId = 0
   private timeCbs: TimeCallback[] = []
   private endCbs: VoidCallback[] = []
+
+  // ── Context ───────────────────────────────────────────────────────────────
 
   private getCtx(): AudioContext {
     if (!this.ctx) {
@@ -31,9 +45,13 @@ class AudioEngine {
     return this.ctx
   }
 
+  // ── Load ──────────────────────────────────────────────────────────────────
+
   async load(arrayBuffer: ArrayBuffer): Promise<WaveformData> {
     const ctx = this.getCtx()
     this.stop()
+    this._looping = false
+    this._rate = 1.0
     this.buffer = await ctx.decodeAudioData(arrayBuffer.slice(0))
     this.pausedAt = 0
     return {
@@ -43,12 +61,27 @@ class AudioEngine {
     }
   }
 
+  // ── Playback ──────────────────────────────────────────────────────────────
+
   play(from?: number): void {
     if (!this.buffer || !this.gainNode) return
     const ctx = this.getCtx()
     this._stopSource()
+
+    const pos = Math.max(0, Math.min(from ?? this.pausedAt, this.buffer.duration))
+    this.startPos = pos
+    this.startedAt = ctx.currentTime
+
     this.source = ctx.createBufferSource()
     this.source.buffer = this.buffer
+    this.source.playbackRate.value = this._rate
+
+    if (this._looping && this._loopEnd > this._loopStart) {
+      this.source.loop = true
+      this.source.loopStart = this._loopStart
+      this.source.loopEnd = this._loopEnd
+    }
+
     this.source.connect(this.gainNode)
     this.source.onended = () => {
       if (this._playing) {
@@ -58,8 +91,6 @@ class AudioEngine {
         cancelAnimationFrame(this.rafId)
       }
     }
-    const pos = from ?? this.pausedAt
-    this.startedAt = ctx.currentTime - pos
     this.source.start(0, pos)
     this._playing = true
     this._tick()
@@ -90,21 +121,69 @@ class AudioEngine {
     }
   }
 
-  get currentTime(): number {
-    if (!this.ctx) return 0
-    return this._playing
-      ? Math.min(this.ctx.currentTime - this.startedAt, this.buffer?.duration ?? 0)
-      : this.pausedAt
+  // ── Loop ──────────────────────────────────────────────────────────────────
+
+  setLoop(start: number, end: number): void {
+    this._loopStart = Math.max(0, start)
+    this._loopEnd = Math.min(end, this.buffer?.duration ?? end)
+    this._looping = true
+    if (this.source) {
+      this.source.loop = true
+      this.source.loopStart = this._loopStart
+      this.source.loopEnd = this._loopEnd
+    }
   }
 
-  get duration(): number { return this.buffer?.duration ?? 0 }
-  get isPlaying(): boolean { return this._playing }
+  clearLoop(): void {
+    this._looping = false
+    if (this.source) this.source.loop = false
+  }
+
+  get isLooping(): boolean { return this._looping }
+  get loopStart(): number { return this._loopStart }
+  get loopEnd(): number { return this._loopEnd }
+
+  // ── Playback rate ─────────────────────────────────────────────────────────
+
+  set playbackRate(r: number) {
+    this._rate = Math.max(0.5, Math.min(2.0, r))
+    if (this.source) this.source.playbackRate.value = this._rate
+    // Recalculate startedAt so currentTime stays continuous
+    if (this._playing && this.ctx) {
+      const t = this.currentTime
+      this.startPos = t
+      this.startedAt = this.ctx.currentTime
+    }
+  }
+  get playbackRate(): number { return this._rate }
+
+  // ── Volume ────────────────────────────────────────────────────────────────
 
   set volume(v: number) {
     this._volume = Math.max(0, Math.min(1, v))
     if (this.gainNode) this.gainNode.gain.value = this._volume
   }
   get volume(): number { return this._volume }
+
+  // ── Time ─────────────────────────────────────────────────────────────────
+
+  get currentTime(): number {
+    if (!this.ctx || !this._playing) return this.pausedAt
+    let t = this.startPos + (this.ctx.currentTime - this.startedAt) * this._rate
+    // Wrap within loop region so UI position stays accurate
+    if (this._looping && this._loopEnd > this._loopStart) {
+      const len = this._loopEnd - this._loopStart
+      if (t > this._loopEnd) {
+        t = this._loopStart + ((t - this._loopStart) % len)
+      }
+    }
+    return Math.min(t, this.buffer?.duration ?? t)
+  }
+
+  get duration(): number { return this.buffer?.duration ?? 0 }
+  get isPlaying(): boolean { return this._playing }
+
+  // ── Callbacks ─────────────────────────────────────────────────────────────
 
   onTimeUpdate(cb: TimeCallback): () => void {
     this.timeCbs.push(cb)
@@ -114,6 +193,8 @@ class AudioEngine {
     this.endCbs.push(cb)
     return () => { this.endCbs = this.endCbs.filter((c) => c !== cb) }
   }
+
+  // ── Internal ──────────────────────────────────────────────────────────────
 
   private _stopSource(): void {
     if (this.source) {
@@ -148,5 +229,4 @@ function computePeaks(buf: AudioBuffer, buckets: number): Float32Array {
   return peaks
 }
 
-// Use AudioEngine directly — instantiate one per deck
 export { AudioEngine }

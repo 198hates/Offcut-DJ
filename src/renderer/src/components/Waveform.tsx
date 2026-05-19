@@ -2,22 +2,28 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 import type { CuePoint } from '@shared/types'
 
 interface Props {
-  peaks: Float32Array | null          // 8000-bucket detail peaks
+  peaks: Float32Array | null
   duration: number
   currentTime: number
   cuePoints: CuePoint[]
   mainCueTime: number | null
+  loopStart?: number | null
+  loopEnd?: number | null
+  isLooping?: boolean
   onSeek: (time: number) => void
   isLoading?: boolean
 }
 
-// Default zoom: show ~8 seconds of audio
-const DEFAULT_PPS = 100 // pixels per second
+const DEFAULT_PPS = 100
 
-export function Waveform({ peaks, duration, currentTime, cuePoints, mainCueTime, onSeek, isLoading }: Props): JSX.Element {
+export function Waveform({
+  peaks, duration, currentTime, cuePoints, mainCueTime,
+  loopStart, loopEnd, isLooping,
+  onSeek, isLoading
+}: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 })
-  const [pps, setPps] = useState(DEFAULT_PPS) // pixels per second (zoom)
+  const [pps, setPps] = useState(DEFAULT_PPS)
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -31,28 +37,22 @@ export function Waveform({ peaks, duration, currentTime, cuePoints, mainCueTime,
     const mid = ch / 2
     ctx.clearRect(0, 0, cw, ch)
 
-    // ── Center line ──────────────────────────────────────────────────────
-    ctx.fillStyle = 'rgba(255,255,255,0.06)'
-    ctx.fillRect(0, mid - 0.5, cw, 1)
-
     if (!peaks || duration === 0) return
 
     const ppsScaled = pps * dpr
     const visibleDuration = cw / ppsScaled
     const startTime = currentTime - visibleDuration / 2
 
-    // ── Build two gradient fill styles ───────────────────────────────────
-    // Unplayed: Rekordbox-style cyan/blue gradient, bright white at center
+    // ── Gradients ────────────────────────────────────────────────────────
     const uGrad = ctx.createLinearGradient(0, 0, 0, ch)
     uGrad.addColorStop(0,    'rgba(0,120,200,0.55)')
     uGrad.addColorStop(0.25, 'rgba(0,180,255,0.85)')
     uGrad.addColorStop(0.45, 'rgba(80,230,255,1.0)')
-    uGrad.addColorStop(0.5,  'rgba(255,255,255,1.0)')  // center line — white
+    uGrad.addColorStop(0.5,  'rgba(255,255,255,1.0)')
     uGrad.addColorStop(0.55, 'rgba(80,230,255,1.0)')
     uGrad.addColorStop(0.75, 'rgba(0,180,255,0.85)')
     uGrad.addColorStop(1,    'rgba(0,120,200,0.55)')
 
-    // Played: desaturated slate-gray, same shape
     const pGrad = ctx.createLinearGradient(0, 0, 0, ch)
     pGrad.addColorStop(0,   'rgba(50,70,90,0.5)')
     pGrad.addColorStop(0.4, 'rgba(90,115,135,0.75)')
@@ -60,18 +60,31 @@ export function Waveform({ peaks, duration, currentTime, cuePoints, mainCueTime,
     pGrad.addColorStop(0.6, 'rgba(90,115,135,0.75)')
     pGrad.addColorStop(1,   'rgba(50,70,90,0.5)')
 
-    // ── Draw bars pixel-column by pixel-column ───────────────────────────
-    // No gap between bars — solid fill like Rekordbox
-    const BAR_W = Math.max(2, Math.round(2 * dpr))
-    const STEP  = BAR_W
+    // ── Loop region highlight ─────────────────────────────────────────────
+    if (loopStart != null && loopEnd != null && loopEnd > loopStart) {
+      const lx1 = ((loopStart - startTime) / visibleDuration) * cw
+      const lx2 = ((loopEnd - startTime) / visibleDuration) * cw
+      ctx.fillStyle = isLooping ? 'rgba(255,165,0,0.18)' : 'rgba(255,165,0,0.08)'
+      ctx.fillRect(lx1, 0, lx2 - lx1, ch)
+      // Loop bracket lines
+      ctx.fillStyle = isLooping ? 'rgba(255,165,0,0.9)' : 'rgba(255,165,0,0.5)'
+      ctx.fillRect(lx1, 0, 2, ch)
+      ctx.fillRect(lx2 - 2, 0, 2, ch)
+      // Top/bottom horizontal bars
+      ctx.fillRect(lx1, 0, 8, 2)
+      ctx.fillRect(lx1, ch - 2, 8, 2)
+      ctx.fillRect(lx2 - 8, 0, 8, 2)
+      ctx.fillRect(lx2 - 8, ch - 2, 8, 2)
+    }
 
-    for (let x = 0; x < cw; x += STEP) {
+    // ── Waveform bars ────────────────────────────────────────────────────
+    const BAR_W = Math.max(2, Math.round(2 * dpr))
+    for (let x = 0; x < cw; x += BAR_W) {
       const t = startTime + (x / cw) * visibleDuration
       if (t < 0 || t > duration) continue
       const idx = Math.min(peaks.length - 1, Math.max(0, Math.round((t / duration) * peaks.length)))
       const bh = peaks[idx] * mid * 0.88
       if (bh < 0.5) continue
-
       ctx.fillStyle = t < currentTime ? pGrad : uGrad
       ctx.fillRect(x, mid - bh, BAR_W, bh * 2)
     }
@@ -84,14 +97,9 @@ export function Waveform({ peaks, duration, currentTime, cuePoints, mainCueTime,
       const color = cue.color || '#ff8c00'
       ctx.fillStyle = color
       ctx.fillRect(x - 1, 0, 2, ch)
-      // Triangle at top
       ctx.beginPath()
-      ctx.moveTo(x - 5 * dpr, 0)
-      ctx.lineTo(x + 5 * dpr, 0)
-      ctx.lineTo(x, 8 * dpr)
-      ctx.closePath()
-      ctx.fill()
-      // Label
+      ctx.moveTo(x - 5 * dpr, 0); ctx.lineTo(x + 5 * dpr, 0); ctx.lineTo(x, 8 * dpr)
+      ctx.closePath(); ctx.fill()
       if (cue.label) {
         ctx.font = `bold ${10 * dpr}px monospace`
         ctx.fillStyle = color
@@ -107,32 +115,23 @@ export function Waveform({ peaks, duration, currentTime, cuePoints, mainCueTime,
         ctx.fillStyle = '#00ff88'
         ctx.fillRect(x - 1, 0, 2, ch)
         ctx.beginPath()
-        ctx.moveTo(x - 5 * dpr, ch)
-        ctx.lineTo(x + 5 * dpr, ch)
-        ctx.lineTo(x, ch - 8 * dpr)
-        ctx.closePath()
-        ctx.fill()
+        ctx.moveTo(x - 5 * dpr, ch); ctx.lineTo(x + 5 * dpr, ch); ctx.lineTo(x, ch - 8 * dpr)
+        ctx.closePath(); ctx.fill()
       }
     }
 
-    // ── Center baseline (1px) ────────────────────────────────────────────
+    // ── Center baseline ───────────────────────────────────────────────────
     ctx.fillStyle = 'rgba(255,255,255,0.12)'
     ctx.fillRect(0, mid - 0.5, cw, 1)
 
-    // ── Playhead (center) ────────────────────────────────────────────────
+    // ── Playhead ──────────────────────────────────────────────────────────
     const cx = cw / 2
-    // Glow halo
-    ctx.fillStyle = 'rgba(255,255,255,0.07)'
-    ctx.fillRect(cx - 6 * dpr, 0, 12 * dpr, ch)
-    ctx.fillStyle = 'rgba(255,255,255,0.15)'
-    ctx.fillRect(cx - 3 * dpr, 0, 6 * dpr, ch)
-    // Sharp 2px line
-    ctx.fillStyle = 'rgba(255,255,255,0.97)'
-    ctx.fillRect(cx - dpr, 0, 2 * dpr, ch)
+    ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(cx - 6 * dpr, 0, 12 * dpr, ch)
+    ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(cx - 3 * dpr, 0, 6 * dpr, ch)
+    ctx.fillStyle = 'rgba(255,255,255,0.97)'; ctx.fillRect(cx - dpr, 0, 2 * dpr, ch)
 
-  }, [peaks, currentTime, duration, cuePoints, mainCueTime, pps])
+  }, [peaks, currentTime, duration, cuePoints, mainCueTime, loopStart, loopEnd, isLooping, pps])
 
-  // Resize observer
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -140,8 +139,7 @@ export function Waveform({ peaks, duration, currentTime, cuePoints, mainCueTime,
       const dpr = window.devicePixelRatio || 1
       const w = canvas.offsetWidth
       const h = canvas.offsetHeight
-      canvas.width = w * dpr
-      canvas.height = h * dpr
+      canvas.width = w * dpr; canvas.height = h * dpr
       sizeRef.current = { w, h, dpr }
       draw()
     })
@@ -154,9 +152,8 @@ export function Waveform({ peaks, duration, currentTime, cuePoints, mainCueTime,
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!duration || !sizeRef.current.w) return
     const { w, dpr } = sizeRef.current
-    const ppsScaled = pps * dpr
     const cw = w * dpr
-    const visibleDuration = cw / ppsScaled
+    const visibleDuration = cw / (pps * dpr)
     const rect = e.currentTarget.getBoundingClientRect()
     const xFrac = (e.clientX - rect.left) / rect.width
     const t = (currentTime - visibleDuration / 2) + xFrac * visibleDuration
@@ -178,15 +175,10 @@ export function Waveform({ peaks, duration, currentTime, cuePoints, mainCueTime,
           Load a track
         </div>
       )}
-      <canvas
-        ref={canvasRef}
-        className="flex-1 w-full cursor-crosshair block"
-        onClick={handleClick}
-      />
-      {/* Zoom controls */}
+      <canvas ref={canvasRef} className="flex-1 w-full cursor-crosshair block" onClick={handleClick} />
       <div className="absolute bottom-1 right-1 flex gap-0.5">
-        <button onClick={zoomOut} className="w-5 h-5 rounded bg-black/50 text-white/50 hover:text-white text-xs flex items-center justify-center leading-none" title="Zoom out (-)">−</button>
-        <button onClick={zoomIn}  className="w-5 h-5 rounded bg-black/50 text-white/50 hover:text-white text-xs flex items-center justify-center leading-none" title="Zoom in (+)">+</button>
+        <button onClick={zoomOut} className="w-5 h-5 rounded bg-black/50 text-white/50 hover:text-white text-xs flex items-center justify-center">−</button>
+        <button onClick={zoomIn}  className="w-5 h-5 rounded bg-black/50 text-white/50 hover:text-white text-xs flex items-center justify-center">+</button>
       </div>
     </div>
   )

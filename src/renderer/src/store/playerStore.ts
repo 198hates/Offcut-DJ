@@ -17,6 +17,12 @@ export interface DeckStore {
   detailPeaks: Float32Array | null
   isLoading: boolean
   mainCueTime: number | null
+  // Loop
+  loopStart: number | null
+  loopEnd: number | null
+  isLooping: boolean
+  // Pitch
+  playbackRate: number
   loadTrack: (track: Track) => Promise<void>
   togglePlay: () => void
   seek: (time: number) => void
@@ -26,6 +32,14 @@ export interface DeckStore {
   clearCue: (index: number) => Promise<void>
   jumpToCue: (index: number) => void
   setMemoryCue: () => Promise<void>
+  // Loop actions
+  setLoopIn: () => void
+  setLoopOut: () => void
+  beatLoop: (bars: number) => void
+  toggleLoop: () => void
+  clearLoop: () => void
+  // Pitch action
+  setPlaybackRate: (rate: number) => void
   _engine: AudioEngine
 }
 
@@ -60,10 +74,14 @@ function createDeckStore(deckId: 'A' | 'B') {
       detailPeaks: null,
       isLoading: false,
       mainCueTime: null,
+      loopStart: null,
+      loopEnd: null,
+      isLooping: false,
+      playbackRate: 1.0,
       _engine: engine,
 
       loadTrack: async (track) => {
-        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, currentTime: 0, mainCueTime: null })
+        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0 })
         try {
           const ab = await window.api.audio.readFile(track.filePath)
           const { peaks, detailPeaks, duration } = await engine.load(ab)
@@ -135,6 +153,65 @@ function createDeckStore(deckId: 'A' | 'B') {
       jumpToCue: (index) => {
         const cue = get().currentTrack?.cuePoints.find((c) => c.type === 'hotcue' && c.index === index)
         if (cue) engine.seek(cue.positionMs / 1000)
+      },
+
+      // ── Loop ──────────────────────────────────────────────────────────
+      setLoopIn: () => {
+        const { currentTime } = get()
+        set({ loopStart: currentTime })
+        // If we already have a loopEnd past this point, activate immediately
+        const { loopEnd } = get()
+        if (loopEnd !== null && loopEnd > currentTime) {
+          engine.setLoop(currentTime, loopEnd)
+          set({ isLooping: true })
+        }
+      },
+
+      setLoopOut: () => {
+        const { currentTime, loopStart } = get()
+        set({ loopEnd: currentTime })
+        if (loopStart !== null && loopStart < currentTime) {
+          engine.setLoop(loopStart, currentTime)
+          set({ isLooping: true })
+        }
+      },
+
+      beatLoop: (bars: number) => {
+        const { currentTime, currentTrack } = get()
+        const bpm = currentTrack?.bpm ?? 128
+        const barDuration = (60 / bpm) * 4
+        const loopLen = bars * barDuration
+        const start = currentTime
+        const end = currentTime + loopLen
+        engine.setLoop(start, end)
+        // If not playing, start playback from loop start
+        if (!engine.isPlaying) {
+          engine.play(start)
+          set({ isPlaying: true })
+        }
+        set({ loopStart: start, loopEnd: end, isLooping: true })
+      },
+
+      toggleLoop: () => {
+        const { loopStart, loopEnd, isLooping } = get()
+        if (isLooping) {
+          engine.clearLoop()
+          set({ isLooping: false })
+        } else if (loopStart !== null && loopEnd !== null && loopEnd > loopStart) {
+          engine.setLoop(loopStart, loopEnd)
+          set({ isLooping: true })
+        }
+      },
+
+      clearLoop: () => {
+        engine.clearLoop()
+        set({ loopStart: null, loopEnd: null, isLooping: false })
+      },
+
+      // ── Pitch ─────────────────────────────────────────────────────────
+      setPlaybackRate: (rate: number) => {
+        engine.playbackRate = rate
+        set({ playbackRate: rate })
       },
 
       setMemoryCue: async () => {

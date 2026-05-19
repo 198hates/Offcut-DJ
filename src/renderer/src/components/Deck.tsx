@@ -28,8 +28,10 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
   const {
     currentTrack, isPlaying, currentTime, duration,
     waveformPeaks, detailPeaks, isLoading, mainCueTime,
+    loopStart, loopEnd, isLooping, playbackRate,
     togglePlay, seek, pressCue,
-    setCue, clearCue, jumpToCue, setMemoryCue
+    setCue, clearCue, jumpToCue, setMemoryCue,
+    setLoopIn, setLoopOut, beatLoop, toggleLoop, clearLoop, setPlaybackRate
   } = useStore()
 
   const isRight = label === 'B'
@@ -128,9 +130,63 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           currentTime={currentTime}
           cuePoints={currentTrack?.cuePoints ?? []}
           mainCueTime={mainCueTime}
+          loopStart={loopStart}
+          loopEnd={loopEnd}
+          isLooping={isLooping}
           onSeek={seek}
           isLoading={isLoading}
         />
+      </div>
+
+      {/* ── Loop controls + pitch ─────────────────────────────────────── */}
+      <div className={`flex items-center gap-1.5 px-2 py-1 border-t border-white/[0.04] ${isRight ? 'flex-row-reverse' : ''}`}>
+        {/* Beat loop buttons */}
+        {[0.5, 1, 2, 4, 8].map((bars) => (
+          <button
+            key={bars}
+            onClick={() => beatLoop(bars)}
+            disabled={!currentTrack}
+            title={`${bars} bar loop`}
+            className="h-7 px-2 rounded text-xs font-bold border border-white/15 text-white/50 hover:border-orange-400/50 hover:text-orange-300 hover:bg-orange-400/10 transition-colors disabled:opacity-25"
+          >
+            {bars < 1 ? '½' : bars}
+          </button>
+        ))}
+
+        <div className="w-px h-5 bg-white/10 mx-0.5 shrink-0" />
+
+        {/* IN / OUT / LOOP */}
+        <button onClick={setLoopIn}  disabled={!currentTrack} className="h-7 px-2 rounded text-xs font-bold border border-white/15 text-white/50 hover:border-orange-400/50 hover:text-orange-300 transition-colors disabled:opacity-25">IN</button>
+        <button onClick={setLoopOut} disabled={!currentTrack} className="h-7 px-2 rounded text-xs font-bold border border-white/15 text-white/50 hover:border-orange-400/50 hover:text-orange-300 transition-colors disabled:opacity-25">OUT</button>
+        <button
+          onClick={toggleLoop}
+          disabled={!currentTrack || (loopStart === null && loopEnd === null)}
+          className={`h-7 px-2.5 rounded text-xs font-bold border transition-colors disabled:opacity-25 ${
+            isLooping ? 'border-orange-400 text-orange-300 bg-orange-400/15' : 'border-white/15 text-white/50 hover:border-orange-400/50 hover:text-orange-300'
+          }`}
+        >
+          LOOP
+        </button>
+        <button onClick={clearLoop} disabled={!currentTrack || (loopStart === null)} className="h-7 px-2 rounded text-xs border border-white/10 text-white/25 hover:text-red-400/70 transition-colors disabled:opacity-25" title="Clear loop">✕</button>
+
+        <div className="flex-1" />
+
+        {/* Pitch */}
+        <div className={`flex items-center gap-1.5 ${isRight ? 'flex-row-reverse' : ''}`}>
+          <span className="text-[10px] text-white/30 tabular-nums w-10 text-center">
+            {playbackRate === 1 ? '±0%' : `${playbackRate > 1 ? '+' : ''}${((playbackRate - 1) * 100).toFixed(1)}%`}
+          </span>
+          <input
+            type="range" min={0.92} max={1.08} step={0.001}
+            value={playbackRate}
+            onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
+            onDoubleClick={() => setPlaybackRate(1.0)}
+            disabled={!currentTrack}
+            className="w-20 h-1 cursor-pointer accent-orange-400 disabled:opacity-25"
+            title="Pitch/tempo — double-click to reset"
+          />
+          <span className="text-[10px] text-white/25">PITCH</span>
+        </div>
       </div>
 
       {/* ── Transport + hotcue pads ───────────────────────────────────── */}

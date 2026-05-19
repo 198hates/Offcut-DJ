@@ -6,7 +6,7 @@ export function Player(): JSX.Element {
   return (
     <div
       className="flex shrink-0 bg-surface-900 border-t border-white/[0.06]"
-      style={{ height: 260 }}
+      style={{ height: 300 }}
     >
       <Deck useStore={useDeckAStore} label="A" keyMod="none" />
       <Mixer />
