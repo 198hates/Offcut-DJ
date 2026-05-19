@@ -1,0 +1,102 @@
+import Database from 'better-sqlite3'
+import { app } from 'electron'
+import { join } from 'path'
+import { SCHEMA_SQL } from './schema'
+import type { Track, Playlist } from '../../shared/types'
+
+let _db: Database.Database | null = null
+
+export function getLibraryDb(): Database.Database {
+  if (_db) return _db
+
+  const dbPath = join(app.getPath('userData'), 'library.db')
+  _db = new Database(dbPath)
+  _db.pragma('journal_mode = WAL')
+  _db.pragma('foreign_keys = ON')
+  _db.exec(SCHEMA_SQL)
+
+  return _db
+}
+
+export function rowToTrack(row: Record<string, unknown>): Track {
+  return {
+    id: row.id as string,
+    filePath: row.file_path as string,
+    title: row.title as string,
+    artist: row.artist as string,
+    album: row.album as string,
+    genre: row.genre as string,
+    bpm: row.bpm as number | null,
+    key: row.key as string | null,
+    durationSeconds: row.duration_seconds as number | null,
+    rating: row.rating as number,
+    dateAdded: row.date_added as string,
+    comment: row.comment as string,
+    tags: JSON.parse(row.tags as string),
+    cuePoints: JSON.parse(row.cue_points as string),
+    beatgrid: JSON.parse(row.beatgrid as string),
+    sourceIds: JSON.parse(row.source_ids as string)
+  }
+}
+
+export function rowToPlaylist(
+  row: Record<string, unknown>,
+  trackIds: string[] = []
+): Playlist {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    isFolder: Boolean(row.is_folder),
+    parentId: (row.parent_id as string) || null,
+    sortOrder: row.sort_order as number,
+    trackIds,
+    sourceIds: JSON.parse(row.source_ids as string)
+  }
+}
+
+export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
+  db.prepare(`
+    INSERT INTO tracks (
+      id, file_path, title, artist, album, genre, bpm, key,
+      duration_seconds, rating, date_added, comment,
+      tags, cue_points, beatgrid, source_ids
+    ) VALUES (
+      @id, @filePath, @title, @artist, @album, @genre, @bpm, @key,
+      @durationSeconds, @rating, @dateAdded, @comment,
+      @tags, @cuePoints, @beatgrid, @sourceIds
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      file_path = excluded.file_path,
+      title = excluded.title,
+      artist = excluded.artist,
+      album = excluded.album,
+      genre = excluded.genre,
+      bpm = excluded.bpm,
+      key = excluded.key,
+      duration_seconds = excluded.duration_seconds,
+      rating = excluded.rating,
+      comment = excluded.comment,
+      tags = excluded.tags,
+      cue_points = excluded.cue_points,
+      beatgrid = excluded.beatgrid,
+      source_ids = excluded.source_ids,
+      updated_at = datetime('now')
+  `).run({
+    id: track.id,
+    filePath: track.filePath,
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    genre: track.genre,
+    bpm: track.bpm,
+    key: track.key,
+    durationSeconds: track.durationSeconds,
+    rating: track.rating,
+    dateAdded: track.dateAdded,
+    comment: track.comment,
+    tags: JSON.stringify(track.tags),
+    cuePoints: JSON.stringify(track.cuePoints),
+    beatgrid: JSON.stringify(track.beatgrid),
+    sourceIds: JSON.stringify(track.sourceIds)
+  })
+}

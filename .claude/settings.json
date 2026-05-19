@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm show *)",
+      "Bash(node -e \"const v=JSON.parse\\(require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\)\\); console.log\\(v.slice\\(-5\\).join\\(', '\\)\\)\")",
+      "Bash(node -e \"const v=JSON.parse\\(require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\)\\); console.log\\(v.slice\\(-3\\).join\\(', '\\)\\)\")",
+      "Bash(xxd)",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/check_electron.sh)",
+      "Bash(/tmp/check_electron.sh)",
+      "Bash(\"./node_modules/electron/dist/Electron.app/Contents/MacOS/Electron\" out/test-builtin.js)",
+      "Bash(\"/Users/nathanchambers/Library/CloudStorage/OneDrive-PeppermintEventsLimited/Documents/GitHub/DJ/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron\" /tmp/electron-test)",
+      "Bash(npm install *)",
+      "Bash(./node_modules/.bin/electron --version)",
+      "Bash(\"./node_modules/.bin/electron\" /tmp/electron-test)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(codesign -v \"/Users/nathanchambers/Library/CloudStorage/OneDrive-PeppermintEventsLimited/Documents/GitHub/DJ/node_modules/electron/dist/Electron.app\")",
+      "Bash(spctl --assess --type exec \"/Users/nathanchambers/Library/CloudStorage/OneDrive-PeppermintEventsLimited/Documents/GitHub/DJ/node_modules/electron/dist/Electron.app\")",
+      "Bash(open -a \"/Users/nathanchambers/Library/CloudStorage/OneDrive-PeppermintEventsLimited/Documents/GitHub/DJ/node_modules/electron/dist/Electron.app\" --args /tmp/electron-clean)",
+      "Bash(log show *)",
+      "Bash(xattr -l \"/Users/nathanchambers/Library/CloudStorage/OneDrive-PeppermintEventsLimited/Documents/GitHub/DJ/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron\")",
+      "Read(//Applications/**)",
+      "Bash(\"/Users/nathanchambers/Library/CloudStorage/OneDrive-PeppermintEventsLimited/Documents/GitHub/DJ/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron\" --version)",
+      "Bash(ELECTRON_RENDERER_URL=http://localhost:5173 \"./node_modules/.bin/electron\" /tmp/electron-clean)",
+      "Bash(npm run *)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(sleep 10 && cat /tmp/dj-dev2.log)",
+      "Read(//private/tmp/**)",
+      "Bash(npx electron-vite *)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(node node_modules/.bin/electron-vite build)",
+      "Bash(node -e ' *)",
+      "Bash(ELECTRON_RUN_AS_NODE= npm exec -- electron-vite build)",
+      "Bash(kill 58499)",
+      "Bash(ps -p 59410 -o pid,ppid,state,command)",
+      "Bash(kill 59863)",
+      "Bash(ps -p 60049 -o pid,ppid,state,command)",
+      "Bash(ELECTRON_RUN_AS_NODE='' node -e ' *)"
+    ]
+  }
+}
