@@ -34,60 +34,28 @@ export function isRekordboxDbAvailable(dbPath?: string): boolean {
 }
 
 // ── Cipher negotiation ───────────────────────────────────────────────────────
-// Tries every known SQLCipher opening sequence. Logs results to the terminal.
-// Returns an open, verified database or null.
-
-// Each attempt uses exec() (sqlite3_exec) rather than pragma() (sqlite3_prepare_v2)
-// because SQLCipher key pragmas must be executed via sqlite3_exec before page reads.
-const CIPHER_ATTEMPTS: { label: string; setup: (db: InstanceType<typeof SqlCipherDatabase>) => void }[] = [
-  // exec() path — bypasses better-sqlite3's prepared-statement layer
-  { label: 'exec: sqlcipher+legacy4+hexkey',      setup: (db) => db.exec(`PRAGMA cipher='sqlcipher'; PRAGMA legacy=4; PRAGMA hexkey="${RB_KEY}"`) },
-  { label: 'exec: compat4+hexkey',                setup: (db) => db.exec(`PRAGMA cipher_compatibility=4; PRAGMA hexkey="${RB_KEY}"`) },
-  { label: "exec: sqlcipher+legacy4+key-x",       setup: (db) => db.exec(`PRAGMA cipher='sqlcipher'; PRAGMA legacy=4; PRAGMA key="x'${RB_KEY}'"`) },
-  { label: "exec: compat4+key-x",                 setup: (db) => db.exec(`PRAGMA cipher_compatibility=4; PRAGMA key="x'${RB_KEY}'"`) },
-  { label: "exec: key-x only",                    setup: (db) => db.exec(`PRAGMA key="x'${RB_KEY}'"`) },
-  { label: 'exec: sqlcipher+legacy3+hexkey',      setup: (db) => db.exec(`PRAGMA cipher='sqlcipher'; PRAGMA legacy=3; PRAGMA hexkey="${RB_KEY}"`) },
-  // pragma() path — uses prepared statements
-  { label: 'pragma: sqlcipher+legacy4+hexkey',    setup: (db) => { db.pragma("cipher='sqlcipher'"); db.pragma('legacy=4'); db.pragma(`hexkey="${RB_KEY}"`) } },
-  { label: 'pragma: compat4+hexkey',              setup: (db) => { db.pragma('cipher_compatibility=4'); db.pragma(`hexkey="${RB_KEY}"`) } },
-  { label: "pragma: sqlcipher+legacy4+key-x",     setup: (db) => { db.pragma("cipher='sqlcipher'"); db.pragma('legacy=4'); db.pragma(`key="x'${RB_KEY}'"`) } },
-]
+// Rekordbox 6/7 uses SQLCipher 4 with the key as an ASCII passphrase through
+// PBKDF2-HMAC-SHA512 (256000 iterations). The key looks like hex but is NOT
+// used as raw bytes — it is treated as a 64-character ASCII string by SQLCipher.
 
 function openRekordboxDb(
   masterDbPath: string,
   readonly: boolean
 ): InstanceType<typeof SqlCipherDatabase> | null {
-  // Write to a log file because Electron child process stdout isn't always captured
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { appendFileSync } = require('fs') as typeof import('fs')
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { tmpdir } = require('os') as typeof import('os')
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { join } = require('path') as typeof import('path')
-  const logPath = join(tmpdir(), 'crate-rekordbox.log')
-  const log = (msg: string): void => {
-    const line = `[${new Date().toISOString()}] ${msg}\n`
-    process.stdout.write(line)
-    try { appendFileSync(logPath, line) } catch { /* ignore */ }
+  let db: InstanceType<typeof SqlCipherDatabase> | null = null
+  try {
+    db = new SqlCipherDatabase(masterDbPath, { readonly })
+    db.pragma("cipher='sqlcipher'")
+    db.pragma('legacy=4')
+    db.exec(`PRAGMA key='${RB_KEY}'`)
+    // Verify the database is accessible
+    db.prepare('SELECT COUNT(*) as c FROM djmdContent').get()
+    return db
+  } catch (err) {
+    try { db?.close() } catch { /* ignore */ }
+    console.error(`[rekordbox] Cannot open database: ${(err as Error).message}`)
+    return null
   }
-
-  log(`Trying to open: ${masterDbPath}`)
-
-  for (const attempt of CIPHER_ATTEMPTS) {
-    let db: InstanceType<typeof SqlCipherDatabase> | null = null
-    try {
-      db = new SqlCipherDatabase(masterDbPath, { readonly })
-      attempt.setup(db)
-      const row = db.prepare('SELECT COUNT(*) as c FROM djmdContent').get() as { c: number }
-      log(`SUCCESS with "${attempt.label}" — ${row.c} tracks`)
-      return db
-    } catch (err) {
-      log(`FAIL "${attempt.label}" → ${(err as Error).message}`)
-      try { db?.close() } catch { /* ignore */ }
-    }
-  }
-  log(`All attempts failed. Full log at: ${logPath}`)
-  return null
 }
 
 // ── Import (Rekordbox → Internal library) ────────────────────────────────────
