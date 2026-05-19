@@ -1,157 +1,163 @@
 import { create } from 'zustand'
-import { audioEngine } from '../lib/audioEngine'
+import { AudioEngine } from '../lib/audioEngine'
 import type { Track, CuePoint } from '@shared/types'
 
-// Default hotcue colours A–H (matches Rekordbox palette)
 export const HOT_CUE_COLORS = [
   '#e91e63', '#ff9800', '#ffeb3b', '#4caf50',
   '#00bcd4', '#2196f3', '#9c27b0', '#f44336'
 ]
 export const HOT_CUE_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
-interface PlayerStore {
+export interface DeckStore {
   currentTrack: Track | null
   isPlaying: boolean
   currentTime: number
   duration: number
-  waveformPeaks: Float32Array | null       // overview (1000 buckets)
-  detailPeaks: Float32Array | null         // scrolling detail (8000 buckets)
+  waveformPeaks: Float32Array | null
+  detailPeaks: Float32Array | null
   isLoading: boolean
-  mainCueTime: number | null               // Rekordbox-style main CUE point
+  mainCueTime: number | null
   loadTrack: (track: Track) => Promise<void>
   togglePlay: () => void
   seek: (time: number) => void
   setVolume: (v: number) => void
-  // Main CUE (Rekordbox-style)
   pressCue: () => void
-  // Hotcue editing
   setCue: (index: number) => Promise<void>
   clearCue: (index: number) => Promise<void>
   jumpToCue: (index: number) => void
   setMemoryCue: () => Promise<void>
+  _engine: AudioEngine
 }
 
-export const usePlayerStore = create<PlayerStore>((set, get) => {
-  audioEngine.onTimeUpdate((t) => set({ currentTime: t }))
-  audioEngine.onEnded(() => set({ isPlaying: false, currentTime: 0 }))
+function createDeckStore(deckId: 'A' | 'B') {
+  const engine = new AudioEngine()
 
-  const patchTrackCues = async (cuePoints: CuePoint[]): Promise<void> => {
-    const { currentTrack } = get()
+  const patchTrackCues = async (
+    cuePoints: CuePoint[],
+    getState: () => DeckStore,
+    setState: (p: Partial<DeckStore>) => void
+  ): Promise<void> => {
+    const { currentTrack } = getState()
     if (!currentTrack) return
     const updated = await window.api.library.updateTrack({ id: currentTrack.id, cuePoints })
-    set({ currentTrack: updated })
-    // Patch library store in-place so the table stays consistent
+    setState({ currentTrack: updated })
     const { useLibraryStore } = await import('./libraryStore')
     useLibraryStore.setState((s) => ({
       tracks: s.tracks.map((t) => (t.id === updated.id ? updated : t))
     }))
   }
 
-  return {
-    currentTrack: null,
-    isPlaying: false,
-    currentTime: 0,
-    duration: 0,
-    waveformPeaks: null,
-    detailPeaks: null,
-    isLoading: false,
-    mainCueTime: null,
+  return create<DeckStore>((set, get) => {
+    engine.onTimeUpdate((t) => set({ currentTime: t }))
+    engine.onEnded(() => set({ isPlaying: false, currentTime: 0 }))
 
-    loadTrack: async (track) => {
-      set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, currentTime: 0, mainCueTime: null })
-      try {
-        const ab = await window.api.audio.readFile(track.filePath)
-        const { peaks, detailPeaks, duration } = await audioEngine.load(ab)
-        set({ waveformPeaks: peaks, detailPeaks, duration, isLoading: false })
-        audioEngine.play()
-        set({ isPlaying: true })
-      } catch (err) {
-        console.error('Player: failed to load track', err)
-        set({ isLoading: false })
+    return {
+      currentTrack: null,
+      isPlaying: false,
+      currentTime: 0,
+      duration: 0,
+      waveformPeaks: null,
+      detailPeaks: null,
+      isLoading: false,
+      mainCueTime: null,
+      _engine: engine,
+
+      loadTrack: async (track) => {
+        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, currentTime: 0, mainCueTime: null })
+        try {
+          const ab = await window.api.audio.readFile(track.filePath)
+          const { peaks, detailPeaks, duration } = await engine.load(ab)
+          set({ waveformPeaks: peaks, detailPeaks, duration, isLoading: false })
+          engine.play()
+          set({ isPlaying: true })
+        } catch (err) {
+          console.error(`Deck ${deckId}: failed to load`, err)
+          set({ isLoading: false })
+        }
+      },
+
+      togglePlay: () => {
+        if (get().isPlaying) {
+          engine.pause()
+          set({ isPlaying: false })
+        } else {
+          if (!get().currentTrack) return
+          engine.play()
+          set({ isPlaying: true })
+        }
+      },
+
+      seek: (time) => {
+        engine.seek(time)
+        set({ currentTime: time })
+      },
+
+      setVolume: (v) => { engine.volume = v },
+
+      pressCue: () => {
+        const { isPlaying, currentTime, mainCueTime } = get()
+        if (isPlaying) {
+          const t = mainCueTime ?? 0
+          engine.seek(t)
+          engine.pause()
+          set({ isPlaying: false, currentTime: t })
+        } else if (mainCueTime !== null && Math.abs(currentTime - mainCueTime) < 0.05) {
+          engine.play()
+          set({ isPlaying: true })
+        } else {
+          set({ mainCueTime: currentTime })
+        }
+      },
+
+      setCue: async (index) => {
+        const { currentTrack, currentTime } = get()
+        if (!currentTrack) return
+        const newCue: CuePoint = {
+          index,
+          type: 'hotcue',
+          positionMs: Math.round(currentTime * 1000),
+          color: HOT_CUE_COLORS[index] ?? '#ff8c00',
+          label: HOT_CUE_LABELS[index] ?? String(index + 1)
+        }
+        const rest = currentTrack.cuePoints.filter((c) => !(c.type === 'hotcue' && c.index === index))
+        await patchTrackCues([...rest, newCue].sort((a, b) => a.positionMs - b.positionMs), get, set)
+      },
+
+      clearCue: async (index) => {
+        const { currentTrack } = get()
+        if (!currentTrack) return
+        await patchTrackCues(
+          currentTrack.cuePoints.filter((c) => !(c.type === 'hotcue' && c.index === index)),
+          get, set
+        )
+      },
+
+      jumpToCue: (index) => {
+        const cue = get().currentTrack?.cuePoints.find((c) => c.type === 'hotcue' && c.index === index)
+        if (cue) engine.seek(cue.positionMs / 1000)
+      },
+
+      setMemoryCue: async () => {
+        const { currentTrack, currentTime } = get()
+        if (!currentTrack) return
+        const newCue: CuePoint = {
+          index: currentTrack.cuePoints.filter((c) => c.type === 'memory').length,
+          type: 'memory',
+          positionMs: Math.round(currentTime * 1000),
+          color: '#f59e0b',
+          label: ''
+        }
+        await patchTrackCues(
+          [...currentTrack.cuePoints, newCue].sort((a, b) => a.positionMs - b.positionMs),
+          get, set
+        )
       }
-    },
-
-    togglePlay: () => {
-      if (get().isPlaying) {
-        audioEngine.pause()
-        set({ isPlaying: false })
-      } else {
-        if (!get().currentTrack) return
-        audioEngine.play()
-        set({ isPlaying: true })
-      }
-    },
-
-    seek: (time) => {
-      audioEngine.seek(time)
-      set({ currentTime: time })
-    },
-
-    setVolume: (v) => { audioEngine.volume = v },
-
-    pressCue: () => {
-      const { isPlaying, currentTime, mainCueTime } = get()
-      if (isPlaying) {
-        // Return to cue point and pause
-        const t = mainCueTime ?? 0
-        audioEngine.seek(t)
-        audioEngine.pause()
-        set({ isPlaying: false, currentTime: t })
-      } else if (mainCueTime !== null && Math.abs(currentTime - mainCueTime) < 0.05) {
-        // Already at cue — play
-        audioEngine.play()
-        set({ isPlaying: true })
-      } else {
-        // Set new cue point here
-        set({ mainCueTime: currentTime })
-      }
-    },
-
-    setCue: async (index) => {
-      const { currentTrack, currentTime } = get()
-      if (!currentTrack) return
-      const newCue: CuePoint = {
-        index,
-        type: 'hotcue',
-        positionMs: Math.round(currentTime * 1000),
-        color: HOT_CUE_COLORS[index] ?? '#ff8c00',
-        label: HOT_CUE_LABELS[index] ?? String(index + 1)
-      }
-      const rest = currentTrack.cuePoints.filter(
-        (c) => !(c.type === 'hotcue' && c.index === index)
-      )
-      await patchTrackCues([...rest, newCue].sort((a, b) => a.positionMs - b.positionMs))
-    },
-
-    clearCue: async (index) => {
-      const { currentTrack } = get()
-      if (!currentTrack) return
-      await patchTrackCues(
-        currentTrack.cuePoints.filter((c) => !(c.type === 'hotcue' && c.index === index))
-      )
-    },
-
-    jumpToCue: (index) => {
-      const { currentTrack } = get()
-      const cue = currentTrack?.cuePoints.find(
-        (c) => c.type === 'hotcue' && c.index === index
-      )
-      if (cue) audioEngine.seek(cue.positionMs / 1000)
-    },
-
-    setMemoryCue: async () => {
-      const { currentTrack, currentTime } = get()
-      if (!currentTrack) return
-      const newCue: CuePoint = {
-        index: currentTrack.cuePoints.filter((c) => c.type === 'memory').length,
-        type: 'memory',
-        positionMs: Math.round(currentTime * 1000),
-        color: '#f59e0b',
-        label: ''
-      }
-      await patchTrackCues(
-        [...currentTrack.cuePoints, newCue].sort((a, b) => a.positionMs - b.positionMs)
-      )
     }
-  }
-})
+  })
+}
+
+export const useDeckAStore = createDeckStore('A')
+export const useDeckBStore = createDeckStore('B')
+
+// Legacy alias so any remaining imports of usePlayerStore still compile
+export const usePlayerStore = useDeckAStore

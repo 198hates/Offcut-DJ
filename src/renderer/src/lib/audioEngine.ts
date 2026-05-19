@@ -148,4 +148,5 @@ function computePeaks(buf: AudioBuffer, buckets: number): Float32Array {
   return peaks
 }
 
-export const audioEngine = new AudioEngine()
+// Use AudioEngine directly — instantiate one per deck
+export { AudioEngine }
