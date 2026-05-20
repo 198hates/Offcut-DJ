@@ -64,6 +64,7 @@ export function importFromIntegration(appDb: Database.Database, dbPath: string):
           cuePoints: cues,
           beatgrid: [],
           energy: null,
+          danceability: null,
           color: '',
           playCount: 0,
           lastPlayedAt: null,

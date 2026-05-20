@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { analyzeAudio } from '../../lib/analyzer'
+import { generateBeatgrid } from '../../lib/compatibility'
+import { dbscan, clusterName, clusterKeyLabel } from '../../lib/clustering'
 import type { Track, Playlist } from '@shared/types'
 
 type DuplicateGroup = Track[]
@@ -114,9 +116,11 @@ export function LibraryHealthPage(): JSX.Element {
   const [analysisResult, setAnalysisResult] = useState<{ updated: number; skipped: number; failed: number } | null>(null)
   const cancelRef = useRef(false)
 
-  const tracksNeedingAnalysis = tracks.filter((t) => !t.bpm || !t.key)
-  const tracksNeedingBpm = tracks.filter((t) => !t.bpm).length
-  const tracksNeedingKey = tracks.filter((t) => !t.key).length
+  const tracksNeedingAnalysis = tracks.filter((t) => !t.bpm || !t.key || t.energy == null || t.danceability == null)
+  const tracksNeedingBpm         = tracks.filter((t) => !t.bpm).length
+  const tracksNeedingKey         = tracks.filter((t) => !t.key).length
+  const tracksNeedingEnergy      = tracks.filter((t) => t.energy == null).length
+  const tracksNeedingDanceability = tracks.filter((t) => t.danceability == null).length
 
   const startAnalysis = useCallback(async (): Promise<void> => {
     if (!tracksNeedingAnalysis.length) return
@@ -150,7 +154,7 @@ export function LibraryHealthPage(): JSX.Element {
     // (We work off tracksNeedingAnalysis from before, but check updated values via closure)
     const stillNeeding = tracksNeedingAnalysis.filter((t) => {
       const current = tracks.find((x) => x.id === t.id) ?? t
-      return !current.bpm || !current.key
+      return !current.bpm || !current.key || current.energy == null || current.danceability == null
     })
 
     if (stillNeeding.length === 0) {
@@ -175,11 +179,22 @@ export function LibraryHealthPage(): JSX.Element {
         const audioBuffer = await ctx.decodeAudioData(ab)
         const result = await analyzeAudio(audioBuffer)
 
-        const newBpm = (!track.bpm && result.bpm) ? result.bpm : track.bpm
-        const newKey = (!track.key && result.key) ? result.key : track.key
+        const newBpm         = (!track.bpm && result.bpm)                              ? result.bpm         : track.bpm
+        const newKey         = (!track.key && result.key)                              ? result.key         : track.key
+        const newEnergy      = (track.energy == null && result.energy != null)         ? result.energy      : track.energy
+        const newDanceability = (track.danceability == null && result.danceability != null) ? result.danceability : track.danceability
+        const newBeatgrid = (track.beatgrid.length === 0 && newBpm && result.offsetMs != null)
+          ? generateBeatgrid(newBpm, result.offsetMs, audioBuffer.duration * 1000)
+          : track.beatgrid
+        const newCuePoints = (track.cuePoints.length === 0 && result.suggestedCues.length > 0)
+          ? result.suggestedCues.map((c, i) => ({
+              index: i, type: 'hotcue' as const,
+              positionMs: c.positionMs, color: c.color, label: c.label,
+            }))
+          : track.cuePoints
 
-        if (newBpm !== track.bpm || newKey !== track.key) {
-          await updateTrack({ id: track.id, bpm: newBpm, key: newKey })
+        if (newBpm !== track.bpm || newKey !== track.key || newEnergy !== track.energy || newDanceability !== track.danceability || newBeatgrid !== track.beatgrid || newCuePoints !== track.cuePoints) {
+          await updateTrack({ id: track.id, bpm: newBpm, key: newKey, energy: newEnergy, danceability: newDanceability, beatgrid: newBeatgrid, cuePoints: newCuePoints })
           updated++
         } else {
           skipped++
@@ -307,6 +322,29 @@ export function LibraryHealthPage(): JSX.Element {
     setMissing([])
   }
 
+  const locateTrack = async (track: Track): Promise<void> => {
+    const p = await window.api.settings.choosePath(`Locate: ${track.title || track.filePath}`, false)
+    if (!p) return
+    await updateTrack({ id: track.id, filePath: p })
+    setMissing((prev) => prev?.filter((t) => t.id !== track.id) ?? null)
+  }
+
+  const [locating, setLocating] = useState(false)
+  const [locateResult, setLocateResult] = useState<{ found: number; total: number } | null>(null)
+
+  const autoLocate = async (): Promise<void> => {
+    if (!missing?.length) return
+    setLocating(true)
+    setLocateResult(null)
+    const results = await window.api.library.autoLocateMissing()
+    setLocating(false)
+    if (!results.length) { setLocateResult({ found: 0, total: missing.length }); return }
+    const foundIds = new Set(results.map((r) => r.trackId))
+    await useLibraryStore.getState().loadLibrary()
+    setMissing((prev) => prev?.filter((t) => !foundIds.has(t.id)) ?? null)
+    setLocateResult({ found: results.length, total: missing.length })
+  }
+
   const totalDupeCount = dupes?.reduce((s, g) => s + g.length, 0) ?? 0
 
   return (
@@ -366,6 +404,14 @@ export function LibraryHealthPage(): JSX.Element {
           <AnalysisStatCard
             label="missing key"
             value={tracksNeedingKey.toLocaleString()}
+          />
+          <AnalysisStatCard
+            label="missing energy"
+            value={tracksNeedingEnergy.toLocaleString()}
+          />
+          <AnalysisStatCard
+            label="missing danceability"
+            value={tracksNeedingDanceability.toLocaleString()}
           />
         </div>
 
@@ -592,17 +638,33 @@ export function LibraryHealthPage(): JSX.Element {
             </p>
           ) : (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <p className="font-mono text-[10px] text-ink-soft">
                   <span className="text-red-500 font-bold">{missing.length}</span> missing file{missing.length !== 1 ? 's' : ''}
                 </p>
-                <button
-                  onClick={deleteAllMissing}
-                  className="px-3 py-1.5 bg-red-600/15 hover:bg-red-600/25 text-red-500 font-mono text-[10px] uppercase tracking-[0.1em] rounded border border-red-600/25 transition-colors"
-                >
-                  remove all from library
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={autoLocate}
+                    disabled={locating}
+                    className="px-3 py-1.5 bg-accent/10 hover:bg-accent/20 text-accent font-mono text-[10px] uppercase tracking-[0.1em] rounded border border-accent/25 transition-colors disabled:opacity-40"
+                  >
+                    {locating ? 'searching…' : 'auto-locate'}
+                  </button>
+                  <button
+                    onClick={deleteAllMissing}
+                    className="px-3 py-1.5 bg-red-600/15 hover:bg-red-600/25 text-red-500 font-mono text-[10px] uppercase tracking-[0.1em] rounded border border-red-600/25 transition-colors"
+                  >
+                    remove all
+                  </button>
+                </div>
               </div>
+              {locateResult && (
+                <p className={`font-mono text-[10px] ${locateResult.found > 0 ? 'text-green-600 dark:text-green-400' : 'text-muted'}`}>
+                  {locateResult.found > 0
+                    ? `✓ relocated ${locateResult.found} of ${locateResult.total} files`
+                    : 'no matching files found in that folder'}
+                </p>
+              )}
               <div className="space-y-1">
                 {missing.map((track) => (
                   <div key={track.id} className="flex items-center gap-3 py-2 px-3 bg-red-600/5 border border-red-600/15 rounded">
@@ -610,6 +672,12 @@ export function LibraryHealthPage(): JSX.Element {
                       <p className="font-sans text-xs text-ink truncate">{track.title || 'Unknown'}</p>
                       <p className="font-mono text-[9px] text-muted truncate">{track.filePath}</p>
                     </div>
+                    <button
+                      onClick={() => locateTrack(track)}
+                      className="shrink-0 text-accent/70 hover:text-accent font-mono text-[10px] transition-colors"
+                    >
+                      locate
+                    </button>
                     <button
                       onClick={() => deleteMissingTrack(track.id)}
                       className="shrink-0 text-red-500/60 hover:text-red-500 font-mono text-[10px] transition-colors"
@@ -639,6 +707,13 @@ export function LibraryHealthPage(): JSX.Element {
           <StatCard label="tagged"    value={tracks.filter((t) => t.tags.length > 0).length.toLocaleString()} sub={pct(tracks.filter((t) => t.tags.length > 0).length, tracks.length)} />
         </div>
       </section>
+
+      {/* ── Play History ──────────────────────────────────────────────────── */}
+      <div className="border-t border-border/20" />
+      <PlayHistorySection tracks={tracks} />
+
+      <div className="border-t border-border/20" />
+      <AutoGroupSection tracks={tracks} />
     </div>
   )
 }
@@ -765,5 +840,226 @@ function AnalysisStatCard({ label, value, sub, accent }: {
       <p className={`font-mono text-xl font-bold tabular-nums ${accent ? 'text-accent' : 'text-ink'}`}>{value}</p>
       {sub && <p className="font-mono text-[9px] text-muted mt-0.5">{sub}</p>}
     </div>
+  )
+}
+
+function PlayHistorySection({ tracks }: { tracks: Track[] }): JSX.Element {
+  const totalPlays   = tracks.reduce((s, t) => s + t.playCount, 0)
+  const neverPlayed  = tracks.filter((t) => t.playCount === 0).length
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const recentCount  = tracks.filter((t) => t.lastPlayedAt && t.lastPlayedAt >= sevenDaysAgo).length
+
+  const topTracks = [...tracks]
+    .filter((t) => t.playCount > 0)
+    .sort((a, b) => b.playCount - a.playCount)
+    .slice(0, 10)
+
+  const genreCounts = new Map<string, number>()
+  for (const t of tracks) {
+    if (t.genre && t.playCount > 0) genreCounts.set(t.genre, (genreCounts.get(t.genre) ?? 0) + t.playCount)
+  }
+  const topGenres = [...genreCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
+
+  return (
+    <section className="space-y-4">
+      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
+        <span className="text-accent mr-1.5">07</span>play history
+      </h2>
+
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="total plays"   value={totalPlays.toLocaleString()} />
+        <StatCard label="played last 7d" value={recentCount.toLocaleString()} sub={pct(recentCount, tracks.length)} />
+        <StatCard label="never played"  value={neverPlayed.toLocaleString()} sub={pct(neverPlayed, tracks.length)} />
+      </div>
+
+      {topTracks.length > 0 && (
+        <div className="space-y-2">
+          <p className="font-mono text-[9px] uppercase tracking-[0.15em] text-muted">most played</p>
+          <div className="space-y-1">
+            {topTracks.map((t, i) => (
+              <div key={t.id} className="flex items-center gap-3 py-1.5 px-3 bg-ink/[0.03] border border-border/20 rounded">
+                <span className="font-mono text-[9px] text-muted/50 tabular-nums w-4 text-right shrink-0">{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <span className="font-mono text-[10px] text-ink truncate block">{t.title || '—'}</span>
+                  <span className="font-mono text-[9px] text-muted truncate block">{t.artist}</span>
+                </div>
+                <span className="font-mono text-[10px] font-bold text-accent tabular-nums shrink-0">
+                  {t.playCount}×
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {topGenres.length > 0 && (
+        <div className="space-y-2">
+          <p className="font-mono text-[9px] uppercase tracking-[0.15em] text-muted">plays by genre</p>
+          <div className="space-y-1.5">
+            {topGenres.map(([genre, count]) => {
+              const maxCount = topGenres[0][1]
+              return (
+                <div key={genre} className="flex items-center gap-3">
+                  <span className="font-mono text-[10px] text-ink-soft w-32 truncate shrink-0">{genre}</span>
+                  <div className="flex-1 h-1.5 bg-ink/[0.07] rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-accent/60 rounded-full transition-all"
+                      style={{ width: `${(count / maxCount) * 100}%` }}
+                    />
+                  </div>
+                  <span className="font-mono text-[9px] text-muted tabular-nums w-8 text-right shrink-0">{count}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {totalPlays === 0 && (
+        <p className="font-mono text-[10px] text-muted/50 italic">No plays recorded yet. Tracks you play are counted automatically.</p>
+      )}
+    </section>
+  )
+}
+
+// ── Auto Group section ────────────────────────────────────────────────────────
+
+function AutoGroupSection({ tracks }: { tracks: Track[] }): JSX.Element {
+  const loadLibrary = useLibraryStore((s) => s.loadLibrary)
+
+  const [epsilon,  setEpsilon]  = useState(0.15)
+  const [minPts,   setMinPts]   = useState(0)          // 0 = auto
+  const [running,  setRunning]  = useState(false)
+  const [preview,  setPreview]  = useState<{ name: string; count: number; keyLabel: string }[] | null>(null)
+  const [noiseCount, setNoiseCount] = useState(0)
+  const [saved,    setSaved]    = useState(false)
+
+  const effectiveMinPts = minPts > 0 ? minPts : Math.max(5, Math.floor(tracks.length / 100))
+
+  const run = useCallback((): void => {
+    setRunning(true)
+    setSaved(false)
+    // yield to render before blocking
+    setTimeout(() => {
+      const { clusters, noise } = dbscan(tracks, epsilon, effectiveMinPts)
+      setPreview(clusters.map((c) => ({
+        name:     clusterName(c),
+        count:    c.length,
+        keyLabel: clusterKeyLabel(c),
+      })))
+      setNoiseCount(noise.length)
+      setRunning(false)
+    }, 20)
+  }, [tracks, epsilon, effectiveMinPts])
+
+  const save = useCallback(async (): Promise<void> => {
+    if (!preview) return
+    setRunning(true)
+    // Recompute with full track data to get trackIds
+    const { clusters } = dbscan(tracks, epsilon, effectiveMinPts)
+    const clusterData = clusters.map((c) => ({
+      name:     clusterName(c),
+      trackIds: c.map((t) => t.id),
+    }))
+    await window.api.library.runAutoGroup(clusterData)
+    await loadLibrary()
+    setSaved(true)
+    setRunning(false)
+  }, [preview, tracks, epsilon, effectiveMinPts, loadLibrary])
+
+  const eligible = tracks.filter((t) => t.bpm != null).length
+
+  return (
+    <section className="space-y-4">
+      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
+        <span className="text-accent mr-1.5">08</span>auto group
+      </h2>
+      <p className="font-mono text-[9.5px] text-muted/80 leading-relaxed">
+        Clusters the library by BPM, key, and energy using DBSCAN. Creates a set of
+        non-destructive playlists under <span className="text-ink">Auto Groups</span> in the sidebar.
+        Re-running replaces the previous groups.
+      </p>
+
+      {/* Parameters */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">ε</label>
+          <input
+            type="range" min="0.05" max="0.40" step="0.01"
+            value={epsilon}
+            onChange={(e) => { setEpsilon(parseFloat(e.target.value)); setPreview(null) }}
+            className="w-28 accent-accent"
+          />
+          <span className="font-mono text-[10px] text-ink tabular-nums w-8">{epsilon.toFixed(2)}</span>
+          <span className="font-mono text-[9px] text-muted/60">
+            {epsilon < 0.10 ? 'tight' : epsilon < 0.18 ? 'balanced' : 'broad'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">min tracks</label>
+          <input
+            type="number" min="2" max="50"
+            value={minPts || ''}
+            placeholder={String(effectiveMinPts)}
+            onChange={(e) => { setMinPts(parseInt(e.target.value) || 0); setPreview(null) }}
+            className="w-16 bg-paper border border-border/40 rounded px-2 py-1 font-mono text-[10px] text-ink outline-none focus:border-accent"
+          />
+        </div>
+        <span className="font-mono text-[9px] text-muted/50">
+          {eligible.toLocaleString()} of {tracks.length.toLocaleString()} tracks eligible
+        </span>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={run}
+          disabled={running || tracks.length === 0}
+          className="px-4 py-2 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[10px] uppercase tracking-[0.12em] text-ink-soft hover:text-ink transition-colors disabled:opacity-40"
+        >
+          {running ? 'running…' : 'preview groups'}
+        </button>
+        {preview && !saved && (
+          <button
+            onClick={save}
+            disabled={running || preview.length === 0}
+            className="px-4 py-2 bg-accent hover:bg-accent/90 text-paper rounded font-mono text-[10px] uppercase tracking-[0.12em] transition-colors disabled:opacity-40"
+          >
+            save {preview.length} groups to library
+          </button>
+        )}
+        {saved && (
+          <span className="font-mono text-[10px] text-green-600 dark:text-green-400">
+            ✓ Groups saved — check Auto Groups in the sidebar
+          </span>
+        )}
+      </div>
+
+      {/* Preview results */}
+      {preview && (
+        <div className="space-y-2">
+          <p className="font-mono text-[9px] text-muted uppercase tracking-[0.12em]">
+            {preview.length} groups · {noiseCount} ungrouped
+          </p>
+          <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+            {preview.map((g, i) => (
+              <div key={i} className="flex items-center gap-3 py-1.5 px-3 bg-ink/[0.03] border border-border/25 rounded">
+                <span className="font-mono text-[9px] text-muted/50 tabular-nums w-5 text-right shrink-0">{i + 1}</span>
+                <span className="flex-1 font-mono text-[10px] text-ink truncate">{g.name}</span>
+                {g.keyLabel && (
+                  <span className="font-mono text-[9px] text-muted shrink-0">{g.keyLabel}</span>
+                )}
+                <span className="font-mono text-[10px] font-bold text-accent tabular-nums shrink-0">{g.count}</span>
+              </div>
+            ))}
+          </div>
+          {preview.length === 0 && (
+            <p className="font-mono text-[9.5px] text-muted/60 italic">
+              No groups found — try raising ε or lowering min tracks
+            </p>
+          )}
+        </div>
+      )}
+    </section>
   )
 }

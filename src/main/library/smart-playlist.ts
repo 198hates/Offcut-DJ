@@ -15,6 +15,19 @@ export function resolveSmartPlaylist(db: Database.Database, rules: SmartRule[]):
   const params: (string | number)[] = []
 
   for (const rule of rules) {
+    // tags is a JSON array column — match with LIKE
+    if (rule.field === 'tags') {
+      const val = String(rule.value)
+      if (rule.op === 'contains' || rule.op === 'is') {
+        clauses.push(`tags LIKE ?`)
+        params.push(`%"${val}"%`)
+      } else if (rule.op === 'not_contains' || rule.op === 'is_not') {
+        clauses.push(`tags NOT LIKE ?`)
+        params.push(`%"${val}"%`)
+      }
+      continue
+    }
+
     const col = fieldToColumn(rule.field)
     if (!col) continue
 
@@ -80,7 +93,8 @@ const COL_MAP: Partial<Record<string, string>> = {
   album: 'album',
   genre: 'genre',
   key: 'key',
-  comment: 'comment'
+  comment: 'comment',
+  energy: 'energy',
 }
 
 function fieldToColumn(field: string): string | null {

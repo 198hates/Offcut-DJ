@@ -279,6 +279,66 @@ const FIXES: Fix[] = [
       return results
     }
   },
+  {
+    id: 'genre-normalize',
+    label: 'normalize genre spelling',
+    description: 'groups genres by value, picks the most-used casing/spelling, updates all variants to match — e.g. "techno", "Techno", "TECHNO" → whichever appears most',
+    icon: 'G↓',
+    scan: (tracks) => {
+      const groups = new Map<string, Map<string, number>>()
+      for (const t of tracks) {
+        if (!t.genre) continue
+        const key = t.genre.toLowerCase().trim()
+        if (!groups.has(key)) groups.set(key, new Map())
+        const vm = groups.get(key)!
+        vm.set(t.genre, (vm.get(t.genre) ?? 0) + 1)
+      }
+      const canonical = new Map<string, string>()
+      for (const [key, variants] of groups) {
+        if (variants.size <= 1) continue
+        const best = [...variants.entries()].sort((a, b) => b[1] - a[1])[0][0]
+        canonical.set(key, best)
+      }
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        if (!t.genre) continue
+        const canon = canonical.get(t.genre.toLowerCase().trim())
+        if (canon && t.genre !== canon)
+          results.push({ trackId: t.id, display: t.title || t.filePath, field: 'genre', before: t.genre, after: canon })
+      }
+      return results
+    }
+  },
+  {
+    id: 'artist-normalize',
+    label: 'normalize artist spelling',
+    description: 'groups artists by value, picks the most-used casing/spelling, updates all variants to match — e.g. "deadmau5" vs "DeadMau5" → whichever appears most',
+    icon: 'A↓',
+    scan: (tracks) => {
+      const groups = new Map<string, Map<string, number>>()
+      for (const t of tracks) {
+        if (!t.artist) continue
+        const key = t.artist.toLowerCase().trim()
+        if (!groups.has(key)) groups.set(key, new Map())
+        const vm = groups.get(key)!
+        vm.set(t.artist, (vm.get(t.artist) ?? 0) + 1)
+      }
+      const canonical = new Map<string, string>()
+      for (const [key, variants] of groups) {
+        if (variants.size <= 1) continue
+        const best = [...variants.entries()].sort((a, b) => b[1] - a[1])[0][0]
+        canonical.set(key, best)
+      }
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        if (!t.artist) continue
+        const canon = canonical.get(t.artist.toLowerCase().trim())
+        if (canon && t.artist !== canon)
+          results.push({ trackId: t.id, display: t.title || t.filePath, field: 'artist', before: t.artist, after: canon })
+      }
+      return results
+    }
+  },
 ]
 
 // ── Page ──────────────────────────────────────────────────────────────────────

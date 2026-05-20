@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import type { CuePoint, BeatgridMarker } from '@shared/types'
 import type { WaveformStyle } from '../store/waveformStore'
 
@@ -17,8 +17,23 @@ interface Props {
 }
 
 export function OverviewWaveform({ peaks, lowPeaks, midPeaks, highPeaks, waveformStyle, duration, currentTime, cuePoints, mainCueTime, beatgrid, onSeek }: Props): JSX.Element {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const sizeRef = useRef({ w: 0, h: 0, dpr: 1 })
+  const canvasRef      = useRef<HTMLCanvasElement>(null)
+  const sizeRef        = useRef({ w: 0, h: 0, dpr: 1 })
+  const currentTimeRef = useRef(currentTime)
+
+  useLayoutEffect(() => { currentTimeRef.current = currentTime })
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const dpr = window.devicePixelRatio || 1
+    const w   = canvas.offsetWidth
+    const h   = canvas.offsetHeight
+    if (w === 0 || h === 0) return
+    canvas.width  = w * dpr
+    canvas.height = h * dpr
+    sizeRef.current = { w, h, dpr }
+  }, [])
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -34,7 +49,7 @@ export function OverviewWaveform({ peaks, lowPeaks, midPeaks, highPeaks, wavefor
 
     if (!peaks || duration === 0) return
 
-    const progress = currentTime / duration
+    const progress = currentTimeRef.current / duration
 
     // Played region shading
     ctx.fillStyle = 'rgba(0,0,0,0.20)'
@@ -96,16 +111,13 @@ export function OverviewWaveform({ peaks, lowPeaks, midPeaks, highPeaks, wavefor
       }
     }
 
-    // Beat grid tick marks (downbeats only in overview — regular beats too dense)
+    // Beat grid — downbeats only in overview (beat density too high to show all)
     if (beatgrid && beatgrid.length > 0 && duration > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'
       for (const marker of beatgrid) {
+        if (!marker.isDownbeat) continue
         const x = Math.round((marker.positionMs / 1000 / duration) * cw)
-        if (marker.isDownbeat) {
-          ctx.fillStyle = 'rgba(0,0,0,0.55)'
-          ctx.fillRect(x, 0, 2, ch)
-          ctx.fillStyle = 'rgba(255,255,255,0.70)'
-          ctx.fillRect(x, 0, 1, ch)
-        }
+        ctx.fillRect(x, 0, 1, ch)
       }
     }
 
@@ -130,7 +142,7 @@ export function OverviewWaveform({ peaks, lowPeaks, midPeaks, highPeaks, wavefor
 
     // Viewport indicator: show visible window
     // (We don't have zoom info here, just show a subtle region marker)
-  }, [peaks, lowPeaks, midPeaks, highPeaks, waveformStyle, currentTime, duration, cuePoints, mainCueTime, beatgrid])
+  }, [peaks, lowPeaks, midPeaks, highPeaks, waveformStyle, duration, cuePoints, mainCueTime, beatgrid])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -142,13 +154,17 @@ export function OverviewWaveform({ peaks, lowPeaks, midPeaks, highPeaks, wavefor
       canvas.width = w * dpr
       canvas.height = h * dpr
       sizeRef.current = { w, h, dpr }
-      draw()
     })
     ro.observe(canvas)
     return () => ro.disconnect()
-  }, [draw])
+  }, [])
 
-  useEffect(() => { draw() }, [draw])
+  useEffect(() => {
+    let raf: number
+    const loop = () => { draw(); raf = requestAnimationFrame(loop) }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [draw])
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!duration) return

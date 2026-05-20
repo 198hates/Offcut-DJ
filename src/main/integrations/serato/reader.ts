@@ -57,6 +57,7 @@ export function importFromIntegration(appDb: Database.Database, seratoDir: strin
             cuePoints: geob.cuePoints,
             beatgrid: geob.beatgrid,
             energy: null,
+            danceability: null,
           color: '',
           playCount: 0,
           lastPlayedAt: null,

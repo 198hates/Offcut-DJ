@@ -68,6 +68,7 @@ export function importFromIntegration(appDb: Database.Database, xmlPath: string)
           .map((c, i) => rbCueToPoint(c as Record<string, unknown>, i)),
         beatgrid: [],
           energy: null,
+          danceability: null,
           color: '',
           playCount: 0,
           lastPlayedAt: null,

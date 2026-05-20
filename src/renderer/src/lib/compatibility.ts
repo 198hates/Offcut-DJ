@@ -1,4 +1,4 @@
-import type { Track } from '@shared/types'
+import type { Track, BeatgridMarker } from '@shared/types'
 
 // ── Camelot distance ──────────────────────────────────────────────────────────
 // Keys are "1A"–"12A" (minor) and "1B"–"12B" (major).
@@ -111,4 +111,26 @@ export function magicSort(tracks: Track[]): MagicSortResult {
   }
 
   return { sorted: result, flagged }
+}
+
+// ── Beatgrid generation ───────────────────────────────────────────────────────
+// Generates a uniform-tempo beatgrid from BPM + first-beat offset.
+// Used both by BeatgridEditor and as a live fallback in the player when a
+// track has BPM data but no stored markers.
+
+export function generateBeatgrid(bpm: number, offsetMs: number, durationMs: number): BeatgridMarker[] {
+  if (bpm <= 0 || durationMs <= 0) return []
+  const beatMs = 60000 / bpm
+  // Normalise offset to [0, beatMs)
+  let t = offsetMs % beatMs
+  if (t < 0) t += beatMs
+
+  const markers: BeatgridMarker[] = []
+  let beatIdx = 0
+  while (t <= durationMs + beatMs) {
+    markers.push({ positionMs: t, bpm, isDownbeat: beatIdx % 4 === 0 })
+    t += beatMs
+    beatIdx++
+  }
+  return markers
 }

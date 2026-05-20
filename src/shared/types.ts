@@ -27,7 +27,8 @@ export interface Track {
   durationSeconds: number | null
   rating: number
   color: string           // hex colour tag, '' = none
-  energy: number | null   // 1–10, null = unset
+  energy: number | null        // 1–10, null = unset
+  danceability: number | null  // 0–1, null = unset
   playCount: number
   lastPlayedAt: string | null
   dateAdded: string
@@ -38,7 +39,7 @@ export interface Track {
   sourceIds: Partial<Record<IntegrationId, string>>
 }
 
-export type SmartRuleField = 'bpm' | 'key' | 'genre' | 'artist' | 'album' | 'rating' | 'title' | 'comment' | 'durationSeconds' | 'dateAdded' | 'playCount' | 'lastPlayedAt'
+export type SmartRuleField = 'bpm' | 'key' | 'genre' | 'artist' | 'album' | 'rating' | 'title' | 'comment' | 'durationSeconds' | 'dateAdded' | 'playCount' | 'lastPlayedAt' | 'energy' | 'tags'
 export type SmartRuleOp = 'is' | 'is_not' | 'contains' | 'not_contains' | 'greater_than' | 'less_than' | 'between' | 'in_last_days'
 
 export interface SmartRule {
@@ -53,6 +54,7 @@ export interface Playlist {
   color: string   // hex colour for blip dot (e.g. '#3CA8A1')
   isFolder: boolean
   isSmart: boolean
+  isAutoGroup: boolean
   rules: SmartRule[]
   parentId: string | null
   sortOrder: number

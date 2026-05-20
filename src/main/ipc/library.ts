@@ -24,6 +24,8 @@ import {
 import { exportToIntegration as exportM3u } from '../integrations/m3u/writer'
 import { analyzeBeats, isModelAvailable, getDefaultModelPath, warmModel } from '../integrations/beat-analysis'
 import { writeTagsToFile } from '../integrations/file-tags/writer'
+import { startWatcher } from '../integrations/watch-folder'
+import { loadSettings, saveSettings } from '../settings'
 import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule } from '../../shared/types'
 import type Database from 'better-sqlite3'
 
@@ -156,6 +158,40 @@ export function registerLibraryHandlers(): void {
   ipcMain.handle('library:deletePlaylist', (_e, id: string): void => {
     db.prepare('DELETE FROM playlists WHERE id = ?').run(id)
   })
+
+  // ── Auto Group ────────────────────────────────────────────────────────────
+  // Replaces all auto-group playlists with the provided clusters.
+  // Each cluster becomes a named playlist inside an "Auto Groups" folder.
+  ipcMain.handle(
+    'library:runAutoGroup',
+    (_e, clusters: { name: string; trackIds: string[] }[]): void => {
+      db.transaction(() => {
+        // Remove all existing auto-group playlists + their track rows (cascade)
+        db.prepare('DELETE FROM playlists WHERE is_auto_group = 1').run()
+
+        if (!clusters.length) return
+
+        // Create / re-create the folder
+        const folderId = randomUUID()
+        db.prepare(
+          "INSERT INTO playlists (id, name, is_folder, is_auto_group, sort_order, source_ids) VALUES (?, 'Auto Groups', 1, 1, 9999, '{}')"
+        ).run(folderId)
+
+        const insertPl  = db.prepare(
+          'INSERT INTO playlists (id, name, is_auto_group, parent_id, sort_order, source_ids) VALUES (?, ?, 1, ?, ?, \'{}\')'
+        )
+        const insertTrk = db.prepare(
+          'INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, sort_order) VALUES (?, ?, ?)'
+        )
+
+        clusters.forEach(({ name, trackIds }, i) => {
+          const plId = randomUUID()
+          insertPl.run(plId, name, folderId, i)
+          trackIds.forEach((tid, j) => insertTrk.run(plId, tid, j))
+        })
+      })()
+    }
+  )
 
   // Replace one track with another across all playlists before deletion.
   // For each playlist containing removeId:
@@ -351,12 +387,68 @@ export function registerLibraryHandlers(): void {
     return result.changes
   })
 
+  // ── Watch folders ─────────────────────────────────────────────────────────
+  ipcMain.handle('library:setWatchFolders', (_e, paths: string[]): void => {
+    saveSettings({ watchFolders: paths })
+    startWatcher(paths)
+  })
+
+  ipcMain.handle('library:getWatchFolders', (): string[] => {
+    return loadSettings().watchFolders
+  })
+
   // ── Library Health ────────────────────────────────────────────────────────
   ipcMain.handle('library:scanMissingFiles', (): Track[] => {
     const rows = db.prepare('SELECT * FROM tracks').all() as Record<string, unknown>[]
     return rows
       .filter((r) => !existsSync(r.file_path as string))
       .map(rowToTrack)
+  })
+
+  ipcMain.handle('library:autoLocateMissing', async (_e, searchDir?: string): Promise<{ trackId: string; foundPath: string }[]> => {
+    const { readdirSync, statSync } = await import('fs')
+    const { basename } = await import('path')
+
+    let resolvedDir = searchDir
+    if (!resolvedDir) {
+      const res = await dialog.showOpenDialog({ title: 'Choose search folder', properties: ['openDirectory'] })
+      if (res.canceled) return []
+      resolvedDir = res.filePaths[0]
+    }
+
+    const AUDIO_EXTS = new Set(['.mp3', '.flac', '.aiff', '.aif', '.wav', '.m4a', '.ogg'])
+
+    // Build filename → absolute path map for all audio files under searchDir
+    const fileMap = new Map<string, string>()
+    const walk = (dir: string): void => {
+      try {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const full = `${dir}/${entry.name}`
+          if (entry.isDirectory()) {
+            walk(full)
+          } else if (AUDIO_EXTS.has(entry.name.slice(entry.name.lastIndexOf('.')).toLowerCase())) {
+            fileMap.set(entry.name.toLowerCase(), full)
+          }
+        }
+      } catch { /* skip unreadable dirs */ }
+    }
+    walk(resolvedDir)
+
+    const missingRows = (db.prepare('SELECT * FROM tracks').all() as Record<string, unknown>[])
+      .filter((r) => !existsSync(r.file_path as string))
+    void statSync   // satisfy import
+
+    const results: { trackId: string; foundPath: string }[] = []
+    for (const row of missingRows) {
+      const oldPath = row.file_path as string
+      const name = basename(oldPath).toLowerCase()
+      const found = fileMap.get(name)
+      if (found) {
+        db.prepare("UPDATE tracks SET file_path = ?, updated_at = datetime('now') WHERE id = ?").run(found, row.id as string)
+        results.push({ trackId: row.id as string, foundPath: found })
+      }
+    }
+    return results
   })
 
   // ── Rekordbox direct DB sync ──────────────────────────────────────────────

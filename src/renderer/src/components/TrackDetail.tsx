@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { useToastStore } from '../store/toastStore'
 import { CamelotWheel } from './CamelotWheel'
-import type { Track, CuePoint } from '@shared/types'
+import { BeatgridEditor } from './BeatgridEditor'
+import { compatibilityScore } from '../lib/compatibility'
+import { useDeckAStore } from '../store/playerStore'
+import type { Track, CuePoint, BeatgridMarker } from '@shared/types'
 
 const TRACK_COLORS = [
   '#6E8059', '#4E7090', '#B07A4E', '#C9A02C',
@@ -37,6 +40,7 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
   const [saved, setSaved] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [tab, setTab] = useState<'inspector' | 'edit'>('inspector')
+  const [editingBeatgrid, setEditingBeatgrid] = useState(false)
 
   useEffect(() => {
     setDraft(track ? { ...track } : null)
@@ -101,7 +105,22 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
+  const handleSaveBeatgrid = async (beatgrid: BeatgridMarker[], newBpm: number): Promise<void> => {
+    await updateTrack({ id: draft.id, beatgrid, bpm: newBpm })
+    setDraft((d) => d ? { ...d, beatgrid, bpm: newBpm } : d)
+    setEditingBeatgrid(false)
+    showToast('Beatgrid saved', 'success')
+  }
+
   return (
+    <>
+    {editingBeatgrid && (
+      <BeatgridEditor
+        track={draft}
+        onSave={handleSaveBeatgrid}
+        onClose={() => setEditingBeatgrid(false)}
+      />
+    )}
     <aside className="w-[280px] bg-chassis border-l border-border/30 flex flex-col overflow-hidden shrink-0">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 shrink-0">
@@ -123,7 +142,7 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
 
       <div className="flex-1 overflow-y-auto">
         {tab === 'inspector' ? (
-          <InspectorTab draft={draft} fmtDur={fmtDur} />
+          <InspectorTab draft={draft} fmtDur={fmtDur} onEditBeatgrid={() => setEditingBeatgrid(true)} />
         ) : (
           <EditTab draft={draft} set={set} />
         )}
@@ -155,12 +174,13 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
         </div>
       )}
     </aside>
+    </>
   )
 }
 
 // ── Inspector tab ─────────────────────────────────────────────────────────────
 
-function InspectorTab({ draft, fmtDur }: { draft: Track; fmtDur: (s: number | null) => string }): JSX.Element {
+function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur: (s: number | null) => string; onEditBeatgrid: () => void }): JSX.Element {
   return (
     <div className="space-y-0">
       {/* Track header banner */}
@@ -179,6 +199,7 @@ function InspectorTab({ draft, fmtDur }: { draft: Track; fmtDur: (s: number | nu
         <Spec label="Key" value={draft.key || '—'} accent />
         <Spec label="Time" value={fmtDur(draft.durationSeconds)} />
         <Spec label="Energy" value={draft.energy ? `${draft.energy}/10` : '—'} />
+        <Spec label="Danceability" value={draft.danceability != null ? `${Math.round(draft.danceability * 100)}%` : '—'} />
         <Spec label="Plays" value={draft.playCount > 0 ? String(draft.playCount) : '—'} />
         <Spec label="Last played" value={draft.lastPlayedAt ? new Date(draft.lastPlayedAt).toLocaleDateString() : '—'} />
         <Spec label="Genre" value={draft.genre || '—'} />
@@ -187,26 +208,47 @@ function InspectorTab({ draft, fmtDur }: { draft: Track; fmtDur: (s: number | nu
         <Spec label="Added" value={draft.dateAdded ? new Date(draft.dateAdded).toLocaleDateString() : '—'} />
       </div>
 
-      {/* Camelot wheel */}
+      {/* Camelot wheel + mixable tracks */}
       <div className="px-3 py-3 border-b border-border/30">
         <div className="flex items-baseline justify-between mb-2">
           <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
             <span className="text-accent mr-1">03</span>harmonic
           </p>
-          {draft.key && (
-            <p className="font-mono text-[9px] text-muted">4 compatible</p>
-          )}
         </div>
         <div className="flex justify-center">
           <CamelotWheel currentKey={draft.key} size={220} />
         </div>
       </div>
 
+      <MixablePanel track={draft} />
+
+      {/* Beatgrid */}
+      <div className="px-3 py-3 border-b border-border/30">
+        <div className="flex items-center justify-between">
+          <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
+            <span className="text-accent mr-1">06</span>beatgrid
+          </p>
+          <button
+            onClick={onEditBeatgrid}
+            className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted hover:text-accent transition-colors border border-border/35 hover:border-accent/40 rounded px-2 py-0.5"
+          >
+            {draft.beatgrid.length > 0 ? 'edit' : 'create'}
+          </button>
+        </div>
+        {draft.beatgrid.length > 0 ? (
+          <p className="font-mono text-[9px] text-muted mt-1.5">
+            {draft.beatgrid.length} markers · {draft.bpm?.toFixed(2) ?? '—'} bpm
+          </p>
+        ) : (
+          <p className="font-mono text-[9px] text-muted/50 mt-1.5 italic">no beatgrid</p>
+        )}
+      </div>
+
       {/* Cue points */}
       {draft.cuePoints.length > 0 && (
         <div className="px-3 py-3">
           <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted mb-2">
-            <span className="text-accent mr-1">04</span>hot cues
+            <span className="text-accent mr-1">07</span>hot cues
           </p>
           <div className="space-y-0">
             {[...draft.cuePoints]
@@ -441,4 +483,54 @@ function formatMs(ms: number): string {
   const m = Math.floor(totalSec / 60)
   const s = totalSec % 60
   return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function MixablePanel({ track }: { track: Track }): JSX.Element | null {
+  const allTracks = useLibraryStore((s) => s.tracks)
+  const loadTrackA = useDeckAStore((s) => s.loadTrack)
+
+  if (!track.bpm && !track.key) return null
+
+  const candidates = allTracks
+    .filter((t) => t.id !== track.id)
+    .map((t) => ({ track: t, score: compatibilityScore(track, t) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+
+  if (!candidates.length) return null
+
+  return (
+    <div className="px-3 py-3 border-b border-border/30">
+      <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted mb-2">
+        <span className="text-accent mr-1">04</span>mixable tracks
+      </p>
+      <div className="space-y-1">
+        {candidates.map(({ track: t, score }) => (
+          <div
+            key={t.id}
+            className="flex items-center gap-2 py-1 px-2 rounded hover:bg-ink/[0.05] group transition-colors"
+          >
+            <div className="flex-1 min-w-0">
+              <p className="font-mono text-[10px] text-ink truncate">{t.title || '—'}</p>
+              <p className="font-mono text-[9px] text-muted truncate">{t.artist}</p>
+            </div>
+            <span className="font-mono text-[9px] text-muted tabular-nums shrink-0">{t.key ?? '—'}</span>
+            <span className="font-mono text-[9px] text-muted tabular-nums shrink-0">{t.bpm?.toFixed(0) ?? '—'}</span>
+            <div
+              className="w-8 h-1 rounded-full shrink-0"
+              title={`compatibility: ${Math.round(score * 100)}%`}
+              style={{ background: `rgba(var(--accent-rgb), ${0.2 + score * 0.8})` }}
+            />
+            <button
+              onClick={() => loadTrackA(t)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity font-mono text-[8px] uppercase tracking-[0.1em] text-accent shrink-0"
+              title="Load to deck A"
+            >
+              A
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }

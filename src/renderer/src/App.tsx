@@ -33,6 +33,11 @@ export default function App(): JSX.Element {
   useEffect(() => { loadLibrary() }, [loadLibrary])
 
   useEffect(() => {
+    const off = window.electron.ipcRenderer.on('library:watchFolderAdded', () => loadLibrary())
+    return () => { off() }
+  }, [loadLibrary])
+
+  useEffect(() => {
     if (isLoading) return
     window.api.settings.get().then((s) => {
       if (tracks.length === 0 && s.showWelcomeOnStartup) setShowOnboarding(true)

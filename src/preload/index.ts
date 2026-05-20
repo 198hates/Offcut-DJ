@@ -50,12 +50,17 @@ const api = {
       ipcRenderer.invoke('library:previewPathMapping', from, to),
     applyPathMapping: (from: string, to: string) =>
       ipcRenderer.invoke('library:applyPathMapping', from, to),
+    getWatchFolders: () => ipcRenderer.invoke('library:getWatchFolders'),
+    setWatchFolders: (paths: string[]) => ipcRenderer.invoke('library:setWatchFolders', paths),
     scanMissingFiles: () => ipcRenderer.invoke('library:scanMissingFiles'),
+    autoLocateMissing: (searchDir?: string) => ipcRenderer.invoke('library:autoLocateMissing', searchDir),
     rekordboxDbStatus: () => ipcRenderer.invoke('library:rekordboxDbStatus'),
     importFromRekordboxDb: (dbPath?: string) =>
       ipcRenderer.invoke('library:importFromRekordboxDb', dbPath),
     exportToRekordboxDb: (dbPath?: string) =>
-      ipcRenderer.invoke('library:exportToRekordboxDb', dbPath)
+      ipcRenderer.invoke('library:exportToRekordboxDb', dbPath),
+    runAutoGroup: (clusters: { name: string; trackIds: string[] }[]) =>
+      ipcRenderer.invoke('library:runAutoGroup', clusters)
   },
   audio: {
     readFile: (filePath: string): Promise<ArrayBuffer> =>

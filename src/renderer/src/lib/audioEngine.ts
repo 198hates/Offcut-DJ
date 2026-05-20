@@ -73,6 +73,7 @@ class AudioEngine {
   play(from?: number): void {
     if (!this.buffer || !this.gainNode) return
     const ctx = this.getCtx()
+    cancelAnimationFrame(this.rafId)  // prevent stale RAF chains from accumulating
     this._stopSource()
 
     const pos = Math.max(0, Math.min(from ?? this.pausedAt, this.buffer.duration))

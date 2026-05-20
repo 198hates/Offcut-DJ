@@ -4,7 +4,8 @@ import type { StoreApi, UseBoundStore } from 'zustand'
 import type { DeckStore } from '../store/playerStore'
 import { HOT_CUE_COLORS, HOT_CUE_LABELS, type AnalysisState } from '../store/playerStore'
 import { useWaveformStore } from '../store/waveformStore'
-import { Waveform } from './Waveform'
+import { generateBeatgrid } from '../lib/compatibility'
+import { WaveformGL } from './WaveformGL'
 import { OverviewWaveform } from './OverviewWaveform'
 import type { CuePoint } from '@shared/types'
 
@@ -66,11 +67,17 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
   }, [handleKey])
 
   const tracks = useLibraryStore((s) => s.tracks)
-  // Read beatgrid live from the library store so it updates immediately after analysis
-  // without needing to reload the track onto the deck.
-  const liveBeatgrid = useLibraryStore(
-    (s) => s.tracks.find((t) => t.id === currentTrack?.id)?.beatgrid ?? currentTrack?.beatgrid ?? []
-  )
+  // Live beatgrid: prefer stored markers; fall back to a generated grid from BPM
+  // so the waveform always shows a grid once a track has been analysed.
+  const liveBeatgrid = useLibraryStore((s) => {
+    const track = s.tracks.find((t) => t.id === currentTrack?.id) ?? currentTrack
+    if (!track) return []
+    if (track.beatgrid.length > 0) return track.beatgrid
+    if (track.bpm && track.durationSeconds) {
+      return generateBeatgrid(track.bpm, 0, track.durationSeconds * 1000)
+    }
+    return []
+  })
   const [isDragOver, setIsDragOver] = useState(false)
 
   // ── Drag-to-load: drop a track from the library onto this deck ────────
@@ -194,7 +201,7 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
 
       {/* ── Scrolling detail waveform — dominant centre element ──────── */}
       <div className="px-2 py-1 flex flex-1 min-h-0">
-        <Waveform
+        <WaveformGL
           peaks={detailPeaks}
           lowPeaks={lowPeaks}
           midPeaks={midPeaks}
@@ -202,6 +209,7 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           waveformStyle={waveformStyle}
           duration={duration}
           currentTime={currentTime}
+
           cuePoints={currentTrack?.cuePoints ?? []}
           mainCueTime={mainCueTime}
           beatgrid={liveBeatgrid}

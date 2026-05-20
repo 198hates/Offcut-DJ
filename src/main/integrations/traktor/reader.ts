@@ -67,6 +67,7 @@ export function importFromIntegration(db: Database.Database, nmlPath: string): I
         cuePoints,
         beatgrid: [],
           energy: null,
+          danceability: null,
           color: '',
           playCount: 0,
           lastPlayedAt: null,

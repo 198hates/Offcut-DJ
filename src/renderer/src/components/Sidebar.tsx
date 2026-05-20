@@ -59,8 +59,9 @@ export function Sidebar(): JSX.Element {
     setSmartEditorPlaylist(undefined)
   }
 
-  const sets  = playlists.filter((p) => !p.isFolder && !p.isSmart)
-  const smart = playlists.filter((p) => !p.isFolder && p.isSmart)
+  const sets      = playlists.filter((p) => !p.isFolder && !p.isSmart && !p.isAutoGroup)
+  const smart     = playlists.filter((p) => !p.isFolder && p.isSmart)
+  const autoGroups = playlists.filter((p) => !p.isFolder && p.isAutoGroup)
 
   return (
     <>
@@ -172,6 +173,19 @@ export function Sidebar(): JSX.Element {
                   ))}
                 </div>
               </>
+            )}
+
+            {/* Auto Groups (generated) */}
+            {autoGroups.length > 0 && (
+              <AutoGroupsSection
+                groups={autoGroups}
+                activePlaylistId={activePlaylistId}
+                onSelect={setActivePlaylistId}
+                onDeleteAll={async () => {
+                  await window.api.library.runAutoGroup([])
+                  await useLibraryStore.getState().loadLibrary()
+                }}
+              />
             )}
           </div>
         </div>
@@ -439,5 +453,56 @@ function PlaylistItem({
         <span className="shrink-0 px-2 text-accent text-xs font-bold">+</span>
       )}
     </div>
+  )
+}
+
+// ── AutoGroupsSection ─────────────────────────────────────────────────────────
+
+function AutoGroupsSection({ groups, activePlaylistId, onSelect, onDeleteAll }: {
+  groups: import('@shared/types').Playlist[]
+  activePlaylistId: string | null
+  onSelect: (id: string) => void
+  onDeleteAll: () => Promise<void>
+}): JSX.Element {
+  const [open, setOpen] = useState(true)
+
+  return (
+    <>
+      <div className="flex items-center justify-between px-2.5 pt-3 pb-1">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-1 text-[9px] font-mono font-bold uppercase tracking-[0.2em] text-muted hover:text-ink transition-colors"
+        >
+          <span className="text-accent mr-0.5">03</span>generated
+          <span className="ml-1 text-muted/60">· {groups.length}</span>
+          <span className="ml-1 text-muted/40">{open ? '▾' : '▸'}</span>
+        </button>
+        <button
+          onClick={onDeleteAll}
+          title="Clear all auto groups"
+          className="text-muted/40 hover:text-red-500 transition-colors font-mono text-[9px]"
+        >✕</button>
+      </div>
+      {open && (
+        <div className="space-y-px">
+          {groups.map((pl) => (
+            <button
+              key={pl.id}
+              onClick={() => onSelect(pl.id)}
+              className={`w-full text-left px-2.5 py-1.5 rounded font-mono text-xs transition-colors flex items-center justify-between group ${
+                activePlaylistId === pl.id
+                  ? 'bg-ink/8 text-ink font-bold'
+                  : 'text-ink-soft hover:bg-ink/5 hover:text-ink'
+              }`}
+            >
+              <span className="truncate flex-1">{pl.name}</span>
+              <span className="text-[9px] text-muted tabular-nums ml-1 shrink-0">
+                {pl.trackIds.length}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
   )
 }

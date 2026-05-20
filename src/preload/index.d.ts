@@ -35,10 +35,14 @@ declare global {
         writeTagsBulk: (trackIds: string[]) => Promise<{ succeeded: number; failed: number; skipped: number }>
         previewPathMapping: (from: string, to: string) => Promise<number>
         applyPathMapping: (from: string, to: string) => Promise<number>
+        getWatchFolders: () => Promise<string[]>
+        setWatchFolders: (paths: string[]) => Promise<void>
         scanMissingFiles: () => Promise<Track[]>
+        autoLocateMissing: (searchDir?: string) => Promise<{ trackId: string; foundPath: string }[]>
         rekordboxDbStatus: () => Promise<{ available: boolean; path: string }>
         importFromRekordboxDb: (dbPath?: string) => Promise<ImportResult>
         exportToRekordboxDb: (dbPath?: string) => Promise<ExportResult>
+        runAutoGroup: (clusters: { name: string; trackIds: string[] }[]) => Promise<void>
       }
       audio: {
         readFile: (filePath: string) => Promise<ArrayBuffer>

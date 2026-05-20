@@ -7,7 +7,7 @@ import { SetTimeline } from '../../components/SetTimeline'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { ContextMenu } from '../../components/ContextMenu'
 import { analyzeAudio } from '../../lib/analyzer'
-import { magicSort } from '../../lib/compatibility'
+import { magicSort, compatibilityScore, generateBeatgrid } from '../../lib/compatibility'
 import { useToastStore } from '../../store/toastStore'
 import type { Track } from '@shared/types'
 
@@ -53,6 +53,7 @@ export function LibraryPage(): JSX.Element {
   const allTracks = useLibraryStore((s) => s.tracks)
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; trackId: string } | null>(null)
+  const [showSuggest, setShowSuggest] = useState(false)
 
   const [sortKey, setSortKey] = useState<SortKey>('artist')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -205,17 +206,22 @@ export function LibraryPage(): JSX.Element {
       } catch { /* continue */ }
       // Phase 2: audio decode (if bpm, key, OR energy still missing)
       const current = useLibraryStore.getState().tracks.find((x) => x.id === id) ?? t
-      if (!current.bpm || !current.key || current.energy == null) {
+      if (!current.bpm || !current.key || current.energy == null || current.beatgrid.length === 0) {
         try {
           const ab = await window.api.audio.readFile(t.filePath)
           const buf = await ctx.decodeAudioData(ab)
           const result = await analyzeAudio(buf)
-          await updateTrack({
-            id,
-            bpm: result.bpm ?? current.bpm,
-            key: result.key ?? current.key,
-            energy: result.energy ?? current.energy
-          })
+          const newBpm   = result.bpm ?? current.bpm
+          const beatgrid = (newBpm && result.offsetMs != null)
+            ? generateBeatgrid(newBpm, result.offsetMs, buf.duration * 1000)
+            : current.beatgrid
+          const cuePoints = (current.cuePoints.length === 0 && result.suggestedCues.length > 0)
+            ? result.suggestedCues.map((c, i) => ({
+                index: i, type: 'hotcue' as const,
+                positionMs: c.positionMs, color: c.color, label: c.label,
+              }))
+            : current.cuePoints
+          await updateTrack({ id, bpm: newBpm, key: result.key ?? current.key, energy: result.energy ?? current.energy, beatgrid, cuePoints })
         } catch { /* unreadable */ }
       }
     }
@@ -235,13 +241,18 @@ export function LibraryPage(): JSX.Element {
         const ab = await window.api.audio.readFile(t.filePath)
         const buf = await ctx.decodeAudioData(ab)
         const result = await analyzeAudio(buf)
-        // Always update energy; also fill any missing bpm/key as a bonus
+        // Always update energy; fill missing bpm/key/beatgrid as a bonus
         const current = useLibraryStore.getState().tracks.find((x) => x.id === id) ?? t
+        const newBpm = result.bpm ?? current.bpm
+        const beatgrid = (current.beatgrid.length === 0 && newBpm && result.offsetMs != null)
+          ? generateBeatgrid(newBpm, result.offsetMs, buf.duration * 1000)
+          : current.beatgrid
         await updateTrack({
           id,
           energy: result.energy ?? current.energy,
-          bpm: result.bpm ?? current.bpm,
-          key: result.key ?? current.key
+          bpm: newBpm,
+          key: result.key ?? current.key,
+          beatgrid,
         })
       } catch { /* unreadable */ }
     }
@@ -266,6 +277,31 @@ export function LibraryPage(): JSX.Element {
     setAnalysisProgress(null)
     showToast(`Beat grid analysed for ${ids.length} track${ids.length !== 1 ? 's' : ''}`, 'success')
   }, [allTracks, trackLabel, showToast])
+
+  const handleAutoCue = useCallback(async (ids: string[]) => {
+    const actx = new AudioContext()
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i]
+      const t  = allTracks.find((x) => x.id === id)
+      if (!t) continue
+      setAnalysisProgress({ label: 'auto-cue', current: i + 1, total: ids.length, track: trackLabel(t) })
+      try {
+        const ab  = await window.api.audio.readFile(t.filePath)
+        const buf = await actx.decodeAudioData(ab)
+        const result = await analyzeAudio(buf)
+        if (result.suggestedCues.length > 0) {
+          const cuePoints = result.suggestedCues.map((c, idx) => ({
+            index: idx, type: 'hotcue' as const,
+            positionMs: c.positionMs, color: c.color, label: c.label,
+          }))
+          await updateTrack({ id, cuePoints })
+        }
+      } catch { /* unreadable */ }
+    }
+    await actx.close()
+    setAnalysisProgress(null)
+    showToast(`Auto-cued ${ids.length} track${ids.length !== 1 ? 's' : ''}`, 'success')
+  }, [allTracks, updateTrack, trackLabel, showToast])
 
   const handleMagicSort = useCallback(async () => {
     if (!activePlaylistId) return
@@ -328,6 +364,20 @@ export function LibraryPage(): JSX.Element {
                 <path d="M7 3L9 4.5L7 6" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
               sort
+            </button>
+          )}
+          {activePlaylist && sorted.length >= 1 && (
+            <button
+              onClick={() => setShowSuggest((v) => !v)}
+              title="Find matching tracks — suggest library tracks that fit this playlist"
+              className={`ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[9px] transition-colors ${showSuggest ? 'bg-accent/10 text-accent' : 'text-muted hover:text-accent hover:bg-accent/10'}`}
+            >
+              <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" aria-hidden="true">
+                <circle cx="4" cy="4" r="2.5"/>
+                <path d="M6 6l2 2"/>
+                <path d="M4 1.5V0M4 8v-1.5M1.5 4H0M8 4H6.5"/>
+              </svg>
+              suggest
             </button>
           )}
         </div>
@@ -437,6 +487,19 @@ export function LibraryPage(): JSX.Element {
         <SetTimeline tracks={timelineTracks} />
       )}
 
+      {showSuggest && activePlaylist && (
+        <SuggestionsPanel
+          playlistTracks={timelineTracks}
+          allTracks={allTracks}
+          playlistId={activePlaylist.id}
+          onClose={() => setShowSuggest(false)}
+          onAdd={(ids) => addTracksToPlaylist(activePlaylist.id, ids).then(() =>
+            showToast(`Added ${ids.length} track${ids.length !== 1 ? 's' : ''} to ${activePlaylist.name}`, 'success')
+          )}
+          onLoadA={loadTrackA}
+        />
+      )}
+
       {ctxMenu && (() => {
         const ctxIds = selectedTrackIds.size > 0 ? [...selectedTrackIds] : [ctxMenu.trackId]
         const ctxTrack = allTracks.find((t) => t.id === ctxMenu.trackId) ?? null
@@ -494,6 +557,10 @@ export function LibraryPage(): JSX.Element {
                   {
                     label: isMulti ? `Detect beat grid (${ctxIds.length})` : 'Detect beat grid',
                     action: () => handleAnalyseBeats(ctxIds)
+                  },
+                  {
+                    label: isMulti ? `Auto-cue (${ctxIds.length})` : 'Auto-cue',
+                    action: () => handleAutoCue(ctxIds)
                   },
                   {
                     label: isMulti ? `Write tags to file (${ctxIds.length})` : 'Write tags to file',
@@ -678,4 +745,101 @@ function formatDuration(secs: number | null): string {
   const m = Math.floor(secs / 60)
   const s = Math.round(secs % 60)
   return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+// ── Playlist centroid: synthetic anchor track for compatibility scoring ────────
+
+function playlistCentroid(tracks: Track[]): Partial<Track> {
+  const withBpm    = tracks.filter((t) => t.bpm    != null)
+  const withEnergy = tracks.filter((t) => t.energy != null)
+  const withKey    = tracks.filter((t) => t.key)
+
+  const avgBpm    = withBpm.length    ? withBpm.reduce((s, t) => s + t.bpm!, 0) / withBpm.length       : null
+  const avgEnergy = withEnergy.length ? withEnergy.reduce((s, t) => s + t.energy!, 0) / withEnergy.length : null
+
+  // Modal key — most common
+  const keyCounts = new Map<string, number>()
+  for (const t of withKey) keyCounts.set(t.key!, (keyCounts.get(t.key!) ?? 0) + 1)
+  const modalKey = [...keyCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+
+  return { bpm: avgBpm ?? undefined, energy: avgEnergy ?? undefined, key: modalKey }
+}
+
+// ── Suggestions panel ─────────────────────────────────────────────────────────
+
+function SuggestionsPanel({ playlistTracks, allTracks, playlistId, onClose, onAdd, onLoadA }: {
+  playlistTracks: Track[]
+  allTracks: Track[]
+  playlistId: string
+  onClose: () => void
+  onAdd: (ids: string[]) => void
+  onLoadA: (t: Track) => void
+}): JSX.Element {
+  const inPlaylist = new Set(playlistTracks.map((t) => t.id))
+  const anchor     = playlistCentroid(playlistTracks) as Track
+
+  const suggestions = useMemo(() =>
+    allTracks
+      .filter((t) => !inPlaylist.has(t.id))
+      .map((t) => ({ track: t, score: compatibilityScore(anchor, t) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allTracks, playlistId]
+  )
+
+  return (
+    <div className="shrink-0 border-t border-border/20 bg-chassis-soft">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/15">
+        <span className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-accent">suggest</span>
+        <span className="font-mono text-[9px] text-muted/60">
+          tracks that fit this playlist's harmonic + energy profile
+        </span>
+        <button
+          onClick={() => onAdd(suggestions.map((s) => s.track.id))}
+          className="ml-auto font-mono text-[9px] text-muted hover:text-ink transition-colors px-2 py-0.5 rounded hover:bg-ink/[0.06]"
+        >
+          add all
+        </button>
+        <button onClick={onClose} className="text-muted hover:text-ink transition-colors font-mono text-xs leading-none px-1">×</button>
+      </div>
+      <div className="flex overflow-x-auto gap-2 px-3 py-2" style={{ scrollbarWidth: 'none' }}>
+        {suggestions.map(({ track, score }) => (
+          <div
+            key={track.id}
+            className="shrink-0 flex flex-col gap-0.5 bg-ink/[0.04] border border-border/25 rounded px-2.5 py-2 group hover:border-border/50 transition-colors"
+            style={{ width: 140 }}
+          >
+            <p className="font-mono text-[10px] text-ink truncate">{track.title || '—'}</p>
+            <p className="font-mono text-[9px] text-muted truncate">{track.artist}</p>
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="font-mono text-[9px] text-muted tabular-nums">{track.key ?? '—'}</span>
+              <span className="font-mono text-[9px] text-muted tabular-nums">{track.bpm?.toFixed(0) ?? '—'}</span>
+              <div
+                className="flex-1 h-0.5 rounded-full"
+                style={{ background: `rgba(var(--accent-rgb), ${0.15 + score * 0.85})` }}
+              />
+            </div>
+            <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => onAdd([track.id])}
+                className="flex-1 font-mono text-[8px] uppercase tracking-[0.08em] text-ink-soft hover:text-ink border border-border/40 rounded py-0.5 transition-colors"
+              >
+                + add
+              </button>
+              <button
+                onClick={() => onLoadA(track)}
+                className="font-mono text-[8px] uppercase tracking-[0.08em] text-accent border border-accent/30 rounded px-1.5 py-0.5 hover:bg-accent/10 transition-colors"
+              >
+                A
+              </button>
+            </div>
+          </div>
+        ))}
+        {suggestions.length === 0 && (
+          <p className="font-mono text-[10px] text-muted/50 italic py-1">No suggestions — library may lack BPM/key data.</p>
+        )}
+      </div>
+    </div>
+  )
 }

@@ -124,6 +124,7 @@ export function importFromRekordboxDb(
           cuePoints: cues.map((c, i) => rbCueToPoint(c, i)),
           beatgrid: [],
           energy: null,
+          danceability: null,
           color: '',
           playCount: 0,
           lastPlayedAt: null,

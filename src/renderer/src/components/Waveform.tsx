@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react'
 import type { CuePoint, BeatgridMarker } from '@shared/types'
 
 import type { WaveformStyle } from '../store/waveformStore'
@@ -30,9 +30,26 @@ export function Waveform({
   loopStart, loopEnd, isLooping,
   onSeek, isLoading
 }: Props): JSX.Element {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const sizeRef = useRef({ w: 0, h: 0, dpr: 1 })
-  const [pps, setPps] = useState(DEFAULT_PPS)
+  const canvasRef       = useRef<HTMLCanvasElement>(null)
+  const sizeRef         = useRef({ w: 0, h: 0, dpr: 1 })
+  const currentTimeRef  = useRef(currentTime)
+  const [pps, setPps]   = useState(DEFAULT_PPS)
+
+  // Keep time ref in sync with prop (no re-render needed)
+  useLayoutEffect(() => { currentTimeRef.current = currentTime })
+
+  // Initialise canvas backing-store dimensions synchronously before first RAF frame
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const dpr = window.devicePixelRatio || 1
+    const w   = canvas.offsetWidth
+    const h   = canvas.offsetHeight
+    if (w === 0 || h === 0) return
+    canvas.width  = w * dpr
+    canvas.height = h * dpr
+    sizeRef.current = { w, h, dpr }
+  }, [])
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -48,9 +65,10 @@ export function Waveform({
 
     if (!peaks || duration === 0) return
 
+    const ct = currentTimeRef.current
     const ppsScaled = pps * dpr
     const visibleDuration = cw / ppsScaled
-    const startTime = currentTime - visibleDuration / 2
+    const startTime = ct - visibleDuration / 2
 
     // ── CDJ-3000 spectral gradient ────────────────────────────────────────
     // Tips = cyan/blue (treble transients), center = orange-red (bass energy)
@@ -104,7 +122,7 @@ export function Waveform({
     for (let x = 0; x < cw; x += BAR_W) {
       const t = startTime + (x / cw) * visibleDuration
       if (t < 0 || t > duration) continue
-      const past = t < currentTime
+      const past = t < ct
 
       if (use3Band && lowPeaks && midPeaks && highPeaks) {
         // Linear interpolation between adjacent buckets for smooth look
@@ -141,35 +159,47 @@ export function Waveform({
       }
     }
 
-    // ── Beat grid tick marks ──────────────────────────────────────────────
-    // Markers sit at the top edge. A dark shadow behind the bright fill
-    // keeps them readable against any waveform colour underneath.
+    // ── Beat grid — Rekordbox style ───────────────────────────────────────
+    // Full-height hairlines: subtle for off-beats, brighter for bar markers.
+    // Bar numbers printed in small mono text just inside the top edge.
     if (beatgrid && beatgrid.length > 0) {
+      // Pre-count bar numbers so they're correct even when scrolled mid-track
+      let barCount = 1
+      const barNums = new Map<number, number>()
+      for (const m of beatgrid) {
+        if (m.isDownbeat) barNums.set(m.positionMs, barCount++)
+      }
+
+      const lw = Math.round(dpr)  // 1 logical pixel
+
+      // Off-beat lines first (drawn under bar lines)
+      ctx.fillStyle = 'rgba(255,255,255,0.14)'
       for (const marker of beatgrid) {
+        if (marker.isDownbeat) continue
         const t = marker.positionMs / 1000
-        if (t < startTime - 0.1 || t > startTime + visibleDuration + 0.1) continue
+        if (t < startTime - 0.05 || t > startTime + visibleDuration + 0.05) continue
+        const x = Math.round(((t - startTime) / visibleDuration) * cw)
+        ctx.fillRect(x, 0, lw, ch)
+      }
+
+      // Bar lines + numbers on top
+      ctx.font = `${Math.round(7.5 * dpr)}px 'JetBrains Mono', monospace`
+      ctx.textAlign = 'center'
+      for (const marker of beatgrid) {
+        if (!marker.isDownbeat) continue
+        const t = marker.positionMs / 1000
+        if (t < startTime - 0.05 || t > startTime + visibleDuration + 0.05) continue
         const x = Math.round(((t - startTime) / visibleDuration) * cw)
 
-        if (marker.isDownbeat) {
-          const h = Math.round(22 * dpr)
-          const capH = Math.round(3 * dpr)
-          // Shadow
-          ctx.fillStyle = 'rgba(0,0,0,0.70)'
-          ctx.fillRect(x - Math.round(dpr), 0, Math.round(4 * dpr), h)
-          // Bright white line
-          ctx.fillStyle = 'rgba(255,255,255,0.95)'
-          ctx.fillRect(x, 0, Math.round(2 * dpr), h)
-          // Horizontal top cap to make it look like a ⊤ pin
-          ctx.fillStyle = 'rgba(255,255,255,0.95)'
-          ctx.fillRect(x - Math.round(3 * dpr), 0, Math.round(8 * dpr), capH)
-        } else {
-          const h = Math.round(10 * dpr)
-          // Shadow
-          ctx.fillStyle = 'rgba(0,0,0,0.45)'
-          ctx.fillRect(x, 0, Math.round(2 * dpr), h)
-          // Bright line
-          ctx.fillStyle = 'rgba(255,255,255,0.72)'
-          ctx.fillRect(x, 0, Math.round(dpr), h)
+        // Bar line — full height
+        ctx.fillStyle = 'rgba(255,255,255,0.52)'
+        ctx.fillRect(x, 0, lw, ch)
+
+        // Bar number
+        const bn = barNums.get(marker.positionMs)
+        if (bn !== undefined) {
+          ctx.fillStyle = 'rgba(255,255,255,0.60)'
+          ctx.fillText(String(bn), x, Math.round(8.5 * dpr))
         }
       }
     }
@@ -215,7 +245,7 @@ export function Waveform({
     ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(cx - 3 * dpr, 0, 6 * dpr, ch)
     ctx.fillStyle = 'rgba(255,255,255,0.97)'; ctx.fillRect(cx - dpr, 0, 2 * dpr, ch)
 
-  }, [peaks, lowPeaks, midPeaks, highPeaks, waveformStyle, currentTime, duration, cuePoints, mainCueTime, beatgrid, loopStart, loopEnd, isLooping, pps])
+  }, [peaks, lowPeaks, midPeaks, highPeaks, waveformStyle, duration, cuePoints, mainCueTime, beatgrid, loopStart, loopEnd, isLooping, pps])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -226,13 +256,19 @@ export function Waveform({
       const h = canvas.offsetHeight
       canvas.width = w * dpr; canvas.height = h * dpr
       sizeRef.current = { w, h, dpr }
-      draw()
     })
     ro.observe(canvas)
     return () => ro.disconnect()
-  }, [draw])
+  }, [])
 
-  useEffect(() => { draw() }, [draw])
+  // RAF loop — draws every frame using the latest time from the ref,
+  // bypassing React's render cycle for smooth 60fps playback and scrubbing.
+  useEffect(() => {
+    let raf: number
+    const loop = () => { draw(); raf = requestAnimationFrame(loop) }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [draw])
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!duration || !sizeRef.current.w) return
@@ -241,9 +277,9 @@ export function Waveform({
     const visibleDuration = cw / (pps * dpr)
     const rect = e.currentTarget.getBoundingClientRect()
     const xFrac = (e.clientX - rect.left) / rect.width
-    const t = (currentTime - visibleDuration / 2) + xFrac * visibleDuration
+    const t = (currentTimeRef.current - visibleDuration / 2) + xFrac * visibleDuration
     onSeek(Math.max(0, Math.min(duration, t)))
-  }, [duration, currentTime, pps, onSeek])
+  }, [duration, pps, onSeek])
 
   const zoomIn  = () => setPps((p) => Math.min(p * 2, 1600))
   const zoomOut = () => setPps((p) => Math.max(p / 2, 25))

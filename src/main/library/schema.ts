@@ -107,7 +107,9 @@ export function applySchema(db: import('better-sqlite3').Database): void {
     "ALTER TABLE tracks ADD COLUMN color TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE tracks ADD COLUMN energy INTEGER",
     "ALTER TABLE tracks ADD COLUMN play_count INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE tracks ADD COLUMN last_played_at TEXT"
+    "ALTER TABLE tracks ADD COLUMN last_played_at TEXT",
+    "ALTER TABLE playlists ADD COLUMN is_auto_group INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE tracks ADD COLUMN danceability REAL"
   ]) {
     try { db.exec(stmt) } catch { /* column already exists */ }
   }

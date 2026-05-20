@@ -6,6 +6,7 @@ import { registerLibraryHandlers } from './ipc/library'
 import { registerSettingsHandlers } from './ipc/settings'
 import { registerAudioHandlers } from './ipc/audio'
 import { warmModel } from './integrations/beat-analysis'
+import { startWatcher } from './integrations/watch-folder'
 import { loadSettings, saveSettings } from './settings'
 
 function createWindow(): void {
@@ -78,6 +79,7 @@ app.whenReady().then(() => {
   setupAutoUpdater()
   createWindow()
   warmModel() // preload beat model into memory if installed
+  startWatcher(loadSettings().watchFolders)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

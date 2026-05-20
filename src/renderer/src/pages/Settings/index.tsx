@@ -224,6 +224,11 @@ export function SettingsPage(): JSX.Element {
         </div>
       </Section>
 
+      {/* Watch Folders */}
+      <Section title="Watch Folders" icon="⊙">
+        <WatchFoldersTool />
+      </Section>
+
       {/* Path Mappings */}
       <Section title="Path Mappings" icon="⇄">
         <PathMappingTool />
@@ -398,6 +403,68 @@ function PathMappingTool(): JSX.Element {
           </span>
         )}
       </div>
+    </div>
+  )
+}
+
+function WatchFoldersTool(): JSX.Element {
+  const [folders, setFolders] = useState<string[] | null>(null)
+
+  useEffect(() => {
+    window.api.library.getWatchFolders().then(setFolders)
+  }, [])
+
+  const update = async (next: string[]): Promise<void> => {
+    setFolders(next)
+    await window.api.library.setWatchFolders(next)
+  }
+
+  const add = async (): Promise<void> => {
+    const p = await window.api.settings.choosePath('Select watch folder', true)
+    if (!p || folders?.includes(p)) return
+    await update([...(folders ?? []), p])
+  }
+
+  const remove = async (path: string): Promise<void> => {
+    await update((folders ?? []).filter((f) => f !== path))
+  }
+
+  if (!folders) return <span className="font-mono text-[9.5px] text-muted">loading…</span>
+
+  return (
+    <div className="space-y-3">
+      <p className="font-mono text-[9.5px] text-muted/80 leading-relaxed">
+        Audio files added to a watched folder are automatically imported into the library. Supports .mp3, .flac, .aiff, .wav, .m4a, .ogg.
+      </p>
+
+      {folders.length === 0 ? (
+        <p className="font-mono text-[9.5px] text-muted/50 italic">No watch folders configured.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {folders.map((f) => (
+            <li key={f} className="flex items-center gap-2 bg-ink/[0.03] border border-border/30 rounded px-3 py-2">
+              <span className="flex-1 font-mono text-[10px] text-ink truncate">{f}</span>
+              <button
+                onClick={() => window.api.settings.openInFinder(f)}
+                className="text-muted hover:text-ink transition-colors font-mono text-[9.5px]"
+                title="Reveal in Finder"
+              >↗</button>
+              <button
+                onClick={() => remove(f)}
+                className="text-muted hover:text-red-500 transition-colors font-mono text-xs leading-none"
+                title="Remove"
+              >✕</button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <button
+        onClick={add}
+        className="px-3 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[9.5px] text-ink-soft hover:text-ink transition-colors"
+      >
+        + add folder
+      </button>
     </div>
   )
 }

@@ -13,7 +13,9 @@ const FIELDS: { value: SmartRuleField; label: string; type: 'text' | 'numeric' |
   { value: 'durationSeconds', label: 'duration (sec)', type: 'numeric' },
   { value: 'dateAdded',       label: 'date added',     type: 'date'    },
   { value: 'playCount',       label: 'play count',     type: 'numeric' },
-  { value: 'lastPlayedAt',    label: 'last played',    type: 'date'    }
+  { value: 'lastPlayedAt',    label: 'last played',    type: 'date'    },
+  { value: 'energy',          label: 'energy',         type: 'numeric' },
+  { value: 'tags',            label: 'tag',            type: 'text'    },
 ]
 
 const OPS_FOR_TYPE: Record<string, { value: SmartRuleOp; label: string }[]> = {

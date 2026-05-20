@@ -15,6 +15,8 @@ export interface AppSettings {
   theme: 'dark' | 'light' | 'system'
   defaultExportDir: string
   showWelcomeOnStartup: boolean
+  // Watch folders
+  watchFolders: string[]
   // State
   lastImportedAt: string | null
   windowBounds: { x: number; y: number; width: number; height: number } | null
@@ -31,6 +33,7 @@ const DEFAULTS: AppSettings = {
   theme: 'dark',
   defaultExportDir: '',
   showWelcomeOnStartup: true,
+  watchFolders: [],
   lastImportedAt: null,
   windowBounds: null
 }
