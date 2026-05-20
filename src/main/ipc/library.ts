@@ -505,8 +505,8 @@ export function registerLibraryHandlers(): void {
     path: getDefaultModelPath()
   }))
 
-  ipcMain.handle('library:warmBeatModel', async (): Promise<void> => {
-    await warmModel()
+  ipcMain.handle('library:warmBeatModel', (): void => {
+    warmModel()
   })
 
   ipcMain.handle('library:analyzeBeats', async (_e, trackId: string): Promise<Track> => {
