@@ -102,7 +102,12 @@ export function applySchema(db: import('better-sqlite3').Database): void {
   // Safe column migrations — ignore "duplicate column" errors
   for (const stmt of [
     "ALTER TABLE playlists ADD COLUMN is_smart INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE playlists ADD COLUMN rules TEXT NOT NULL DEFAULT '[]'"
+    "ALTER TABLE playlists ADD COLUMN rules TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE playlists ADD COLUMN color TEXT NOT NULL DEFAULT '#8A8474'",
+    "ALTER TABLE tracks ADD COLUMN color TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE tracks ADD COLUMN energy INTEGER",
+    "ALTER TABLE tracks ADD COLUMN play_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE tracks ADD COLUMN last_played_at TEXT"
   ]) {
     try { db.exec(stmt) } catch { /* column already exists */ }
   }

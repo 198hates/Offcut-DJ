@@ -59,6 +59,10 @@ export function importFromIntegration(db: Database.Database, xmlPath: string): I
         tags: [],
         cuePoints: [],
         beatgrid: [],
+          energy: null,
+          color: '',
+          playCount: 0,
+          lastPlayedAt: null,
         sourceIds: { 'apple-music': appleMusicId }
       }
 

@@ -66,6 +66,10 @@ export function importFromIntegration(db: Database.Database, nmlPath: string): I
         tags: [],
         cuePoints,
         beatgrid: [],
+          energy: null,
+          color: '',
+          playCount: 0,
+          lastPlayedAt: null,
         sourceIds: { traktor: traktorKey }
       }
 

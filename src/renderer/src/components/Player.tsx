@@ -4,9 +4,10 @@ import { Mixer } from './Mixer'
 
 export function Player(): JSX.Element {
   return (
+    // The player section is always dark regardless of app theme
     <div
-      className="flex shrink-0 bg-surface-900 border-t border-white/[0.06]"
-      style={{ height: 300 }}
+      className="flex shrink-0 border-t border-border/20"
+      style={{ height: 310, background: 'var(--panel-deep)' }}
     >
       <Deck useStore={useDeckAStore} label="A" keyMod="none" />
       <Mixer />

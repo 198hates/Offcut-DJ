@@ -1,46 +1,191 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Archivo:wght@400;500;600;700;800;900&family=Fraunces:ital,opsz,wght@1,9..144,300;1,9..144,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
+/* ── Light theme (Offcut · paper stock) ────────────────── */
+:root, [data-theme="light"] {
+  --chassis-rgb:      235 229 211;  /* --paper  #EBE5D3 */
+  --chassis-soft-rgb: 244 239 224;  /* --paper-2 #F4EFE0 */
+  --paper-rgb:        251 247 236;  /* --panel  #FBF7EC */
+  --ink-rgb:          31  27  20;   /* --ink    #1F1B14 */
+  --ink-soft-rgb:     74  67  56;   /* --ink-soft #4A4338 */
+  --muted-rgb:        138 128 115;  /* --mute   #8A8073 */
+  --border-rgb:       201 192 168;  /* --rule   #C9C0A8 */
+  --accent-rgb:       184 74  43;   /* --spot   #B84A2B terracotta */
+  --panel-deep:       #1F1B14;
+  --led-text:         #B84A2B;
+  --led-ghost:        rgba(184,74,43,0.13);
+  --led-glow:         rgba(184,74,43,0.4);
+}
 
-  html,
-  body,
-  #root {
-    height: 100%;
-    overflow: hidden;
-  }
+/* ── Dark theme (studio at 2am) ────────────────────────── */
+.dark, [data-theme="dark"] {
+  --chassis-rgb:      26  22  18;   /* --paper-2 #1A1612 */
+  --chassis-soft-rgb: 34  29  23;   /* --paper-3 #221D17 */
+  --paper-rgb:        20  17  12;   /* --paper   #14110C */
+  --ink-rgb:          235 229 211;  /* --ink     #EBE5D3 */
+  --ink-soft-rgb:     181 172 151;  /* --ink-soft #B5AC97 */
+  --muted-rgb:        110 101 83;   /* --mute    #6E6553 */
+  --border-rgb:       42  36  28;   /* --rule    #2A241C */
+  --accent-rgb:       216 106 74;   /* --spot    #D86A4A terracotta lifted */
+  --panel-deep:       #060503;
+  --led-text:         #D86A4A;
+  --led-ghost:        rgba(216,106,74,0.10);
+  --led-glow:         rgba(216,106,74,0.55);
+}
+
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body, #root { height: 100%; overflow: hidden; }
 
   body {
-    @apply bg-surface-950 text-white font-sans text-sm antialiased;
+    @apply bg-chassis text-ink antialiased;
+    font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.5;
     user-select: none;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    @apply bg-transparent;
-  }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
-    @apply bg-surface-200/20 rounded-full;
+    background: rgb(var(--border-rgb) / 0.5);
+    border-radius: 2px;
   }
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-surface-200/40;
+  ::-webkit-scrollbar-thumb:hover { background: rgb(var(--border-rgb) / 0.9); }
+
+  input[type="range"] { appearance: none; background: transparent; }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: 1.5px;
+    background: rgb(var(--border-rgb));
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: rgb(var(--accent-rgb));
+    margin-top: -4.5px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  /* Native select/input theming */
+  select, input, textarea {
+    color: rgb(var(--ink-rgb));
+  }
+  option {
+    background: rgb(var(--paper-rgb));
+    color: rgb(var(--ink-rgb));
   }
 }
 
 @layer utilities {
-  .drag-region {
-    -webkit-app-region: drag;
+  .drag-region { -webkit-app-region: drag; }
+  .no-drag     { -webkit-app-region: no-drag; }
+
+  .section-label {
+    @apply font-mono text-[9px] uppercase tracking-[0.2em] text-muted;
   }
-  .no-drag {
-    -webkit-app-region: no-drag;
-  }
+  .section-label .num { color: rgb(var(--accent-rgb)); font-weight: 700; }
+}
+
+/* ── Corner register marks (Offcut plate corners) ──────── */
+.reg-mark {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  z-index: 50;
+}
+.reg-mark-tl { border-left: 1px solid rgb(var(--accent-rgb) / 0.7); border-top:    1px solid rgb(var(--accent-rgb) / 0.7); }
+.reg-mark-tr { border-right: 1px solid rgb(var(--accent-rgb) / 0.7); border-top:   1px solid rgb(var(--accent-rgb) / 0.7); }
+.reg-mark-bl { border-left: 1px solid rgb(var(--accent-rgb) / 0.7); border-bottom: 1px solid rgb(var(--accent-rgb) / 0.7); }
+.reg-mark-br { border-right: 1px solid rgb(var(--accent-rgb) / 0.7); border-bottom:1px solid rgb(var(--accent-rgb) / 0.7); }
+
+/* ── Theme toggle (chunky physical switch) ─────────────── */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  background: rgb(var(--paper-rgb));
+  border: 1px solid rgb(var(--border-rgb) / 0.5);
+  border-radius: 22px;
+  padding: 3px;
+  cursor: pointer;
+  position: relative;
+  width: 72px;
+  height: 26px;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.12);
+  flex-shrink: 0;
+}
+.theme-toggle-icon {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--muted-rgb));
+  z-index: 1;
+}
+.theme-toggle-icon svg { width: 10px; height: 10px; }
+.theme-toggle-knob {
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 30px; height: 18px;
+  background: linear-gradient(180deg, #3A352D 0%, #14110E 100%);
+  border-radius: 16px;
+  transition: transform 0.25s cubic-bezier(.4,1.5,.6,1), background 0.25s, box-shadow 0.25s;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+.dark .theme-toggle-knob,
+[data-theme="dark"] .theme-toggle-knob {
+  transform: translateX(36px);
+  background: linear-gradient(180deg, #D86A4A 0%, #8E3818 100%);
+  box-shadow: 0 0 10px rgba(216,106,74,0.55), 0 1px 2px rgba(0,0,0,0.6);
+}
+
+/* ── LED readout (hardware display) ───────────────────── */
+.led-readout {
+  position: relative;
+  background: #0d0d14;
+  border-radius: 3px;
+  padding: 2px 5px 1px;
+  display: inline-block;
+}
+.led-readout-ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  color: var(--led-ghost);
+  pointer-events: none;
+  user-select: none;
+}
+.led-readout-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  color: var(--led-text);
+  text-shadow: 0 0 6px var(--led-glow);
+  position: relative;
+}
+.led-readout-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: rgba(255,255,255,0.2);
+  margin-top: 2px;
+  display: block;
 }

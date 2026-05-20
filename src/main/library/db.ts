@@ -30,6 +30,10 @@ export function rowToTrack(row: Record<string, unknown>): Track {
     key: row.key as string | null,
     durationSeconds: row.duration_seconds as number | null,
     rating: row.rating as number,
+    color: (row.color as string) || '',
+    energy: (row.energy as number | null) ?? null,
+    playCount: (row.play_count as number) ?? 0,
+    lastPlayedAt: (row.last_played_at as string | null) ?? null,
     dateAdded: row.date_added as string,
     comment: row.comment as string,
     tags: JSON.parse(row.tags as string),
@@ -46,6 +50,7 @@ export function rowToPlaylist(
   return {
     id: row.id as string,
     name: row.name as string,
+    color: (row.color as string) || '#8A8474',
     isFolder: Boolean(row.is_folder),
     isSmart: Boolean(row.is_smart),
     rules: JSON.parse((row.rules as string) || '[]'),
@@ -60,11 +65,11 @@ export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
   db.prepare(`
     INSERT INTO tracks (
       id, file_path, title, artist, album, genre, bpm, key,
-      duration_seconds, rating, date_added, comment,
+      duration_seconds, rating, energy, date_added, comment,
       tags, cue_points, beatgrid, source_ids
     ) VALUES (
       @id, @filePath, @title, @artist, @album, @genre, @bpm, @key,
-      @durationSeconds, @rating, @dateAdded, @comment,
+      @durationSeconds, @rating, @energy, @dateAdded, @comment,
       @tags, @cuePoints, @beatgrid, @sourceIds
     )
     ON CONFLICT(id) DO UPDATE SET
@@ -76,7 +81,11 @@ export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
       bpm = excluded.bpm,
       key = excluded.key,
       duration_seconds = excluded.duration_seconds,
-      rating = excluded.rating,
+      /* rating: keep existing if import sends 0 (e.g. Serato hardcodes 0) */
+      rating = CASE WHEN excluded.rating > 0 THEN excluded.rating ELSE rating END,
+      /* energy: preserve analyzed value — only set from import if not yet analyzed */
+      energy = COALESCE(energy, excluded.energy),
+      /* color, play_count, last_played_at are user data — never overwritten */
       comment = excluded.comment,
       tags = excluded.tags,
       cue_points = excluded.cue_points,
@@ -94,6 +103,7 @@ export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
     key: track.key,
     durationSeconds: track.durationSeconds,
     rating: track.rating,
+    energy: track.energy,
     dateAdded: track.dateAdded,
     comment: track.comment,
     tags: JSON.stringify(track.tags),

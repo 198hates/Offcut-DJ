@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Crate</title>
+    <script>
+      try {
+        const s = localStorage.getItem('crate-theme')
+        const t = s ? JSON.parse(s).state?.theme : null
+        if (t === 'dark') {
+          document.documentElement.classList.add('dark')
+          document.documentElement.dataset.theme = 'dark'
+        } else {
+          document.documentElement.dataset.theme = 'light'
+        }
+      } catch { document.documentElement.dataset.theme = 'light' }
+    </script>
   </head>
   <body>
     <div id="root"></div>

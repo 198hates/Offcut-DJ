@@ -11,6 +11,8 @@ export interface CuePoint {
 export interface BeatgridMarker {
   positionMs: number
   bpm: number
+  isDownbeat?: boolean   // true = bar start (downbeat)
+  confidence?: number    // model activation 0–1
 }
 
 export interface Track {
@@ -24,6 +26,10 @@ export interface Track {
   key: string | null
   durationSeconds: number | null
   rating: number
+  color: string           // hex colour tag, '' = none
+  energy: number | null   // 1–10, null = unset
+  playCount: number
+  lastPlayedAt: string | null
   dateAdded: string
   comment: string
   tags: string[]
@@ -32,7 +38,7 @@ export interface Track {
   sourceIds: Partial<Record<IntegrationId, string>>
 }
 
-export type SmartRuleField = 'bpm' | 'key' | 'genre' | 'artist' | 'album' | 'rating' | 'title' | 'comment' | 'durationSeconds' | 'dateAdded'
+export type SmartRuleField = 'bpm' | 'key' | 'genre' | 'artist' | 'album' | 'rating' | 'title' | 'comment' | 'durationSeconds' | 'dateAdded' | 'playCount' | 'lastPlayedAt'
 export type SmartRuleOp = 'is' | 'is_not' | 'contains' | 'not_contains' | 'greater_than' | 'less_than' | 'between' | 'in_last_days'
 
 export interface SmartRule {
@@ -44,6 +50,7 @@ export interface SmartRule {
 export interface Playlist {
   id: string
   name: string
+  color: string   // hex colour for blip dot (e.g. '#3CA8A1')
   isFolder: boolean
   isSmart: boolean
   rules: SmartRule[]

@@ -63,6 +63,10 @@ export function importFromIntegration(appDb: Database.Database, dbPath: string):
           tags: [],
           cuePoints: cues,
           beatgrid: [],
+          energy: null,
+          color: '',
+          playCount: 0,
+          lastPlayedAt: null,
           sourceIds: { 'engine-dj': engId }
         }
 

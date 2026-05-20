@@ -24,9 +24,32 @@ const api = {
       ipcRenderer.invoke('library:updateSmartPlaylistRules', id, name, rules),
     renamePlaylist: (id: string, name: string) =>
       ipcRenderer.invoke('library:renamePlaylist', id, name),
+    updatePlaylistColor: (id: string, color: string) =>
+      ipcRenderer.invoke('library:updatePlaylistColor', id, color),
+    recordPlay: (id: string) =>
+      ipcRenderer.invoke('library:recordPlay', id),
     deletePlaylist: (id: string) => ipcRenderer.invoke('library:deletePlaylist', id),
+    reorderPlaylistTracks: (playlistId: string, orderedIds: string[]) =>
+      ipcRenderer.invoke('library:reorderPlaylistTracks', playlistId, orderedIds),
     addTracksToPlaylist: (playlistId: string, trackIds: string[]) =>
       ipcRenderer.invoke('library:addTracksToPlaylist', playlistId, trackIds),
+    replaceTrackInPlaylists: (removeId: string, keepId: string) =>
+      ipcRenderer.invoke('library:replaceTrackInPlaylists', removeId, keepId),
+    removeTracksFromPlaylist: (playlistId: string, trackIds: string[]) =>
+      ipcRenderer.invoke('library:removeTracksFromPlaylist', playlistId, trackIds),
+    beatModelStatus: () => ipcRenderer.invoke('library:beatModelStatus'),
+    warmBeatModel: () => ipcRenderer.invoke('library:warmBeatModel'),
+    analyzeBeats: (trackId: string) => ipcRenderer.invoke('library:analyzeBeats', trackId),
+    exportPlaylistM3U: (playlistId: string) => ipcRenderer.invoke('library:exportPlaylistM3U', playlistId),
+    exportPlaylistCSV: (playlistId: string) => ipcRenderer.invoke('library:exportPlaylistCSV', playlistId),
+    writeTagsToFile: (trackId: string) =>
+      ipcRenderer.invoke('library:writeTagsToFile', trackId),
+    writeTagsBulk: (trackIds: string[]) =>
+      ipcRenderer.invoke('library:writeTagsBulk', trackIds),
+    previewPathMapping: (from: string, to: string) =>
+      ipcRenderer.invoke('library:previewPathMapping', from, to),
+    applyPathMapping: (from: string, to: string) =>
+      ipcRenderer.invoke('library:applyPathMapping', from, to),
     scanMissingFiles: () => ipcRenderer.invoke('library:scanMissingFiles'),
     rekordboxDbStatus: () => ipcRenderer.invoke('library:rekordboxDbStatus'),
     importFromRekordboxDb: (dbPath?: string) =>

@@ -1,12 +1,20 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
-import type { CuePoint } from '@shared/types'
+import type { CuePoint, BeatgridMarker } from '@shared/types'
+
+import type { WaveformStyle } from '../store/waveformStore'
 
 interface Props {
   peaks: Float32Array | null
+  detailPeaks?: Float32Array | null
+  lowPeaks: Float32Array | null
+  midPeaks: Float32Array | null
+  highPeaks: Float32Array | null
+  waveformStyle: WaveformStyle
   duration: number
   currentTime: number
   cuePoints: CuePoint[]
   mainCueTime: number | null
+  beatgrid?: BeatgridMarker[]
   loopStart?: number | null
   loopEnd?: number | null
   isLooping?: boolean
@@ -17,7 +25,8 @@ interface Props {
 const DEFAULT_PPS = 100
 
 export function Waveform({
-  peaks, duration, currentTime, cuePoints, mainCueTime,
+  peaks, lowPeaks, midPeaks, highPeaks, waveformStyle,
+  duration, currentTime, cuePoints, mainCueTime, beatgrid,
   loopStart, loopEnd, isLooping,
   onSeek, isLoading
 }: Props): JSX.Element {
@@ -43,31 +52,39 @@ export function Waveform({
     const visibleDuration = cw / ppsScaled
     const startTime = currentTime - visibleDuration / 2
 
-    // ── Gradients ────────────────────────────────────────────────────────
+    // ── CDJ-3000 spectral gradient ────────────────────────────────────────
+    // Tips = cyan/blue (treble transients), center = orange-red (bass energy)
     const uGrad = ctx.createLinearGradient(0, 0, 0, ch)
-    uGrad.addColorStop(0,    'rgba(0,120,200,0.55)')
-    uGrad.addColorStop(0.25, 'rgba(0,180,255,0.85)')
-    uGrad.addColorStop(0.45, 'rgba(80,230,255,1.0)')
-    uGrad.addColorStop(0.5,  'rgba(255,255,255,1.0)')
-    uGrad.addColorStop(0.55, 'rgba(80,230,255,1.0)')
-    uGrad.addColorStop(0.75, 'rgba(0,180,255,0.85)')
-    uGrad.addColorStop(1,    'rgba(0,120,200,0.55)')
+    uGrad.addColorStop(0,    'rgba(20,190,255,0.75)')   // tip: cyan (treble)
+    uGrad.addColorStop(0.18, 'rgba(40,215,255,1.0)')    // upper: bright cyan
+    uGrad.addColorStop(0.36, 'rgba(255,255,255,1.0)')   // white (upper mids)
+    uGrad.addColorStop(0.46, 'rgba(255,190,20,1.0)')    // yellow-orange (mid-bass)
+    uGrad.addColorStop(0.50, 'rgba(255,75,10,1.0)')     // center: hot orange-red (bass)
+    uGrad.addColorStop(0.54, 'rgba(255,190,20,1.0)')    // mirror
+    uGrad.addColorStop(0.64, 'rgba(255,255,255,1.0)')   // mirror white
+    uGrad.addColorStop(0.82, 'rgba(40,215,255,1.0)')    // mirror cyan
+    uGrad.addColorStop(1,    'rgba(20,190,255,0.75)')   // tip
 
+    // Played region: same structure, dimmed and desaturated
     const pGrad = ctx.createLinearGradient(0, 0, 0, ch)
-    pGrad.addColorStop(0,   'rgba(50,70,90,0.5)')
-    pGrad.addColorStop(0.4, 'rgba(90,115,135,0.75)')
-    pGrad.addColorStop(0.5, 'rgba(140,160,175,0.85)')
-    pGrad.addColorStop(0.6, 'rgba(90,115,135,0.75)')
-    pGrad.addColorStop(1,   'rgba(50,70,90,0.5)')
+    pGrad.addColorStop(0,    'rgba(0,90,130,0.45)')
+    pGrad.addColorStop(0.20, 'rgba(20,110,160,0.60)')
+    pGrad.addColorStop(0.38, 'rgba(80,100,130,0.65)')
+    pGrad.addColorStop(0.47, 'rgba(120,80,40,0.60)')
+    pGrad.addColorStop(0.50, 'rgba(100,50,20,0.60)')
+    pGrad.addColorStop(0.53, 'rgba(120,80,40,0.60)')
+    pGrad.addColorStop(0.62, 'rgba(80,100,130,0.65)')
+    pGrad.addColorStop(0.80, 'rgba(20,110,160,0.60)')
+    pGrad.addColorStop(1,    'rgba(0,90,130,0.45)')
 
     // ── Loop region highlight ─────────────────────────────────────────────
     if (loopStart != null && loopEnd != null && loopEnd > loopStart) {
       const lx1 = ((loopStart - startTime) / visibleDuration) * cw
       const lx2 = ((loopEnd - startTime) / visibleDuration) * cw
-      ctx.fillStyle = isLooping ? 'rgba(255,165,0,0.18)' : 'rgba(255,165,0,0.08)'
+      ctx.fillStyle = isLooping ? 'rgba(184,74,43,0.18)' : 'rgba(184,74,43,0.08)'
       ctx.fillRect(lx1, 0, lx2 - lx1, ch)
       // Loop bracket lines
-      ctx.fillStyle = isLooping ? 'rgba(255,165,0,0.9)' : 'rgba(255,165,0,0.5)'
+      ctx.fillStyle = isLooping ? 'rgba(184,74,43,0.90)' : 'rgba(184,74,43,0.50)'
       ctx.fillRect(lx1, 0, 2, ch)
       ctx.fillRect(lx2 - 2, 0, 2, ch)
       // Top/bottom horizontal bars
@@ -78,15 +95,83 @@ export function Waveform({
     }
 
     // ── Waveform bars ────────────────────────────────────────────────────
-    const BAR_W = Math.max(2, Math.round(2 * dpr))
+    // 1px logical bars (2px on Retina) — tight enough to look solid
+    const BAR_W = Math.max(1, Math.round(dpr))
+    const BW1 = BAR_W + 1   // +1 prevents sub-pixel gaps at Retina boundaries
+    const use3Band = (waveformStyle === 'three-band' || waveformStyle === 'rgb') && lowPeaks && midPeaks && highPeaks
+    const SCALE = 0.92
+
     for (let x = 0; x < cw; x += BAR_W) {
       const t = startTime + (x / cw) * visibleDuration
       if (t < 0 || t > duration) continue
-      const idx = Math.min(peaks.length - 1, Math.max(0, Math.round((t / duration) * peaks.length)))
-      const bh = peaks[idx] * mid * 0.88
-      if (bh < 0.5) continue
-      ctx.fillStyle = t < currentTime ? pGrad : uGrad
-      ctx.fillRect(x, mid - bh, BAR_W, bh * 2)
+      const past = t < currentTime
+
+      if (use3Band && lowPeaks && midPeaks && highPeaks) {
+        // Linear interpolation between adjacent buckets for smooth look
+        const fi  = (t / duration) * (lowPeaks.length - 1)
+        const bi0 = Math.max(0, Math.floor(fi))
+        const bi1 = Math.min(lowPeaks.length - 1, bi0 + 1)
+        const alpha = fi - bi0
+        const bhL = (lowPeaks[bi0]  + alpha * (lowPeaks[bi1]  - lowPeaks[bi0]))  * mid * SCALE
+        const bhM = (midPeaks[bi0]  + alpha * (midPeaks[bi1]  - midPeaks[bi0]))  * mid * SCALE
+        const bhH = (highPeaks[bi0] + alpha * (highPeaks[bi1] - highPeaks[bi0])) * mid * SCALE
+
+        if (waveformStyle === 'three-band') {
+          ctx.fillStyle = past ? 'rgba(15,70,145,0.38)' : 'rgba(25,135,255,0.90)'
+          ctx.fillRect(x, mid - bhH, BW1, bhH * 2)
+          ctx.fillStyle = past ? 'rgba(100,52,12,0.40)' : 'rgba(215,118,28,0.94)'
+          ctx.fillRect(x, mid - bhM, BW1, bhM * 2)
+          ctx.fillStyle = past ? 'rgba(130,115,85,0.42)' : 'rgba(248,232,195,0.98)'
+          ctx.fillRect(x, mid - bhL, BW1, bhL * 2)
+        } else {
+          // RGB: red=bass, green=mid, blue=high
+          ctx.fillStyle = past ? 'rgba(150,18,18,0.38)' : 'rgba(255,35,35,0.92)'
+          ctx.fillRect(x, mid - bhL, BW1, bhL * 2)
+          ctx.fillStyle = past ? 'rgba(18,115,18,0.38)' : 'rgba(35,215,55,0.92)'
+          ctx.fillRect(x, mid - bhM, BW1, bhM * 2)
+          ctx.fillStyle = past ? 'rgba(18,55,150,0.38)' : 'rgba(35,125,255,0.92)'
+          ctx.fillRect(x, mid - bhH, BW1, bhH * 2)
+        }
+      } else {
+        const idx = Math.min(peaks!.length - 1, Math.max(0, Math.round((t / duration) * peaks!.length)))
+        const bh = peaks![idx] * mid * 0.88
+        if (bh < 0.5) continue
+        ctx.fillStyle = past ? pGrad : uGrad
+        ctx.fillRect(x, mid - bh, BW1, bh * 2)
+      }
+    }
+
+    // ── Beat grid tick marks ──────────────────────────────────────────────
+    // Markers sit at the top edge. A dark shadow behind the bright fill
+    // keeps them readable against any waveform colour underneath.
+    if (beatgrid && beatgrid.length > 0) {
+      for (const marker of beatgrid) {
+        const t = marker.positionMs / 1000
+        if (t < startTime - 0.1 || t > startTime + visibleDuration + 0.1) continue
+        const x = Math.round(((t - startTime) / visibleDuration) * cw)
+
+        if (marker.isDownbeat) {
+          const h = Math.round(22 * dpr)
+          const capH = Math.round(3 * dpr)
+          // Shadow
+          ctx.fillStyle = 'rgba(0,0,0,0.70)'
+          ctx.fillRect(x - Math.round(dpr), 0, Math.round(4 * dpr), h)
+          // Bright white line
+          ctx.fillStyle = 'rgba(255,255,255,0.95)'
+          ctx.fillRect(x, 0, Math.round(2 * dpr), h)
+          // Horizontal top cap to make it look like a ⊤ pin
+          ctx.fillStyle = 'rgba(255,255,255,0.95)'
+          ctx.fillRect(x - Math.round(3 * dpr), 0, Math.round(8 * dpr), capH)
+        } else {
+          const h = Math.round(10 * dpr)
+          // Shadow
+          ctx.fillStyle = 'rgba(0,0,0,0.45)'
+          ctx.fillRect(x, 0, Math.round(2 * dpr), h)
+          // Bright line
+          ctx.fillStyle = 'rgba(255,255,255,0.72)'
+          ctx.fillRect(x, 0, Math.round(dpr), h)
+        }
+      }
     }
 
     // ── Cue markers ──────────────────────────────────────────────────────
@@ -130,7 +215,7 @@ export function Waveform({
     ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(cx - 3 * dpr, 0, 6 * dpr, ch)
     ctx.fillStyle = 'rgba(255,255,255,0.97)'; ctx.fillRect(cx - dpr, 0, 2 * dpr, ch)
 
-  }, [peaks, currentTime, duration, cuePoints, mainCueTime, loopStart, loopEnd, isLooping, pps])
+  }, [peaks, lowPeaks, midPeaks, highPeaks, waveformStyle, currentTime, duration, cuePoints, mainCueTime, beatgrid, loopStart, loopEnd, isLooping, pps])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -164,7 +249,7 @@ export function Waveform({
   const zoomOut = () => setPps((p) => Math.max(p / 2, 25))
 
   return (
-    <div className="relative flex-1 min-w-0 bg-black/40 rounded overflow-hidden flex flex-col">
+    <div className="relative flex-1 min-w-0 bg-black/40 rounded overflow-hidden">
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center text-white/30 text-xs pointer-events-none z-10">
           Analysing…
@@ -175,7 +260,7 @@ export function Waveform({
           Load a track
         </div>
       )}
-      <canvas ref={canvasRef} className="flex-1 w-full cursor-crosshair block" onClick={handleClick} />
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full cursor-crosshair block" onClick={handleClick} />
       <div className="absolute bottom-1 right-1 flex gap-0.5">
         <button onClick={zoomOut} className="w-5 h-5 rounded bg-black/50 text-white/50 hover:text-white text-xs flex items-center justify-center">−</button>
         <button onClick={zoomIn}  className="w-5 h-5 rounded bg-black/50 text-white/50 hover:text-white text-xs flex items-center justify-center">+</button>

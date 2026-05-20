@@ -1,5 +1,5 @@
 import { ipcMain, dialog } from 'electron'
-import { existsSync } from 'fs'
+import { existsSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { getLibraryDb, rowToTrack, rowToPlaylist } from '../library/db'
 import { resolveSmartPlaylist } from '../library/smart-playlist'
@@ -22,6 +22,8 @@ import {
   getDefaultEngineDbPath
 } from '../integrations/engine-dj/reader'
 import { exportToIntegration as exportM3u } from '../integrations/m3u/writer'
+import { analyzeBeats, isModelAvailable, getDefaultModelPath, warmModel } from '../integrations/beat-analysis'
+import { writeTagsToFile } from '../integrations/file-tags/writer'
 import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule } from '../../shared/types'
 import type Database from 'better-sqlite3'
 
@@ -140,8 +142,68 @@ export function registerLibraryHandlers(): void {
     db.prepare("UPDATE playlists SET name = ?, updated_at = datetime('now') WHERE id = ?").run(name, id)
   })
 
+  ipcMain.handle('library:updatePlaylistColor', (_e, id: string, color: string): void => {
+    db.prepare("UPDATE playlists SET color = ?, updated_at = datetime('now') WHERE id = ?").run(color, id)
+  })
+
+  ipcMain.handle('library:recordPlay', (_e, id: string): Track => {
+    db.prepare(
+      "UPDATE tracks SET play_count = play_count + 1, last_played_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
+    ).run(id)
+    return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown>)
+  })
+
   ipcMain.handle('library:deletePlaylist', (_e, id: string): void => {
     db.prepare('DELETE FROM playlists WHERE id = ?').run(id)
+  })
+
+  // Replace one track with another across all playlists before deletion.
+  // For each playlist containing removeId:
+  //   - if keepId is not already there: update the row (preserving sort_order)
+  //   - if keepId is already there: just delete the removeId row
+  // Returns the number of playlists that were modified.
+  ipcMain.handle('library:replaceTrackInPlaylists', (_e, removeId: string, keepId: string): number => {
+    const rows = db.prepare(
+      'SELECT playlist_id FROM playlist_tracks WHERE track_id = ?'
+    ).all(removeId) as { playlist_id: string }[]
+
+    if (!rows.length) return 0
+
+    let count = 0
+    const op = db.transaction(() => {
+      for (const { playlist_id } of rows) {
+        const keepExists = db.prepare(
+          'SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?'
+        ).get(playlist_id, keepId)
+
+        if (!keepExists) {
+          db.prepare(
+            'UPDATE playlist_tracks SET track_id = ? WHERE playlist_id = ? AND track_id = ?'
+          ).run(keepId, playlist_id, removeId)
+          count++
+        } else {
+          db.prepare(
+            'DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?'
+          ).run(playlist_id, removeId)
+        }
+      }
+    })
+    op()
+    return count
+  })
+
+  ipcMain.handle('library:removeTracksFromPlaylist', (_e, playlistId: string, trackIds: string[]): void => {
+    if (!trackIds.length) return
+    const ph = trackIds.map(() => '?').join(',')
+    db.prepare(`DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id IN (${ph})`).run(playlistId, ...trackIds)
+  })
+
+  ipcMain.handle('library:reorderPlaylistTracks', (_e, playlistId: string, orderedIds: string[]): void => {
+    const stmt = db.prepare('UPDATE playlist_tracks SET sort_order = ? WHERE playlist_id = ? AND track_id = ?')
+    const update = db.transaction(() => {
+      orderedIds.forEach((tid, i) => stmt.run(i, playlistId, tid))
+    })
+    update()
   })
 
   ipcMain.handle('library:addTracksToPlaylist', (_e, playlistId: string, trackIds: string[]): void => {
@@ -204,6 +266,91 @@ export function registerLibraryHandlers(): void {
     return writer(db, resolvedPath)
   })
 
+  // ── Playlist file export ──────────────────────────────────────────────────
+  ipcMain.handle('library:exportPlaylistM3U', async (_e, playlistId: string): Promise<void> => {
+    const pl = db.prepare('SELECT * FROM playlists WHERE id = ?').get(playlistId) as Record<string, unknown> | undefined
+    if (!pl) return
+    const trackIds: string[] = pl.is_smart
+      ? resolveSmartPlaylist(db, JSON.parse((pl.rules as string) || '[]'))
+      : (db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order').all(playlistId) as { track_id: string }[]).map((r) => r.track_id)
+    const tracks = trackIds.length
+      ? (db.prepare(`SELECT * FROM tracks WHERE id IN (${trackIds.map(() => '?').join(',')})`).all(...trackIds) as Record<string, unknown>[]).map(rowToTrack)
+      : []
+    const res = await dialog.showSaveDialog({
+      title: 'Export playlist as M3U',
+      defaultPath: `${pl.name as string}.m3u`,
+      filters: [{ name: 'M3U Playlist', extensions: ['m3u', 'm3u8'] }]
+    })
+    if (res.canceled || !res.filePath) return
+    const lines = ['#EXTM3U']
+    for (const t of tracks) {
+      lines.push(`#EXTINF:${t.durationSeconds != null ? Math.round(t.durationSeconds) : -1},${t.artist} - ${t.title}`)
+      lines.push(t.filePath)
+    }
+    writeFileSync(res.filePath, lines.join('\n'), 'utf8')
+  })
+
+  ipcMain.handle('library:exportPlaylistCSV', async (_e, playlistId: string): Promise<void> => {
+    const pl = db.prepare('SELECT * FROM playlists WHERE id = ?').get(playlistId) as Record<string, unknown> | undefined
+    if (!pl) return
+    const trackIds: string[] = pl.is_smart
+      ? resolveSmartPlaylist(db, JSON.parse((pl.rules as string) || '[]'))
+      : (db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order').all(playlistId) as { track_id: string }[]).map((r) => r.track_id)
+    const tracks = trackIds.length
+      ? (db.prepare(`SELECT * FROM tracks WHERE id IN (${trackIds.map(() => '?').join(',')})`).all(...trackIds) as Record<string, unknown>[]).map(rowToTrack)
+      : []
+    const res = await dialog.showSaveDialog({
+      title: 'Export playlist as CSV',
+      defaultPath: `${pl.name as string}.csv`,
+      filters: [{ name: 'CSV', extensions: ['csv'] }]
+    })
+    if (res.canceled || !res.filePath) return
+    const q = (s: string): string => `"${s.replace(/"/g, '""')}"`
+    const header = ['Title', 'Artist', 'Album', 'Genre', 'BPM', 'Key', 'Duration (s)', 'Rating', 'Energy', 'Comment', 'File Path']
+    const rows = tracks.map((t) => [
+      q(t.title), q(t.artist), q(t.album), q(t.genre),
+      t.bpm != null ? t.bpm.toFixed(2) : '', t.key || '',
+      t.durationSeconds != null ? String(Math.round(t.durationSeconds)) : '',
+      String(t.rating), t.energy != null ? String(t.energy) : '',
+      q(t.comment), q(t.filePath)
+    ].join(','))
+    writeFileSync(res.filePath, [header.map(q).join(','), ...rows].join('\n'), 'utf8')
+  })
+
+  // ── Write tags to audio file ──────────────────────────────────────────────
+  ipcMain.handle('library:writeTagsToFile', async (_e, trackId: string) => {
+    const row = db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown> | undefined
+    if (!row) return { success: false, error: 'Track not found' }
+    return writeTagsToFile(rowToTrack(row))
+  })
+
+  ipcMain.handle('library:writeTagsBulk', async (_e, trackIds: string[]) => {
+    let succeeded = 0, failed = 0, skipped = 0
+    for (const id of trackIds) {
+      const row = db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown> | undefined
+      if (!row) { failed++; continue }
+      const result = await writeTagsToFile(rowToTrack(row))
+      if (result.skipped) skipped++
+      else if (result.success) succeeded++
+      else failed++
+    }
+    return { succeeded, failed, skipped }
+  })
+
+  // ── Path mapping ─────────────────────────────────────────────────────────
+  ipcMain.handle('library:previewPathMapping', (_e, from: string, to: string): number => {
+    if (!from || !to) return 0
+    return ((db.prepare('SELECT COUNT(*) as c FROM tracks WHERE file_path LIKE ?').get(from + '%')) as { c: number }).c
+  })
+
+  ipcMain.handle('library:applyPathMapping', (_e, from: string, to: string): number => {
+    if (!from || !to) return 0
+    const result = db.prepare(
+      "UPDATE tracks SET file_path = REPLACE(file_path, ?, ?), updated_at = datetime('now') WHERE file_path LIKE ?"
+    ).run(from, to, from + '%')
+    return result.changes
+  })
+
   // ── Library Health ────────────────────────────────────────────────────────
   ipcMain.handle('library:scanMissingFiles', (): Track[] => {
     const rows = db.prepare('SELECT * FROM tracks').all() as Record<string, unknown>[]
@@ -233,6 +380,30 @@ export function registerLibraryHandlers(): void {
       return importFromRekordboxDb(db, resolvedPath)
     }
   )
+
+  // ── Beat analysis (ONNX) ─────────────────────────────────────────────────
+  ipcMain.handle('library:beatModelStatus', (): { available: boolean; path: string } => ({
+    available: isModelAvailable(),
+    path: getDefaultModelPath()
+  }))
+
+  ipcMain.handle('library:warmBeatModel', async (): Promise<void> => {
+    await warmModel()
+  })
+
+  ipcMain.handle('library:analyzeBeats', async (_e, trackId: string): Promise<Track> => {
+    const row = db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>
+    if (!row) throw new Error(`Track not found: ${trackId}`)
+    const track = rowToTrack(row)
+
+    const result = await analyzeBeats(track.filePath)
+
+    db.prepare(
+      "UPDATE tracks SET beatgrid = ?, bpm = ?, updated_at = datetime('now') WHERE id = ?"
+    ).run(JSON.stringify(result.markers), result.detectedBpm || track.bpm, trackId)
+
+    return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>)
+  })
 
   ipcMain.handle(
     'library:exportToRekordboxDb',

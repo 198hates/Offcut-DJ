@@ -67,6 +67,10 @@ export function importFromIntegration(appDb: Database.Database, xmlPath: string)
           .filter((c) => c && typeof c === 'object')
           .map((c, i) => rbCueToPoint(c as Record<string, unknown>, i)),
         beatgrid: [],
+          energy: null,
+          color: '',
+          playCount: 0,
+          lastPlayedAt: null,
         sourceIds: { rekordbox: rbId }
       }
 

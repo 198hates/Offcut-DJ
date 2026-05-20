@@ -1,6 +1,9 @@
 export interface WaveformData {
   peaks: Float32Array
   detailPeaks: Float32Array
+  lowPeaks: Float32Array    // bass  (20–300 Hz) — cream/white in 3-band mode
+  midPeaks: Float32Array    // mids  (300–3000 Hz) — orange in 3-band mode
+  highPeaks: Float32Array   // highs (3000–16000 Hz) — blue in 3-band mode
   duration: number
 }
 
@@ -54,9 +57,13 @@ class AudioEngine {
     this._rate = 1.0
     this.buffer = await ctx.decodeAudioData(arrayBuffer.slice(0))
     this.pausedAt = 0
+    const { lowPeaks, midPeaks, highPeaks } = computeBandPeaks(this.buffer, 8000)
     return {
       peaks: computePeaks(this.buffer, 1000),
       detailPeaks: computePeaks(this.buffer, 8000),
+      lowPeaks,
+      midPeaks,
+      highPeaks,
       duration: this.buffer.duration
     }
   }
@@ -227,6 +234,65 @@ function computePeaks(buf: AudioBuffer, buckets: number): Float32Array {
     }
   }
   return peaks
+}
+
+// ── Frequency-band peak extraction (IIR envelope follower) ───────────────────
+// First-order IIR lowpass applied to the rectified signal acts as a band
+// splitter. O(N) — ~15ms for a 6-min track. Returns 8000-bucket arrays so the
+// detail waveform has smooth per-pixel resolution.
+
+function computeBandPeaks(buf: AudioBuffer, buckets: number): {
+  lowPeaks: Float32Array; midPeaks: Float32Array; highPeaks: Float32Array
+} {
+  const sr = buf.sampleRate
+  // Cutoff ~300 Hz (bass/mid split) and ~3000 Hz (mid/high split)
+  const aLow  = 1 - Math.exp(-2 * Math.PI * 300  / sr)
+  const aHigh = 1 - Math.exp(-2 * Math.PI * 3000 / sr)
+  const bLow  = 1 - aLow
+  const bHigh = 1 - aHigh
+
+  // Mix to mono
+  const len = buf.length
+  const mono = new Float32Array(len)
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+    const d = buf.getChannelData(ch)
+    for (let i = 0; i < len; i++) mono[i] += d[i]
+  }
+  if (buf.numberOfChannels > 1) {
+    const inv = 1 / buf.numberOfChannels
+    for (let i = 0; i < len; i++) mono[i] *= inv
+  }
+
+  const lowBuf  = new Float32Array(buckets)
+  const midBuf  = new Float32Array(buckets)
+  const highBuf = new Float32Array(buckets)
+  const spb = len / buckets
+
+  let yLow = 0, yHigh = 0
+
+  for (let i = 0; i < len; i++) {
+    const x = Math.abs(mono[i])
+    yLow  = aLow  * x + bLow  * yLow
+    yHigh = aHigh * x + bHigh * yHigh
+
+    const b       = Math.min(buckets - 1, Math.floor(i / spb))
+    const bassVal = yLow
+    const midsVal = Math.max(0, yHigh - yLow)
+    const highVal = Math.max(0, x - yHigh)
+
+    if (bassVal > lowBuf[b])  lowBuf[b]  = bassVal
+    if (midsVal > midBuf[b])  midBuf[b]  = midsVal
+    if (highVal > highBuf[b]) highBuf[b] = highVal
+  }
+
+  const norm = (a: Float32Array): void => {
+    let max = 0
+    for (let i = 0; i < a.length; i++) if (a[i] > max) max = a[i]
+    if (max > 0) { const inv = 1 / max; for (let i = 0; i < a.length; i++) a[i] *= inv }
+  }
+  norm(lowBuf); norm(midBuf); norm(highBuf)
+
+  return { lowPeaks: lowBuf, midPeaks: midBuf, highPeaks: highBuf }
 }
 
 export { AudioEngine }

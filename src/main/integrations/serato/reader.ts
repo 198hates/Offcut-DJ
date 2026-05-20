@@ -56,6 +56,10 @@ export function importFromIntegration(appDb: Database.Database, seratoDir: strin
             tags: [],
             cuePoints: geob.cuePoints,
             beatgrid: geob.beatgrid,
+            energy: null,
+          color: '',
+          playCount: 0,
+          lastPlayedAt: null,
             sourceIds: { serato: filePath }
           }
           insertTrack(track)

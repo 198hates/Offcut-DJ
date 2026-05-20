@@ -1,0 +1,444 @@
+import { useState, useCallback } from 'react'
+import { useLibraryStore } from '../../store/libraryStore'
+import type { Track } from '@shared/types'
+
+// ── Fix algorithms ────────────────────────────────────────────────────────────
+
+const MINOR_WORDS = new Set([
+  'a','an','the','and','but','or','nor','for','so','yet',
+  'at','by','in','of','on','to','up','via','as','is','vs','feat','ft'
+])
+
+function toTitleCase(str: string): string {
+  return str
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map((word, i) => {
+      const low = word.toLowerCase()
+      // Always cap first word, never cap minor words in subsequent positions
+      if (i === 0 || !MINOR_WORDS.has(low)) {
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      }
+      return low
+    })
+    .join(' ')
+}
+
+function needsCasing(str: string): boolean {
+  if (!str || str.length < 3) return false
+  const hasLetter = /[a-zA-Z]/.test(str)
+  if (!hasLetter) return false
+  const isAllCaps  = str === str.toUpperCase() && /[A-Z]{2}/.test(str)
+  const isAllLower = str === str.toLowerCase() && /[a-z]{3}/.test(str) && !/^\d/.test(str)
+  return isAllCaps || isAllLower
+}
+
+function fixEncoded(str: string): string {
+  return str
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/(?:&apos;|&#x27;|&#39;)/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const PROMO_RE = [
+  /\s*[\[(]?\s*free\s+(?:download|dl)\s*[\])]?/gi,
+  /\s*[\[(]?\s*out\s+now\s*[\])]?/gi,
+  /\s*[\[(]?\s*buy\s+now\s*[\])]?/gi,
+  /\s*[\[(]?\s*available\s+(?:now|on\s+\w+)\s*[\])]?/gi,
+  /\s*[\[(]?\s*exclusive\s*[\])]?/gi,
+  /\s*[\[(]?\s*promo(?:tional)?\s*[\])]?/gi,
+  /\s*[\[(]?\s*pre-?order\s*[\])]?/gi,
+  /\s*[\[(]?\s*supported\s+by[^\])]*/gi,
+  /\s*[\[(]?\s*played\s+by[^\])]*/gi,
+  /\s*[\[(]?\s*(?:released|releasing)\s+(?:on\s+)?\w+\s*[\])]?/gi,
+]
+
+function removePromo(str: string): string {
+  let s = str
+  for (const re of PROMO_RE) s = s.replace(re, ' ')
+  return s.replace(/\s{2,}/g, ' ').trim()
+}
+
+function removeNumberPrefix(str: string): string {
+  return str.replace(/^\d{1,3}[\s._-]+/, '').trim()
+}
+
+const URL_RE = /(?:https?:\/\/|www\.)\S+|\S+@\S+\.\w{2,}/gi
+
+function removeUrls(str: string): string {
+  return str.replace(URL_RE, '').replace(/\s{2,}/g, ' ').trim()
+}
+
+function replaceUnderscores(str: string): string {
+  return str.replace(/_/g, ' ').replace(/\s{2,}/g, ' ').trim()
+}
+
+function extractArtistFromTitle(title: string, currentArtist: string): { title: string; artist: string } | null {
+  if (currentArtist.trim()) return null   // don't overwrite existing artist
+  const m = title.match(/^(.+?)\s+[-–—]\s+(.+)$/)
+  if (!m || !m[1] || !m[2]) return null
+  return { artist: m[1].trim(), title: m[2].trim() }
+}
+
+const REMIXER_RE = [
+  /\s*(?:\(|\[)([^)\]]+?)\s+(?:remix|edit|rework|bootleg|flip|mix)(?:\)|\])/i,
+  /\s*(?:\(|\[)(?:remixed|mixed)\s+by\s+([^)\]]+)(?:\)|\])/i,
+]
+
+function extractRemixer(title: string): { title: string; remixerTag: string } | null {
+  for (const re of REMIXER_RE) {
+    const m = title.match(re)
+    if (m) {
+      return {
+        title: title.replace(m[0], '').replace(/\s{2,}/g, ' ').trim(),
+        remixerTag: `remixer:${m[1].trim()}`
+      }
+    }
+  }
+  return null
+}
+
+// ── Fix definitions ───────────────────────────────────────────────────────────
+
+interface FixResult {
+  trackId: string
+  display: string    // track title for display
+  field: keyof Track
+  before: string
+  after: string
+  extra?: Partial<Track>   // additional fields to update alongside `field`
+}
+
+interface Fix {
+  id: string
+  label: string
+  description: string
+  icon: string
+  scan: (tracks: Track[]) => FixResult[]
+}
+
+const FIXES: Fix[] = [
+  {
+    id: 'casing',
+    label: 'fix casing',
+    description: 'title and artist fields that are ALL CAPS or all lowercase → Title Case',
+    icon: 'Aa',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        for (const field of ['title', 'artist'] as const) {
+          const val = t[field] as string
+          if (needsCasing(val)) {
+            results.push({ trackId: t.id, display: t.title || t.filePath, field, before: val, after: toTitleCase(val) })
+          }
+        }
+      }
+      return results
+    }
+  },
+  {
+    id: 'encoded',
+    label: 'fix encoded characters',
+    description: 'replace HTML entities like &amp; &quot; &#39; with their real characters',
+    icon: '&',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        for (const field of ['title', 'artist', 'album', 'genre', 'comment'] as const) {
+          const val = t[field] as string
+          if (!val) continue
+          const fixed = fixEncoded(val)
+          if (fixed !== val) results.push({ trackId: t.id, display: t.title || t.filePath, field, before: val, after: fixed })
+        }
+      }
+      return results
+    }
+  },
+  {
+    id: 'promo',
+    label: 'remove promotional text',
+    description: 'strip "Free Download", "Out Now", "Exclusive", "Promo" and similar from titles',
+    icon: '✕',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        for (const field of ['title', 'comment'] as const) {
+          const val = t[field] as string
+          if (!val) continue
+          const fixed = removePromo(val)
+          if (fixed !== val) results.push({ trackId: t.id, display: t.title || t.filePath, field, before: val, after: fixed })
+        }
+      }
+      return results
+    }
+  },
+  {
+    id: 'numprefix',
+    label: 'remove number prefix',
+    description: 'strip leading track numbers from titles: "01 - Title" → "Title"',
+    icon: '01',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        const fixed = removeNumberPrefix(t.title)
+        if (fixed !== t.title && fixed.length > 0) {
+          results.push({ trackId: t.id, display: t.title, field: 'title', before: t.title, after: fixed })
+        }
+      }
+      return results
+    }
+  },
+  {
+    id: 'urls',
+    label: 'remove URLs',
+    description: 'remove http:// links and email addresses from any field',
+    icon: '⌁',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        for (const field of ['title', 'artist', 'album', 'comment'] as const) {
+          const val = t[field] as string
+          if (!val || !URL_RE.test(val)) { URL_RE.lastIndex = 0; continue }
+          URL_RE.lastIndex = 0
+          const fixed = removeUrls(val)
+          if (fixed !== val) results.push({ trackId: t.id, display: t.title || t.filePath, field, before: val, after: fixed })
+        }
+      }
+      return results
+    }
+  },
+  {
+    id: 'underscores',
+    label: 'replace underscores with spaces',
+    description: 'convert Track_Title_Like_This → Track Title Like This in all text fields',
+    icon: '_→',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        for (const field of ['title', 'artist', 'album'] as const) {
+          const val = t[field] as string
+          if (!val || !val.includes('_')) continue
+          const fixed = replaceUnderscores(val)
+          if (fixed !== val) results.push({ trackId: t.id, display: t.title || t.filePath, field, before: val, after: fixed })
+        }
+      }
+      return results
+    }
+  },
+  {
+    id: 'extract-artist',
+    label: 'extract artist from title',
+    description: 'when artist is empty and title contains "Artist - Title", split into separate fields',
+    icon: '⑂',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        const extracted = extractArtistFromTitle(t.title, t.artist)
+        if (extracted) {
+          results.push({
+            trackId: t.id,
+            display: t.title,
+            field: 'title',
+            before: t.title,
+            after: extracted.title,
+            extra: { artist: extracted.artist }
+          })
+        }
+      }
+      return results
+    }
+  },
+  {
+    id: 'extract-remixer',
+    label: 'extract remixer to tag',
+    description: 'detect "(X Remix)" in titles and add a remixer:X tag — title is cleaned',
+    icon: '↻',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        const extracted = extractRemixer(t.title)
+        if (extracted && !t.tags.includes(extracted.remixerTag)) {
+          results.push({
+            trackId: t.id,
+            display: t.title,
+            field: 'title',
+            before: t.title,
+            after: extracted.title,
+            extra: { tags: [...t.tags, extracted.remixerTag] }
+          })
+        }
+      }
+      return results
+    }
+  },
+]
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export function SmartFixesPage(): JSX.Element {
+  const { tracks, updateTrack } = useLibraryStore()
+  const [openFix, setOpenFix] = useState<string | null>(null)
+  const [results, setResults] = useState<Record<string, FixResult[]>>({})
+  const [applying, setApplying] = useState<string | null>(null)
+  const [applied, setApplied] = useState<Record<string, number>>({})
+
+  const scan = useCallback((fix: Fix) => {
+    const res = fix.scan(tracks)
+    setResults((r) => ({ ...r, [fix.id]: res }))
+    setOpenFix(fix.id)
+  }, [tracks])
+
+  const applyFix = useCallback(async (fix: Fix) => {
+    const res = results[fix.id] ?? []
+    if (!res.length) return
+    setApplying(fix.id)
+    let count = 0
+    for (const r of res) {
+      const patch: Partial<Track> & { id: string } = {
+        id: r.trackId,
+        [r.field]: r.after,
+        ...r.extra
+      }
+      await updateTrack(patch)
+      count++
+    }
+    setApplied((a) => ({ ...a, [fix.id]: count }))
+    setResults((r) => ({ ...r, [fix.id]: [] }))
+    setApplying(null)
+  }, [results, updateTrack])
+
+  return (
+    <div className="h-full overflow-y-auto p-6 space-y-2 max-w-3xl">
+      <div className="mb-6">
+        <h1 className="font-mono text-base font-bold uppercase tracking-[0.12em] text-ink">
+          <span className="text-accent mr-2">01</span>smart fixes
+        </h1>
+        <p className="font-mono text-[10px] text-muted mt-0.5">
+          scan · preview · apply — each fix shows exact before/after before changing anything
+        </p>
+      </div>
+
+      {FIXES.map((fix, i) => {
+        const isOpen    = openFix === fix.id
+        const res       = results[fix.id] ?? []
+        const isApplied = applied[fix.id] != null
+        const isBusy    = applying === fix.id
+
+        return (
+          <div key={fix.id} className="border border-border/30 rounded overflow-hidden">
+            {/* Row header */}
+            <div
+              className={`flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors ${
+                isOpen ? 'bg-chassis-soft' : 'bg-ink/[0.02] hover:bg-ink/[0.04]'
+              }`}
+              onClick={() => isOpen ? setOpenFix(null) : scan(fix)}
+            >
+              {/* Number */}
+              <span className="font-mono text-[9px] text-muted w-4 shrink-0 tabular-nums text-right">
+                {String(i + 1).padStart(2, '0')}
+              </span>
+
+              {/* Icon chip */}
+              <div className="w-8 h-8 shrink-0 rounded bg-ink/5 border border-border/30 flex items-center justify-center font-mono text-[10px] font-bold text-muted">
+                {fix.icon}
+              </div>
+
+              {/* Label + description */}
+              <div className="flex-1 min-w-0">
+                <p className="font-mono text-[10.5px] font-bold text-ink">{fix.label}</p>
+                <p className="font-mono text-[9.5px] text-muted truncate mt-0.5">{fix.description}</p>
+              </div>
+
+              {/* Status / action */}
+              <div className="shrink-0 flex items-center gap-2">
+                {isApplied && (
+                  <span className="font-mono text-[9.5px] text-green-600 dark:text-green-400">
+                    ✓ {applied[fix.id]} fixed
+                  </span>
+                )}
+                {!isOpen ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); scan(fix) }}
+                    className="px-3 py-1 font-mono text-[9.5px] uppercase tracking-[0.1em] bg-ink/5 hover:bg-ink/10 border border-border/40 rounded transition-colors text-ink-soft hover:text-ink"
+                  >
+                    scan
+                  </button>
+                ) : (
+                  <span className="font-mono text-[9.5px] text-muted uppercase tracking-[0.1em]">
+                    {res.length} found
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Expanded results */}
+            {isOpen && (
+              <div className="border-t border-border/20">
+                {res.length === 0 ? (
+                  <div className="px-4 py-4 flex items-center gap-2">
+                    <span className="text-green-600 dark:text-green-400 font-mono text-[10px]">✓</span>
+                    <span className="font-mono text-[10px] text-muted">no issues found</span>
+                  </div>
+                ) : (
+                  <>
+                    {/* Apply bar */}
+                    <div className="flex items-center justify-between px-4 py-2 bg-accent/5 border-b border-border/20">
+                      <span className="font-mono text-[10px] text-ink-soft">
+                        <span className="text-accent font-bold">{res.length}</span> track{res.length !== 1 ? 's' : ''} affected
+                      </span>
+                      <button
+                        onClick={() => applyFix(fix)}
+                        disabled={isBusy}
+                        className="px-4 py-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] bg-accent hover:bg-accent/90 text-paper rounded transition-colors disabled:opacity-40"
+                      >
+                        {isBusy ? 'applying…' : `apply to ${res.length}`}
+                      </button>
+                    </div>
+
+                    {/* Before/after preview */}
+                    <div className="max-h-64 overflow-y-auto divide-y divide-border/15">
+                      {res.slice(0, 200).map((r, j) => (
+                        <div key={j} className="px-4 py-2 grid grid-cols-[1fr_1fr] gap-4 items-baseline">
+                          <div className="min-w-0">
+                            <p className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted mb-0.5">
+                              {r.field}{r.extra ? ` + ${Object.keys(r.extra).join(', ')}` : ''}
+                            </p>
+                            <p className="font-sans text-[11px] text-ink-soft truncate">{r.before}</p>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent mb-0.5">after</p>
+                            <p className="font-sans text-[11px] text-ink font-medium truncate">{r.after}</p>
+                            {r.extra && (
+                              <p className="font-mono text-[9px] text-muted truncate mt-0.5">
+                                {Object.entries(r.extra).map(([k, v]) =>
+                                  `${k}: ${Array.isArray(v) ? v.join(', ') : v}`
+                                ).join(' · ')}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {res.length > 200 && (
+                        <div className="px-4 py-2 font-mono text-[9.5px] text-muted">
+                          …and {res.length - 200} more
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}

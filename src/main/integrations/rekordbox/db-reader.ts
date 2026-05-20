@@ -123,6 +123,10 @@ export function importFromRekordboxDb(
           tags: [],
           cuePoints: cues.map((c, i) => rbCueToPoint(c, i)),
           beatgrid: [],
+          energy: null,
+          color: '',
+          playCount: 0,
+          lastPlayedAt: null,
           sourceIds: { rekordbox: rbId }
         }
 

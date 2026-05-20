@@ -73,6 +73,8 @@ const COL_MAP: Partial<Record<string, string>> = {
   rating: 'rating',
   durationSeconds: 'duration_seconds',
   dateAdded: 'date_added',
+  playCount: 'play_count',
+  lastPlayedAt: 'last_played_at',
   title: 'title',
   artist: 'artist',
   album: 'album',

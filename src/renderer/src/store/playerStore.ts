@@ -17,6 +17,9 @@ export interface DeckStore {
   duration: number
   waveformPeaks: Float32Array | null
   detailPeaks: Float32Array | null
+  lowPeaks: Float32Array | null
+  midPeaks: Float32Array | null
+  highPeaks: Float32Array | null
   isLoading: boolean
   mainCueTime: number | null
   // Loop
@@ -77,6 +80,9 @@ function createDeckStore(deckId: 'A' | 'B') {
       duration: 0,
       waveformPeaks: null,
       detailPeaks: null,
+      lowPeaks: null,
+      midPeaks: null,
+      highPeaks: null,
       isLoading: false,
       mainCueTime: null,
       loopStart: null,
@@ -87,13 +93,24 @@ function createDeckStore(deckId: 'A' | 'B') {
       _engine: engine,
 
       loadTrack: async (track) => {
-        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, analysisState: 'idle' })
+        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, analysisState: 'idle' })
         try {
           const ab = await window.api.audio.readFile(track.filePath)
-          const { peaks, detailPeaks, duration } = await engine.load(ab)
-          set({ waveformPeaks: peaks, detailPeaks, duration, isLoading: false })
+          const { peaks, detailPeaks, lowPeaks, midPeaks, highPeaks, duration } = await engine.load(ab)
+          set({ waveformPeaks: peaks, detailPeaks, lowPeaks, midPeaks, highPeaks, duration, isLoading: false })
           engine.play()
           set({ isPlaying: true })
+
+          // Record play in DB and patch library store state
+          window.api.library.recordPlay(track.id).then((updated) => {
+            set({ currentTrack: updated })
+            import('./libraryStore').then(({ useLibraryStore }) => {
+              useLibraryStore.setState((s) => ({
+                tracks: s.tracks.map((t) => (t.id === updated.id ? updated : t))
+              }))
+            })
+          }).catch(() => { /* non-fatal */ })
+
           // Auto-analyze if BPM or key is missing
           if (!track.bpm || !track.key) {
             get().analyzeCurrentTrack()

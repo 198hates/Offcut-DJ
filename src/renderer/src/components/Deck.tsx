@@ -3,6 +3,7 @@ import { useLibraryStore } from '../store/libraryStore'
 import type { StoreApi, UseBoundStore } from 'zustand'
 import type { DeckStore } from '../store/playerStore'
 import { HOT_CUE_COLORS, HOT_CUE_LABELS, type AnalysisState } from '../store/playerStore'
+import { useWaveformStore } from '../store/waveformStore'
 import { Waveform } from './Waveform'
 import { OverviewWaveform } from './OverviewWaveform'
 import type { CuePoint } from '@shared/types'
@@ -26,9 +27,11 @@ function fmt(s: number, ms = false): string {
 }
 
 export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
+  const waveformStyle = useWaveformStore((s) => s.style)
+
   const {
     currentTrack, isPlaying, currentTime, duration,
-    waveformPeaks, detailPeaks, isLoading, mainCueTime,
+    waveformPeaks, detailPeaks, lowPeaks, midPeaks, highPeaks, isLoading, mainCueTime,
     loopStart, loopEnd, isLooping, playbackRate, analysisState,
     loadTrack, togglePlay, seek, pressCue,
     setCue, clearCue, jumpToCue, setMemoryCue,
@@ -63,6 +66,11 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
   }, [handleKey])
 
   const tracks = useLibraryStore((s) => s.tracks)
+  // Read beatgrid live from the library store so it updates immediately after analysis
+  // without needing to reload the track onto the deck.
+  const liveBeatgrid = useLibraryStore(
+    (s) => s.tracks.find((t) => t.id === currentTrack?.id)?.beatgrid ?? currentTrack?.beatgrid ?? []
+  )
   const [isDragOver, setIsDragOver] = useState(false)
 
   // ── Drag-to-load: drop a track from the library onto this deck ────────
@@ -107,74 +115,96 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
     >
       {isDragOver && (
         <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
-          <div className="bg-accent/90 text-white text-sm font-bold px-4 py-2 rounded-lg shadow-lg">
+          <div className="bg-accent/90 text-white text-xs font-bold px-3 py-1.5 rounded shadow-lg tracking-widest uppercase">
             Load to Deck {label}
           </div>
         </div>
       )}
 
       {/* ── Track info + BPM + time ──────────────────────────────────── */}
-      <div className={`flex items-start gap-3 px-3 pt-2 pb-1.5 border-b border-white/[0.04] ${isRight ? 'flex-row-reverse' : ''}`}>
-        {/* Deck label badge */}
-        <div className="shrink-0 flex items-center justify-center w-7 h-7 rounded-full bg-accent/20 border border-accent/40 text-accent text-xs font-black">
+      <div className={`flex items-center gap-2 px-2 pt-1 pb-0.5 border-b border-white/[0.10] ${isRight ? 'flex-row-reverse' : ''}`}>
+        {/* Deck label chip */}
+        <div className="shrink-0 px-1.5 py-0.5 rounded bg-accent/15 text-accent text-[10px] font-black tracking-widest select-none">
           {label}
         </div>
 
         {/* Track info */}
         <div className="flex-1 min-w-0">
-          <p className={`text-sm font-semibold text-white truncate leading-tight ${isRight ? 'text-right' : ''}`}>
-            {currentTrack?.title || <span className="text-white/20 italic font-normal text-xs">No track loaded</span>}
+          <p className={`text-xs font-semibold text-white/90 truncate leading-tight ${isRight ? 'text-right' : ''}`}>
+            {currentTrack?.title || <span className="text-white/20 italic font-normal">No track loaded</span>}
           </p>
-          <div className={`flex items-center gap-2 mt-0.5 ${isRight ? 'flex-row-reverse' : ''}`}>
-            <p className="text-xs text-white/45 truncate">
+          <div className={`flex items-center gap-2 ${isRight ? 'flex-row-reverse' : ''}`}>
+            <p className="text-[10px] text-white/55 truncate">
               {currentTrack?.artist || ''}
               {currentTrack?.album ? ` · ${currentTrack.album}` : ''}
             </p>
             <AnalysisIndicator state={analysisState} onAnalyze={analyzeCurrentTrack} hasTrack={!!currentTrack} />
+            {liveBeatgrid.length > 0 && (
+              <span
+                title={`Beat grid · ${liveBeatgrid.length} beats`}
+                className="text-[8px] font-mono text-teal-400/70 shrink-0"
+              >
+                grid
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Key */}
-        <div className={`shrink-0 ${isRight ? 'text-left' : 'text-right'}`}>
-          <p className="text-base font-bold text-accent leading-none">{currentTrack?.key || '—'}</p>
-          <p className="text-[10px] text-white/25 mt-0.5">KEY</p>
-        </div>
+        {/* Key LED */}
+        <LedReadout
+          value={currentTrack?.key || '—'}
+          ghost="00A"
+          label="key"
+          fontSize={13}
+        />
 
-        {/* BPM */}
-        <div className={`shrink-0 ${isRight ? 'text-left' : 'text-right'}`}>
-          <p className="text-xl font-bold text-white tabular-nums leading-none">
-            {currentTrack?.bpm ? currentTrack.bpm.toFixed(2) : '—'}
-          </p>
-          <p className="text-[10px] text-white/25 mt-0.5">BPM</p>
-        </div>
+        {/* BPM LED */}
+        <LedReadout
+          value={currentTrack?.bpm ? currentTrack.bpm.toFixed(1) : '—.—'}
+          ghost="000.0"
+          label="bpm"
+          fontSize={13}
+        />
 
-        {/* Time */}
-        <div className={`shrink-0 ${isRight ? 'text-left' : 'text-right'}`}>
-          <p className="text-base font-bold text-white tabular-nums font-mono leading-none">{fmt(currentTime, true)}</p>
-          <p className="text-[10px] text-white/30 tabular-nums font-mono mt-0.5">-{fmt(remaining)}</p>
-        </div>
+        {/* Time LED */}
+        <LedReadout
+          value={fmt(currentTime, true)}
+          ghost="0:00.0"
+          label={`-${fmt(remaining)}`}
+          fontSize={12}
+        />
       </div>
 
       {/* ── Overview waveform ────────────────────────────────────────── */}
-      <div className="px-2 bg-black/25 border-b border-white/[0.04]">
+      <div className="px-2 border-b border-white/[0.08]" style={{ background: 'rgba(0,0,0,0.25)' }}>
         <OverviewWaveform
           peaks={waveformPeaks}
+          lowPeaks={lowPeaks}
+          midPeaks={midPeaks}
+          highPeaks={highPeaks}
+          waveformStyle={waveformStyle}
           duration={duration}
           currentTime={currentTime}
           cuePoints={currentTrack?.cuePoints ?? []}
           mainCueTime={mainCueTime}
+          beatgrid={liveBeatgrid}
           onSeek={seek}
         />
       </div>
 
-      {/* ── Scrolling detail waveform ─────────────────────────────────── */}
+      {/* ── Scrolling detail waveform — dominant centre element ──────── */}
       <div className="px-2 py-1 flex flex-1 min-h-0">
         <Waveform
           peaks={detailPeaks}
+          lowPeaks={lowPeaks}
+          midPeaks={midPeaks}
+          highPeaks={highPeaks}
+          waveformStyle={waveformStyle}
           duration={duration}
           currentTime={currentTime}
           cuePoints={currentTrack?.cuePoints ?? []}
           mainCueTime={mainCueTime}
+          beatgrid={liveBeatgrid}
           loopStart={loopStart}
           loopEnd={loopEnd}
           isLooping={isLooping}
@@ -184,7 +214,7 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
       </div>
 
       {/* ── Loop controls + pitch ─────────────────────────────────────── */}
-      <div className={`flex items-center gap-1.5 px-2 py-1 border-t border-white/[0.04] ${isRight ? 'flex-row-reverse' : ''}`}>
+      <div className={`flex items-center gap-1 px-2 py-0.5 border-t border-white/[0.08] ${isRight ? 'flex-row-reverse' : ''}`}>
         {/* Beat loop buttons */}
         {[0.5, 1, 2, 4, 8].map((bars) => (
           <button
@@ -192,33 +222,33 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
             onClick={() => beatLoop(bars)}
             disabled={!currentTrack}
             title={`${bars} bar loop`}
-            className="h-7 px-2 rounded text-xs font-bold border border-white/15 text-white/50 hover:border-orange-400/50 hover:text-orange-300 hover:bg-orange-400/10 transition-colors disabled:opacity-25"
+            className="h-6 px-1.5 rounded text-[10px] font-bold border border-white/[0.15] text-white/55 hover:border-accent/50 hover:text-accent/80 hover:bg-accent/10 transition-colors disabled:opacity-25"
           >
             {bars < 1 ? '½' : bars}
           </button>
         ))}
 
-        <div className="w-px h-5 bg-white/10 mx-0.5 shrink-0" />
+        <div className="w-px h-4 bg-white/10 mx-0.5 shrink-0" />
 
         {/* IN / OUT / LOOP */}
-        <button onClick={setLoopIn}  disabled={!currentTrack} className="h-7 px-2 rounded text-xs font-bold border border-white/15 text-white/50 hover:border-orange-400/50 hover:text-orange-300 transition-colors disabled:opacity-25">IN</button>
-        <button onClick={setLoopOut} disabled={!currentTrack} className="h-7 px-2 rounded text-xs font-bold border border-white/15 text-white/50 hover:border-orange-400/50 hover:text-orange-300 transition-colors disabled:opacity-25">OUT</button>
+        <button onClick={setLoopIn}  disabled={!currentTrack} className="h-6 px-1.5 rounded text-[10px] font-bold border border-white/[0.15] text-white/55 hover:border-accent/50 hover:text-accent/80 transition-colors disabled:opacity-25">IN</button>
+        <button onClick={setLoopOut} disabled={!currentTrack} className="h-6 px-1.5 rounded text-[10px] font-bold border border-white/[0.15] text-white/55 hover:border-accent/50 hover:text-accent/80 transition-colors disabled:opacity-25">OUT</button>
         <button
           onClick={toggleLoop}
           disabled={!currentTrack || (loopStart === null && loopEnd === null)}
-          className={`h-7 px-2.5 rounded text-xs font-bold border transition-colors disabled:opacity-25 ${
-            isLooping ? 'border-orange-400 text-orange-300 bg-orange-400/15' : 'border-white/15 text-white/50 hover:border-orange-400/50 hover:text-orange-300'
+          className={`h-6 px-2 rounded text-[10px] font-bold border transition-colors disabled:opacity-25 ${
+            isLooping ? 'border-accent text-accent bg-accent/15' : 'border-white/[0.12] text-white/50 hover:border-accent/50 hover:text-accent/80'
           }`}
         >
           LOOP
         </button>
-        <button onClick={clearLoop} disabled={!currentTrack || (loopStart === null)} className="h-7 px-2 rounded text-xs border border-white/10 text-white/25 hover:text-red-400/70 transition-colors disabled:opacity-25" title="Clear loop">✕</button>
+        <button onClick={clearLoop} disabled={!currentTrack || (loopStart === null)} className="h-6 px-1.5 rounded text-[10px] border border-white/[0.08] text-white/40 hover:text-red-400/70 transition-colors disabled:opacity-25" title="Clear loop">✕</button>
 
         <div className="flex-1" />
 
         {/* Pitch */}
-        <div className={`flex items-center gap-1.5 ${isRight ? 'flex-row-reverse' : ''}`}>
-          <span className="text-[10px] text-white/30 tabular-nums w-10 text-center">
+        <div className={`flex items-center gap-1 ${isRight ? 'flex-row-reverse' : ''}`}>
+          <span className="text-[9px] text-white/30 tabular-nums w-9 text-center">
             {playbackRate === 1 ? '±0%' : `${playbackRate > 1 ? '+' : ''}${((playbackRate - 1) * 100).toFixed(1)}%`}
           </span>
           <input
@@ -227,31 +257,31 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
             onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
             onDoubleClick={() => setPlaybackRate(1.0)}
             disabled={!currentTrack}
-            className="w-20 h-1 cursor-pointer accent-orange-400 disabled:opacity-25"
+            className="w-16 h-1 cursor-pointer accent-accent disabled:opacity-25"
             title="Pitch/tempo — double-click to reset"
           />
-          <span className="text-[10px] text-white/25">PITCH</span>
+          <span className="text-[9px] text-white/40 uppercase tracking-wider">Pitch</span>
         </div>
       </div>
 
       {/* ── Transport + hotcue pads ───────────────────────────────────── */}
-      <div className={`flex items-center gap-1.5 px-2 pb-2 pt-0.5 flex-wrap ${isRight ? 'flex-row-reverse' : ''}`}>
+      <div className={`flex items-center gap-1 px-2 pb-1.5 pt-0.5 flex-wrap border-t border-white/[0.08] ${isRight ? 'flex-row-reverse' : ''}`}>
         <button
           onClick={pressCue}
           disabled={!currentTrack}
-          className="h-9 px-3 rounded text-xs font-black tracking-widest border border-white/20 text-white/80 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-25"
+          className="h-8 px-2.5 rounded text-[10px] font-black tracking-widest border border-white/[0.18] text-white/70 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-25"
         >
           CUE
         </button>
         <button
           onClick={togglePlay}
           disabled={!currentTrack}
-          className="h-9 w-11 rounded flex items-center justify-center text-white bg-accent hover:bg-accent-hover transition-colors disabled:opacity-25 text-sm font-bold"
+          className="h-8 w-10 rounded flex items-center justify-center text-white bg-accent hover:bg-accent-hover transition-colors disabled:opacity-25 text-xs font-bold"
         >
           {isPlaying ? '❚❚' : '▶'}
         </button>
 
-        <div className="w-px h-6 bg-white/10 mx-0.5 shrink-0" />
+        <div className="w-px h-5 bg-white/[0.08] mx-0.5 shrink-0" />
 
         {hotcues.map(({ label: lbl, index, cue, color }) => (
           <HotCuePad
@@ -267,12 +297,12 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           />
         ))}
 
-        <div className="w-px h-6 bg-white/10 mx-0.5 shrink-0" />
+        <div className="w-px h-5 bg-white/[0.08] mx-0.5 shrink-0" />
 
         <button
           onClick={setMemoryCue}
           disabled={!currentTrack}
-          className="h-9 px-2 rounded text-xs font-bold border border-amber-500/40 text-amber-400/80 hover:bg-amber-500/20 transition-colors disabled:opacity-25"
+          className="h-8 px-2 rounded text-[10px] font-bold border border-amber-500/30 text-amber-400/70 hover:bg-amber-500/15 transition-colors disabled:opacity-25"
         >
           MEM
         </button>
@@ -281,7 +311,7 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           <button
             key={i}
             onClick={() => seek(c.positionMs / 1000)}
-            className="h-9 px-2 rounded text-xs font-mono border border-amber-500/25 text-amber-400/60 hover:bg-amber-500/15 transition-colors tabular-nums"
+            className="h-8 px-2 rounded text-[10px] font-mono border border-amber-500/20 text-amber-400/50 hover:bg-amber-500/10 transition-colors tabular-nums"
           >
             {fmt(c.positionMs / 1000)}
           </button>
@@ -291,7 +321,19 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
   )
 }
 
-// ── HotCuePad ─────────────────────────────────────────────────────────────────
+// ── LedReadout ────────────────────────────────────────────────────────────────
+
+function LedReadout({ value, ghost, label, fontSize = 14 }: {
+  value: string; ghost: string; label: string; fontSize?: number
+}): JSX.Element {
+  return (
+    <div className="led-readout shrink-0 text-right">
+      <div className="led-readout-ghost" style={{ fontSize }}>{ghost}</div>
+      <div className="led-readout-val" style={{ fontSize }}>{value}</div>
+      <span className="led-readout-label">{label}</span>
+    </div>
+  )
+}
 
 // ── Analysis indicator ────────────────────────────────────────────────────────
 
@@ -335,7 +377,7 @@ function HotCuePad({ label, cue, color, disabled, onPress, onSet, onClear }: Hot
       onContextMenu={(e) => { e.preventDefault(); cue ? onClear() : onSet() }}
       disabled={disabled}
       title={cue ? `${label}: ${fmt(cue.positionMs / 1000, true)} — click to jump · right-click clear` : `${label}: right-click to set`}
-      className="relative h-9 w-10 rounded text-xs font-black tracking-wide transition-all disabled:opacity-25 disabled:cursor-default"
+      className="relative h-8 w-9 rounded text-[10px] font-black tracking-wide transition-all disabled:opacity-25 disabled:cursor-default"
       style={
         cue
           ? { background: `linear-gradient(180deg,${color}44 0%,${color}18 100%)`, border: `1px solid ${color}`, color, boxShadow: `0 0 6px ${color}33` }

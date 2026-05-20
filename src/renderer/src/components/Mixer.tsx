@@ -19,12 +19,12 @@ export function Mixer(): JSX.Element {
   }, [xfade, volA, volB, setVolumeA, setVolumeB])
 
   return (
-    <div className="w-20 shrink-0 flex flex-col items-center justify-between py-2 border-x border-white/[0.05] bg-black/30 gap-2">
-      <p className="text-[9px] font-bold tracking-widest text-white/20 uppercase">MIX</p>
+    <div className="w-20 shrink-0 flex flex-col items-center justify-between py-2 border-x border-white/[0.12] gap-2" style={{ background: 'rgba(0,0,0,0.35)' }}>
+      <p className="text-[9px] font-bold tracking-widest text-white/40 uppercase">MIX</p>
 
       {/* Channel A fader */}
       <div className="flex flex-col items-center gap-1 flex-1 justify-center">
-        <p className="text-[9px] text-white/25">A</p>
+        <p className="text-[9px] text-white/45">A</p>
         <VerticalFader value={volA} onChange={setVolA} />
       </div>
 
@@ -37,14 +37,14 @@ export function Mixer(): JSX.Element {
           className="w-full h-1 cursor-pointer accent-accent"
           title="Crossfader — A left, B right"
         />
-        <div className="flex justify-between text-[9px] text-white/25 mt-0.5 px-0.5">
+        <div className="flex justify-between text-[9px] text-white/45 mt-0.5 px-0.5">
           <span>A</span><span>B</span>
         </div>
       </div>
 
       {/* Channel B fader */}
       <div className="flex flex-col items-center gap-1 flex-1 justify-center">
-        <p className="text-[9px] text-white/25">B</p>
+        <p className="text-[9px] text-white/45">B</p>
         <VerticalFader value={volB} onChange={setVolB} />
       </div>
     </div>

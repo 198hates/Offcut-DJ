@@ -8,13 +8,15 @@ export interface AnalyzerInput {
 export interface AnalyzerResult {
   bpm: number | null
   key: string | null      // Camelot notation e.g. "8B"
+  energy: number | null   // 1–10 perceived intensity score
 }
 
 self.onmessage = (e: MessageEvent<AnalyzerInput>) => {
   const { samples, sampleRate } = e.data
   const bpm = detectBPM(samples, sampleRate)
   const key = detectKey(samples, sampleRate)
-  self.postMessage({ bpm, key } satisfies AnalyzerResult)
+  const energy = detectEnergy(samples, sampleRate)
+  self.postMessage({ bpm, key, energy } satisfies AnalyzerResult)
 }
 
 // ── BPM via onset-strength autocorrelation ────────────────────────────────────
@@ -168,6 +170,55 @@ function detectKey(samples: Float32Array, sampleRate: number): string | null {
   }
 
   return bestMode === 'major' ? CAMELOT_MAJ[bestRoot] : CAMELOT_MIN[bestRoot]
+}
+
+// ── Energy scoring (1–10) ─────────────────────────────────────────────────────
+// Computes the 75th-percentile RMS energy of the track (skipping quiet intros)
+// and maps it to a 1–10 scale calibrated for mastered dance music.
+
+function detectEnergy(samples: Float32Array, sampleRate: number): number | null {
+  const TARGET = 4000
+  const factor  = Math.max(1, Math.floor(sampleRate / TARGET))
+  const actual  = sampleRate / factor
+
+  // Limit to 3 minutes of audio
+  const maxSrc = Math.min(samples.length, sampleRate * 180)
+  const len    = Math.floor(maxSrc / factor)
+  if (len < 200) return null
+
+  // Downsample: compute mean-square per block (preserves correct RMS after sqrt)
+  const sq = new Float32Array(len)
+  for (let i = 0; i < len; i++) {
+    let s = 0
+    const base = i * factor
+    const end  = Math.min(base + factor, maxSrc)
+    for (let j = base; j < end; j++) s += samples[j] * samples[j]
+    sq[i] = s / (end - base)
+  }
+
+  // RMS in 0.5-second windows (non-overlapping)
+  const winN   = Math.max(1, Math.floor(actual * 0.5))
+  const nFrames = Math.floor(len / winN)
+  if (nFrames < 4) return null
+
+  const rms = new Float32Array(nFrames)
+  for (let i = 0; i < nFrames; i++) {
+    const s = i * winN
+    let e = 0
+    for (let j = s; j < s + winN; j++) e += sq[j]
+    rms[i] = Math.sqrt(e / winN)
+  }
+
+  // Sort and take 75th percentile, skipping the first 5% of frames (quiet intros)
+  const skip  = Math.max(1, Math.floor(nFrames * 0.05))
+  const valid = Array.from(rms.subarray(skip)).sort((a, b) => a - b)
+  const p75   = valid[Math.floor(valid.length * 0.75)]
+  if (!p75) return null
+
+  // Log scale: 0.005 → 1, 0.30 → 10
+  // Typical values: ambient ~0.01 (→3), house ~0.08 (→7), loud techno ~0.20 (→9)
+  const score = 1 + (Math.log10(Math.max(0.005, p75) / 0.005) / Math.log10(60)) * 9
+  return Math.min(10, Math.max(1, Math.round(score)))
 }
 
 // ── Cooley-Tukey radix-2 in-place FFT ────────────────────────────────────────

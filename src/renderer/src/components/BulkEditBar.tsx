@@ -10,14 +10,15 @@ interface BulkEditBarProps {
   onClearSelection: () => void
 }
 
+const SEL = 'bg-ink/5 border border-border/40 rounded px-2 py-1 font-mono text-[10px] text-ink outline-none focus:border-accent cursor-pointer'
+const INP = 'bg-paper border border-border/40 rounded px-2 py-1 font-mono text-[10px] text-ink outline-none focus:border-accent placeholder-muted'
+
 export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps): JSX.Element {
   const { bulkUpdateTracks, deleteTracks, playlists, addTracksToPlaylist } = useLibraryStore()
   const { show } = useToastStore()
-
   const [field, setField] = useState<keyof Track | ''>('')
   const [value, setValue] = useState('')
   const [applying, setApplying] = useState(false)
-
   const n = selectedIds.length
 
   const applyEdit = async (): Promise<void> => {
@@ -32,91 +33,74 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
       else if (field === 'artist') patch.artist = value
       else if (field === 'album') patch.album = value
       else return
-
       await bulkUpdateTracks(selectedIds, patch)
-      show(`Updated ${n} track${n !== 1 ? 's' : ''}`, 'success')
-      setField('')
-      setValue('')
-    } finally {
-      setApplying(false)
-    }
+      show(`updated ${n} track${n !== 1 ? 's' : ''}`, 'success')
+      setField(''); setValue('')
+    } finally { setApplying(false) }
   }
 
   const handleDelete = async (): Promise<void> => {
-    if (!window.confirm(`Delete ${n} track${n !== 1 ? 's' : ''} from your library? This cannot be undone.`)) return
+    if (!window.confirm(`Remove ${n} track${n !== 1 ? 's' : ''} from your library?`)) return
     await deleteTracks(selectedIds)
-    show(`Removed ${n} track${n !== 1 ? 's' : ''} from library`, 'info')
+    show(`removed ${n} track${n !== 1 ? 's' : ''} from library`, 'info')
     onClearSelection()
   }
 
   const handleAddToPlaylist = async (playlistId: string): Promise<void> => {
     await addTracksToPlaylist(playlistId, selectedIds)
     const pl = playlists.find((p) => p.id === playlistId)
-    show(`Added ${n} track${n !== 1 ? 's' : ''} to ${pl?.name ?? 'playlist'}`, 'success')
+    show(`added ${n} track${n !== 1 ? 's' : ''} to ${pl?.name ?? 'playlist'}`, 'success')
   }
 
   const nonFolderPlaylists = playlists.filter((p) => !p.isFolder)
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-accent/10 border-b border-accent/20 shrink-0">
-      <span className="text-sm font-medium text-accent">
+    <div className="flex items-center gap-2 px-3 py-1.5 bg-accent/[0.06] border-b border-accent/20 shrink-0">
+      <span className="font-mono text-[10px] font-bold text-accent shrink-0 uppercase tracking-[0.1em]">
         {n} selected
       </span>
 
-      <div className="flex items-center gap-2 flex-1">
-        <select
-          value={field}
-          onChange={(e) => { setField(e.target.value as keyof Track); setValue('') }}
-          className="bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white outline-none"
-        >
-          <option value="">Set field…</option>
-          <option value="genre">Genre</option>
-          <option value="artist">Artist</option>
-          <option value="album">Album</option>
-          <option value="key">Key</option>
-          <option value="bpm">BPM</option>
-          <option value="rating">Rating</option>
+      <div className="w-px h-4 bg-border/40 mx-1 shrink-0" />
+
+      <div className="flex items-center gap-1.5 flex-1">
+        <select value={field} onChange={(e) => { setField(e.target.value as keyof Track); setValue('') }} className={SEL}>
+          <option value="">set field…</option>
+          <option value="genre">genre</option>
+          <option value="artist">artist</option>
+          <option value="album">album</option>
+          <option value="key">key</option>
+          <option value="bpm">bpm</option>
+          <option value="rating">rating</option>
         </select>
 
         {field === 'key' && (
-          <select
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            className="bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white outline-none"
-          >
+          <select value={value} onChange={(e) => setValue(e.target.value)} className={SEL}>
             {KEY_OPTIONS.map((k) => <option key={k} value={k}>{k || '—'}</option>)}
           </select>
         )}
-
         {field === 'rating' && (
-          <select
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            className="bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white outline-none"
-          >
+          <select value={value} onChange={(e) => setValue(e.target.value)} className={SEL}>
             <option value="">—</option>
             {[1,2,3,4,5].map((r) => <option key={r} value={r}>{'★'.repeat(r)}</option>)}
           </select>
         )}
-
         {field && !['key','rating'].includes(field) && (
           <input
             type={field === 'bpm' ? 'number' : 'text'}
-            placeholder={`New ${field}…`}
+            placeholder={`new ${field}…`}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && applyEdit()}
-            className="bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white outline-none focus:border-accent placeholder-white/30 w-40"
+            className={`${INP} w-32`}
           />
         )}
-
         {field && (
           <button
             onClick={applyEdit}
             disabled={applying || !value}
-            className="px-3 py-1 bg-accent hover:bg-accent-hover disabled:opacity-40 text-white text-xs rounded transition-colors"
+            className="px-2.5 py-1 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.1em] rounded transition-colors"
           >
-            {applying ? 'Applying…' : `Apply to ${n}`}
+            {applying ? 'applying…' : `apply to ${n}`}
           </button>
         )}
       </div>
@@ -125,27 +109,20 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
         <select
           value=""
           onChange={(e) => { if (e.target.value) handleAddToPlaylist(e.target.value) }}
-          className="bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white outline-none"
+          className={SEL}
         >
-          <option value="">Add to playlist…</option>
-          {nonFolderPlaylists.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
+          <option value="">add to playlist…</option>
+          {nonFolderPlaylists.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       )}
 
-      <button
-        onClick={handleDelete}
-        className="text-red-400/70 hover:text-red-400 text-xs transition-colors"
-      >
-        Remove from library
-      </button>
+      <div className="w-px h-4 bg-border/40 mx-1 shrink-0" />
 
-      <button
-        onClick={onClearSelection}
-        className="text-white/40 hover:text-white text-xs transition-colors"
-      >
-        Deselect
+      <button onClick={handleDelete} className="font-mono text-[10px] text-red-500/70 hover:text-red-500 transition-colors uppercase tracking-[0.1em]">
+        remove
+      </button>
+      <button onClick={onClearSelection} className="font-mono text-[10px] text-muted hover:text-ink transition-colors uppercase tracking-[0.1em]">
+        deselect
       </button>
     </div>
   )

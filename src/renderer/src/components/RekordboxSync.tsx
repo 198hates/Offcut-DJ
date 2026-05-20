@@ -2,13 +2,12 @@ import { useEffect, useState } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { useToastStore } from '../store/toastStore'
 
-type SyncState = 'idle' | 'importing' | 'exporting' | 'done'
+type SyncState = 'idle' | 'importing' | 'exporting'
 
 export function RekordboxSync(): JSX.Element {
   const [available, setAvailable] = useState<boolean | null>(null)
   const [dbPath, setDbPath] = useState('')
   const [syncState, setSyncState] = useState<SyncState>('idle')
-  const [lastResult, setLastResult] = useState<string | null>(null)
   const { loadLibrary } = useLibraryStore()
   const { show } = useToastStore()
 
@@ -21,19 +20,13 @@ export function RekordboxSync(): JSX.Element {
 
   const importFromDb = async (): Promise<void> => {
     setSyncState('importing')
-    setLastResult(null)
     try {
       const result = await window.api.library.importFromRekordboxDb(available ? dbPath : undefined)
       if (result.tracksImported > 0) {
         await loadLibrary()
-        const msg = `Imported ${result.tracksImported.toLocaleString()} tracks from Rekordbox`
-        show(msg, 'success')
-        setLastResult(msg)
+        show(`Imported ${result.tracksImported.toLocaleString()} tracks from Rekordbox`, 'success')
       } else if (result.errors.length > 0 && result.errors[0] !== 'Cancelled') {
         show(`Import failed: ${result.errors[0]}`, 'error')
-        setLastResult(`Error: ${result.errors[0]}`)
-      } else {
-        setLastResult('Cancelled')
       }
     } catch (err) {
       show(`Import error: ${(err as Error).message}`, 'error')
@@ -44,24 +37,15 @@ export function RekordboxSync(): JSX.Element {
 
   const exportToDb = async (): Promise<void> => {
     if (!window.confirm(
-      'Sync back to Rekordbox master.db?\n\n' +
-      'Make sure Rekordbox is CLOSED before continuing. ' +
-      'This will update track metadata and cue points in your Rekordbox library.'
+      'Sync back to Rekordbox master.db?\n\nMake sure Rekordbox is CLOSED before continuing.'
     )) return
-
     setSyncState('exporting')
-    setLastResult(null)
     try {
       const result = await window.api.library.exportToRekordboxDb(available ? dbPath : undefined)
-      if (result.cancelled) {
-        setLastResult('Cancelled')
-      } else if (result.tracksExported > 0) {
-        const msg = `Synced ${result.tracksExported.toLocaleString()} tracks to Rekordbox`
-        show(msg, 'success')
-        setLastResult(msg)
-      } else if (result.errors.length > 0) {
+      if (result.tracksExported > 0) {
+        show(`Synced ${result.tracksExported.toLocaleString()} tracks to Rekordbox`, 'success')
+      } else if (result.errors.length > 0 && !result.cancelled) {
         show(`Sync failed: ${result.errors[0]}`, 'error')
-        setLastResult(`Error: ${result.errors[0]}`)
       }
     } catch (err) {
       show(`Sync error: ${(err as Error).message}`, 'error')
@@ -73,48 +57,41 @@ export function RekordboxSync(): JSX.Element {
   if (available === null) return <></>
 
   return (
-    <div className="mx-2 mb-2 bg-white/[0.03] border border-white/10 rounded-xl p-3 space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="text-accent text-sm">◈</span>
-        <span className="text-xs font-semibold text-white/70">Rekordbox Direct Sync</span>
-        <span className={`ml-auto text-xs px-1.5 py-0.5 rounded-full ${available ? 'bg-green-900/40 text-green-400' : 'bg-white/5 text-white/30'}`}>
-          {available ? 'DB found' : 'Not found'}
-        </span>
+    <div className="mx-2 mb-2 border-t border-border/20 pt-2 space-y-1">
+      <div className="flex items-center gap-2 px-1">
+        <span
+          className="w-1.5 h-1.5 rounded-full shrink-0"
+          style={{ background: available ? '#6FAE3E' : '#8A8474' }}
+        />
+        <span className="font-mono text-[9.5px] text-ink-soft">rekordbox direct</span>
+        {available && dbPath && (
+          <span className="font-mono text-[9px] text-muted truncate ml-auto" title={dbPath}>
+            {dbPath.split('/').pop()}
+          </span>
+        )}
       </div>
 
-      {available && (
-        <p className="text-xs text-white/30 truncate font-mono" title={dbPath}>
-          {dbPath.split('/').slice(-3).join('/')}
-        </p>
-      )}
-
-      {lastResult && (
-        <p className={`text-xs ${lastResult.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
-          {lastResult}
-        </p>
-      )}
-
-      <div className="flex gap-1.5">
+      <div className="flex gap-1">
         <button
           onClick={importFromDb}
           disabled={syncState !== 'idle'}
-          className="flex-1 py-1.5 bg-accent/20 hover:bg-accent/30 border border-accent/30 rounded-lg text-xs text-accent disabled:opacity-40 transition-colors"
+          className="flex-1 py-1 rounded font-mono text-[9px] uppercase tracking-[0.1em] bg-accent/10 hover:bg-accent/20 border border-accent/25 text-accent disabled:opacity-40 transition-colors"
         >
-          {syncState === 'importing' ? 'Importing…' : '↓ Import'}
+          {syncState === 'importing' ? 'importing…' : '↓ import'}
         </button>
         <button
           onClick={exportToDb}
           disabled={syncState !== 'idle'}
-          className="flex-1 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs text-white/60 hover:text-white disabled:opacity-40 transition-colors"
+          className="flex-1 py-1 rounded font-mono text-[9px] uppercase tracking-[0.1em] bg-ink/5 hover:bg-ink/10 border border-border/30 text-ink-soft hover:text-ink disabled:opacity-40 transition-colors"
           title="Rekordbox must be closed"
         >
-          {syncState === 'exporting' ? 'Syncing…' : '↑ Sync back'}
+          {syncState === 'exporting' ? 'syncing…' : '↑ sync back'}
         </button>
       </div>
 
       {!available && (
-        <p className="text-xs text-white/25 leading-tight">
-          Rekordbox not found at default path. Set it in Settings → Rekordbox.
+        <p className="font-mono text-[9px] text-muted/60 leading-tight px-1">
+          Set path in Settings → Rekordbox
         </p>
       )}
     </div>

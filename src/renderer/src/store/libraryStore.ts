@@ -2,6 +2,20 @@ import { create } from 'zustand'
 import { useToastStore } from './toastStore'
 import type { Track, Playlist, LibraryStats, IntegrationId, ImportResult, ExportResult, SmartRule } from '@shared/types'
 
+// Returns all Camelot key strings compatible with the given key (same num ±1, relative mode)
+function camelotCompatible(key: string): string[] {
+  const m = key.toUpperCase().match(/^(\d{1,2})([AB])$/)
+  if (!m) return [key.toUpperCase()]
+  const num = parseInt(m[1]), band = m[2] as 'A' | 'B'
+  const wrap = (n: number) => ((n - 1 + 12) % 12) + 1
+  return [
+    `${num}${band}`,
+    `${wrap(num - 1)}${band}`,
+    `${wrap(num + 1)}${band}`,
+    `${num}${band === 'A' ? 'B' : 'A'}`,
+  ]
+}
+
 export interface Filters {
   bpmMin: number | null
   bpmMax: number | null
@@ -18,6 +32,11 @@ const DEFAULT_FILTERS: Filters = {
   ratingMin: null
 }
 
+export interface FnBusContext {
+  harmonicKey: string | null   // stored when harmonic filter was activated
+  bpmRef: number | null        // stored when range filter was activated
+}
+
 interface LibraryState {
   tracks: Track[]
   playlists: Playlist[]
@@ -26,6 +45,8 @@ interface LibraryState {
   activePlaylistId: string | null
   searchQuery: string
   filters: Filters
+  fnBus: Set<string>
+  fnBusContext: FnBusContext
   isLoading: boolean
   isImporting: boolean
   isExporting: boolean
@@ -39,11 +60,13 @@ interface LibraryState {
   deleteTracks: (ids: string[]) => Promise<void>
   importFromIntegration: (integrationId: IntegrationId, filePath?: string) => Promise<ImportResult>
   exportToIntegration: (integrationId: IntegrationId, filePath?: string) => Promise<ExportResult>
-  createPlaylist: (name: string) => Promise<void>
+  createPlaylist: (name: string) => Promise<Playlist>
   createSmartPlaylist: (name: string, rules: SmartRule[]) => Promise<void>
   updateSmartPlaylistRules: (id: string, name: string, rules: SmartRule[]) => Promise<void>
   renamePlaylist: (id: string, name: string) => Promise<void>
+  updatePlaylistColor: (id: string, color: string) => Promise<void>
   deletePlaylist: (id: string) => Promise<void>
+  reorderPlaylistTracks: (playlistId: string, orderedIds: string[]) => Promise<void>
   addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<void>
   setSelectedTrackIds: (ids: Set<string>) => void
   setActivePlaylistId: (id: string | null) => void
@@ -52,6 +75,8 @@ interface LibraryState {
   setSearchQuery: (q: string) => void
   setFilters: (f: Partial<Filters>) => void
   resetFilters: () => void
+  toggleFnBus: (key: string, context?: Partial<FnBusContext>) => void
+  resetFnBus: () => void
   filteredTracks: () => Track[]
   availableKeys: () => string[]
   availableGenres: () => string[]
@@ -65,6 +90,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   activePlaylistId: null,
   searchQuery: '',
   filters: DEFAULT_FILTERS,
+  fnBus: new Set<string>(),
+  fnBusContext: { harmonicKey: null, bpmRef: null },
   isLoading: false,
   isImporting: false,
   isExporting: false,
@@ -164,6 +191,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   createPlaylist: async (name) => {
     const pl = await window.api.library.createPlaylist(name)
     set((s) => ({ playlists: [...s.playlists, pl] }))
+    return pl
   },
 
   createSmartPlaylist: async (name, rules) => {
@@ -181,11 +209,25 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     set((s) => ({ playlists: s.playlists.map((p) => (p.id === id ? { ...p, name } : p)) }))
   },
 
+  updatePlaylistColor: async (id, color) => {
+    await window.api.library.updatePlaylistColor(id, color)
+    set((s) => ({ playlists: s.playlists.map((p) => (p.id === id ? { ...p, color } : p)) }))
+  },
+
   deletePlaylist: async (id) => {
     await window.api.library.deletePlaylist(id)
     set((s) => ({
       playlists: s.playlists.filter((p) => p.id !== id),
       activePlaylistId: s.activePlaylistId === id ? null : s.activePlaylistId
+    }))
+  },
+
+  reorderPlaylistTracks: async (playlistId, orderedIds) => {
+    await window.api.library.reorderPlaylistTracks(playlistId, orderedIds)
+    set((s) => ({
+      playlists: s.playlists.map((p) =>
+        p.id === playlistId ? { ...p, trackIds: orderedIds } : p
+      )
     }))
   },
 
@@ -208,8 +250,22 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   setFilters: (f) => set((s) => ({ filters: { ...s.filters, ...f } })),
   resetFilters: () => set({ filters: DEFAULT_FILTERS }),
 
+  toggleFnBus: (key, context) => set((s) => {
+    const next = new Set(s.fnBus)
+    if (next.has(key)) {
+      next.delete(key)
+    } else {
+      next.add(key)
+    }
+    return {
+      fnBus: next,
+      fnBusContext: context ? { ...s.fnBusContext, ...context } : s.fnBusContext
+    }
+  }),
+  resetFnBus: () => set({ fnBus: new Set(), fnBusContext: { harmonicKey: null, bpmRef: null } }),
+
   filteredTracks: () => {
-    const { tracks, activePlaylistId, playlists, searchQuery, filters } = get()
+    const { tracks, activePlaylistId, playlists, searchQuery, filters, fnBus, fnBusContext } = get()
     let result = tracks
 
     if (activePlaylistId) {
@@ -237,6 +293,25 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (filters.keys.length > 0) result = result.filter((t) => t.key != null && filters.keys.includes(t.key))
     if (filters.genres.length > 0) result = result.filter((t) => filters.genres.includes(t.genre))
     if (filters.ratingMin != null) result = result.filter((t) => t.rating >= filters.ratingMin!)
+
+    // ── FN-BUS filters ─────────────────────────────────────────────────────
+    if (fnBus.has('harmonic') && fnBusContext.harmonicKey) {
+      const compatible = camelotCompatible(fnBusContext.harmonicKey)
+      result = result.filter((t) => t.key && compatible.includes(t.key.toUpperCase()))
+    }
+    if (fnBus.has('range') && fnBusContext.bpmRef != null) {
+      const ref = fnBusContext.bpmRef
+      result = result.filter((t) => t.bpm != null && Math.abs(t.bpm - ref) <= ref * 0.04)
+    }
+    if (fnBus.has('rating'))   result = result.filter((t) => t.rating >= 4)
+    if (fnBus.has('unplayed')) result = result.filter((t) => t.playCount === 0)
+    if (fnBus.has('new')) {
+      const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
+      result = result.filter((t) => t.dateAdded && new Date(t.dateAdded).getTime() >= cutoff)
+    }
+    if (fnBus.has('energy'))   result = result.filter((t) => t.energy != null && t.energy >= 7)
+    if (fnBus.has('analysed')) result = result.filter((t) => t.bpm != null && !!t.key)
+    if (fnBus.has('cued'))     result = result.filter((t) => t.cuePoints.some((c) => c.type === 'hotcue'))
 
     return result
   },
