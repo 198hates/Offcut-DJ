@@ -94,7 +94,7 @@ function HealthTab(): JSX.Element {
   const [beatPhase, setBeatPhase] = useState<BeatPhase>('idle')
   const [beatProgress, setBeatProgress] = useState({ current: 0, total: 0 })
   const [beatCurrentTitle, setBeatCurrentTitle] = useState('')
-  const [beatResult, setBeatResult] = useState<{ updated: number; failed: number } | null>(null)
+  const [beatResult, setBeatResult] = useState<{ updated: number; failed: Track[] } | null>(null)
   const beatCancelRef = useRef(false)
 
   useEffect(() => {
@@ -109,7 +109,8 @@ function HealthTab(): JSX.Element {
     setBeatResult(null)
     setBeatPhase('running')
     setBeatProgress({ current: 0, total: tracksNeedingBeatgrid.length })
-    let updated = 0, failed = 0
+    let updated = 0
+    const failedTracks: Track[] = []
 
     for (let i = 0; i < tracksNeedingBeatgrid.length; i++) {
       if (beatCancelRef.current) break
@@ -120,12 +121,12 @@ function HealthTab(): JSX.Element {
         await window.api.library.analyzeBeats(track.id)
         updated++
       } catch {
-        failed++
+        failedTracks.push(track)
       }
     }
 
     setBeatPhase('done')
-    setBeatResult({ updated, failed })
+    setBeatResult({ updated, failed: failedTracks })
     // Refresh library to show new beatgrid data
     if (updated > 0) await useLibraryStore.getState().loadLibrary()
   }, [tracksNeedingBeatgrid, modelStatus])
@@ -138,7 +139,7 @@ function HealthTab(): JSX.Element {
   const [analysisPhase, setAnalysisPhase] = useState<AnalysisPhase>('idle')
   const [analysisProgress, setAnalysisProgress] = useState({ current: 0, total: 0 })
   const [analysisCurrentTitle, setAnalysisCurrentTitle] = useState('')
-  const [analysisResult, setAnalysisResult] = useState<{ updated: number; skipped: number; failed: number } | null>(null)
+  const [analysisResult, setAnalysisResult] = useState<{ updated: number; skipped: number; failed: Track[] } | null>(null)
   const cancelRef = useRef(false)
 
   const tracksNeedingAnalysis = tracks.filter((t) => !t.bpm || !t.key || t.energy == null || t.danceability == null)
@@ -153,7 +154,8 @@ function HealthTab(): JSX.Element {
     setAnalysisResult(null)
     setAnalysisProgress({ current: 0, total: tracksNeedingAnalysis.length })
 
-    let updated = 0, skipped = 0, failed = 0
+    let updated = 0, skipped = 0
+    const failedAnalysis: Track[] = []
 
     // Phase 1: read embedded tags (fast — no audio decode)
     setAnalysisPhase('tags')
@@ -184,7 +186,7 @@ function HealthTab(): JSX.Element {
 
     if (stillNeeding.length === 0) {
       setAnalysisPhase('done')
-      setAnalysisResult({ updated, skipped, failed })
+      setAnalysisResult({ updated, skipped, failed: failedAnalysis })
       return
     }
 
@@ -225,13 +227,13 @@ function HealthTab(): JSX.Element {
           skipped++
         }
       } catch {
-        failed++
+        failedAnalysis.push(track)
       }
     }
 
     await ctx.close()
     setAnalysisPhase('done')
-    setAnalysisResult({ updated, skipped, failed })
+    setAnalysisResult({ updated, skipped, failed: failedAnalysis })
   }, [tracksNeedingAnalysis, tracks, updateTrack])
 
   const scanDuplicates = useCallback((): void => {
@@ -464,15 +466,41 @@ function HealthTab(): JSX.Element {
 
         {/* Result */}
         {analysisPhase === 'done' && analysisResult && (
-          <div className="flex items-center gap-4 font-mono text-[10px]">
-            <span className="text-green-600 dark:text-green-400">
-              ✓ {analysisResult.updated} updated
-            </span>
-            {analysisResult.skipped > 0 && (
-              <span className="text-muted">{analysisResult.skipped} unchanged</span>
-            )}
-            {analysisResult.failed > 0 && (
-              <span className="text-red-500">{analysisResult.failed} failed</span>
+          <div className="space-y-3">
+            <div className="flex items-center gap-4 font-mono text-[10px]">
+              <span className="text-green-600 dark:text-green-400">
+                ✓ {analysisResult.updated} updated
+              </span>
+              {analysisResult.skipped > 0 && (
+                <span className="text-muted">{analysisResult.skipped} unchanged</span>
+              )}
+              {analysisResult.failed.length > 0 && (
+                <span className="text-red-500">{analysisResult.failed.length} failed</span>
+              )}
+            </div>
+            {analysisResult.failed.length > 0 && (
+              <div className="space-y-1">
+                <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                  failed tracks — could not be decoded or analysed
+                </p>
+                <div className="space-y-px max-h-40 overflow-y-auto">
+                  {analysisResult.failed.map((t) => (
+                    <div key={t.id} className="flex items-center gap-3 px-3 py-1.5 bg-red-500/5 border border-red-500/15 rounded">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-mono text-[10px] text-ink truncate">
+                          {t.title || t.filePath.split('/').pop() || t.id}
+                        </p>
+                        <p className="font-mono text-[8.5px] text-muted truncate">{t.artist || t.filePath}</p>
+                      </div>
+                      <button
+                        onClick={() => window.api.settings.openInFinder(t.filePath)}
+                        className="shrink-0 font-mono text-[9px] text-muted/60 hover:text-accent transition-colors"
+                        title="Reveal in Finder"
+                      >↗</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -563,9 +591,42 @@ function HealthTab(): JSX.Element {
         )}
 
         {beatPhase === 'done' && beatResult && (
-          <div className="flex items-center gap-4 font-mono text-[10px]">
-            <span className="text-green-600 dark:text-green-400">✓ {beatResult.updated} updated</span>
-            {beatResult.failed > 0 && <span className="text-red-500">{beatResult.failed} failed</span>}
+          <div className="space-y-3">
+            <div className="flex items-center gap-4 font-mono text-[10px]">
+              <span className="text-green-600 dark:text-green-400">
+                ✓ {beatResult.updated} analysed
+              </span>
+              {beatResult.failed.length > 0 && (
+                <span className="text-red-500">{beatResult.failed.length} failed</span>
+              )}
+              {beatCancelRef.current && (
+                <span className="text-muted">· cancelled</span>
+              )}
+            </div>
+            {beatResult.failed.length > 0 && (
+              <div className="space-y-1">
+                <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                  failed tracks — likely corrupt files or unsupported formats
+                </p>
+                <div className="space-y-px max-h-48 overflow-y-auto">
+                  {beatResult.failed.map((t) => (
+                    <div key={t.id} className="flex items-center gap-3 px-3 py-1.5 bg-red-500/5 border border-red-500/15 rounded">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-mono text-[10px] text-ink truncate">
+                          {t.title || t.filePath.split('/').pop() || t.id}
+                        </p>
+                        <p className="font-mono text-[8.5px] text-muted truncate">{t.artist || t.filePath}</p>
+                      </div>
+                      <button
+                        onClick={() => window.api.settings.openInFinder(t.filePath)}
+                        className="shrink-0 font-mono text-[9px] text-muted/60 hover:text-accent transition-colors"
+                        title="Reveal in Finder"
+                      >↗</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>
