@@ -163,6 +163,8 @@ interface Props {
   waveformStyle: WaveformStyle
   duration: number
   currentTime: number
+  isPlaying?: boolean
+  playbackRate?: number
   cuePoints: CuePoint[]
   mainCueTime: number | null
   beatgrid?: BeatgridMarker[]
@@ -178,7 +180,7 @@ const STYLE_MAP: Record<WaveformStyle, number> = { gradient: 0, 'three-band': 1,
 
 export function WaveformGL({
   peaks, lowPeaks, midPeaks, highPeaks, waveformStyle,
-  duration, currentTime,
+  duration, currentTime, isPlaying = false, playbackRate: pbRate = 1,
   cuePoints, mainCueTime, beatgrid,
   loopStart, loopEnd, isLooping,
   onSeek, isLoading,
@@ -191,10 +193,24 @@ export function WaveformGL({
   const progRef      = useRef<WebGLProgram | null>(null)
   const texRef       = useRef<WebGLTexture | null>(null)
   const vaoRef       = useRef<WebGLVertexArrayObject | null>(null)
+  // Anchor: lets drawOverlay interpolate position smoothly between audio-engine ticks
+  const anchorRef    = useRef<{ pos: number; wall: number } | null>(null)
+  const playbackRate = useRef(pbRate)
   const [pps, setPps] = useState(DEFAULT_PPS)
 
-  // Same pattern as OverviewWaveform — update ctRef from React prop on every render
-  useLayoutEffect(() => { ctRef.current = currentTime })
+  // Keep playbackRate ref in sync without triggering callbacks
+  useLayoutEffect(() => { playbackRate.current = pbRate }, [pbRate])
+
+  // On each new currentTime from the engine: reset the anchor so interpolation
+  // starts fresh from this exact position.
+  useLayoutEffect(() => {
+    ctRef.current = currentTime
+    if (isPlaying) {
+      anchorRef.current = { pos: currentTime, wall: performance.now() }
+    } else {
+      anchorRef.current = null
+    }
+  })
 
   // ── Initialise canvas sizes ───────────────────────────────────────────────
   const initSizes = useCallback(() => {
@@ -315,7 +331,7 @@ export function WaveformGL({
 
     const anchor    = anchorRef.current
     const ct        = anchor
-      ? Math.min(duration, anchor.pos + (performance.now() - anchor.wall) / 1000 * playbackRate)
+      ? Math.min(duration, anchor.pos + (performance.now() - anchor.wall) / 1000 * playbackRate.current)
       : ctRef.current
     const ppsScaled = pps * dpr
     const visDur    = cw / ppsScaled

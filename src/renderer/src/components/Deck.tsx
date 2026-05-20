@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from 'react'
+import { useEffect, useCallback, useState, useMemo, useRef } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import type { StoreApi, UseBoundStore } from 'zustand'
 import type { DeckStore } from '../store/playerStore'
@@ -40,7 +40,133 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
     analyzeCurrentTrack
   } = useStore()
 
+  const updateTrack = useLibraryStore((s) => s.updateTrack)
+
   const isRight = label === 'B'
+
+  // ── Beatgrid edit mode ────────────────────────────────────────────────────
+  const [gridEditMode, setGridEditMode] = useState(false)
+  const [editBpm,      setEditBpm]      = useState(128)
+  const [editOffsetMs, setEditOffsetMs] = useState(0)
+  const [gridAutoRunning, setGridAutoRunning] = useState(false)
+  const tapTimestampsRef = useRef<number[]>([])
+
+  // Initialise edit values when entering grid mode
+  useEffect(() => {
+    if (!gridEditMode || !currentTrack) return
+    setEditBpm(currentTrack.bpm ?? 128)
+    const offset = currentTrack.beatgrid.length > 0 ? currentTrack.beatgrid[0].positionMs : 0
+    setEditOffsetMs(offset)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridEditMode, currentTrack?.id])
+
+  // Exit grid mode when track changes or unloads
+  useEffect(() => { setGridEditMode(false) }, [currentTrack?.id])
+
+  // Live-compute a beatgrid from the local edit values (not yet saved to DB)
+  const editBeatgrid = useMemo(
+    () => editBpm > 0 ? generateBeatgrid(editBpm, editOffsetMs, duration * 1000) : [],
+    [editBpm, editOffsetMs, duration]
+  )
+
+  const nudgeBpm = useCallback((delta: number) =>
+    setEditBpm((b) => Math.round((b + delta) * 1000) / 1000), [])
+
+  const nudgeOffset = useCallback((deltaMs: number) =>
+    setEditOffsetMs((o) => {
+      const beatMs = 60000 / Math.max(1, editBpm)
+      return ((o + deltaMs) % beatMs + beatMs) % beatMs
+    }), [editBpm])
+
+  // Snap grid so the nearest beat lands exactly on the current playhead
+  const setBeatHere = useCallback(() => {
+    if (!editBpm) return
+    const beatMs = 60000 / editBpm
+    const posMs  = currentTime * 1000
+    const rem    = posMs % beatMs
+    setEditOffsetMs(rem < beatMs / 2 ? rem : rem - beatMs)
+  }, [currentTime, editBpm])
+
+  // Tap tempo
+  const tapBpm = useCallback(() => {
+    const now  = performance.now()
+    const taps = tapTimestampsRef.current
+    if (taps.length > 0 && now - taps[taps.length - 1] > 2500) taps.length = 0
+    taps.push(now)
+    if (taps.length >= 2) {
+      const avg = taps.slice(1).reduce((s, t, i) => s + (t - taps[i]), 0) / (taps.length - 1)
+      const newBpm = Math.round((60000 / avg) * 10) / 10
+      if (newBpm >= 40 && newBpm <= 300) setEditBpm(newBpm)
+    }
+  }, [])
+
+  // Auto-detect via Beat This! ONNX model (primary), JS onset detector (fallback)
+  const autoDetectGrid = useCallback(async () => {
+    if (!currentTrack || gridAutoRunning) return
+    setGridAutoRunning(true)
+    try {
+      // ── Primary: Beat This! neural model ────────────────────────────────
+      const modelStatus = await window.api.library.beatModelStatus()
+      if (modelStatus.available) {
+        // analyzeBeats runs the ONNX model and saves the result to the DB.
+        // We extract BPM + first-beat offset from the returned Track.
+        const updated = await window.api.library.analyzeBeats(currentTrack.id)
+        if (updated.beatgrid.length > 0) {
+          // Sort by position; first marker = beat offset anchor
+          const sorted = [...updated.beatgrid].sort((a, b) => a.positionMs - b.positionMs)
+          setEditBpm(updated.bpm ?? editBpm)
+          setEditOffsetMs(sorted[0].positionMs)
+          setGridAutoRunning(false)
+          return
+        }
+      }
+
+      // ── Fallback: JS onset detector (no model needed) ────────────────────
+      const ab  = await window.api.audio.readFile(currentTrack.filePath)
+      const ctx = new AudioContext()
+      const buf = await ctx.decodeAudioData(ab)
+      await ctx.close()
+
+      const sr        = buf.sampleRate
+      const limitSecs = Math.min(buf.duration, Math.max(4, (60000 / Math.max(60, editBpm)) * 8 / 1000))
+      const limit     = Math.floor(sr * limitSecs)
+      const mono      = new Float32Array(limit)
+      const inv       = 1 / buf.numberOfChannels
+      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+        const d = buf.getChannelData(ch)
+        for (let i = 0; i < limit; i++) mono[i] += d[i] * inv
+      }
+      const winN    = Math.max(1, Math.floor(sr * 0.01))
+      const nFrames = Math.floor(mono.length / winN)
+      const rms     = new Float32Array(nFrames)
+      for (let i = 0; i < nFrames; i++) {
+        let e = 0
+        const end = Math.min(mono.length, (i + 1) * winN)
+        for (let j = i * winN; j < end; j++) e += mono[j] * mono[j]
+        rms[i] = Math.sqrt(e / (end - i * winN))
+      }
+      const onset = new Float32Array(nFrames)
+      for (let i = 1; i < nFrames; i++) onset[i] = Math.max(0, rms[i] - rms[i - 1])
+      const maxO      = Math.max(...onset)
+      const thr       = maxO * 0.35
+      const beatMs    = 60000 / Math.max(60, editBpm)
+      const searchEnd = Math.min(nFrames, Math.floor(beatMs * 2 / 10))
+      for (let i = 2; i < searchEnd; i++) {
+        if (onset[i] >= thr) { setEditOffsetMs((i * winN / sr) * 1000); break }
+      }
+    } catch { /* ignore */ }
+    setGridAutoRunning(false)
+  }, [currentTrack, editBpm, gridAutoRunning])
+
+  const saveGrid = useCallback(async () => {
+    if (!currentTrack || !editBpm) return
+    const markers = generateBeatgrid(editBpm, editOffsetMs, duration * 1000)
+    await updateTrack({ id: currentTrack.id, beatgrid: markers, bpm: Math.round(editBpm * 10) / 10 })
+    setGridEditMode(false)
+  }, [currentTrack, editBpm, editOffsetMs, duration, updateTrack])
+
+  // What the waveform shows: local edit grid during editing, stored grid otherwise
+  const displayBeatgrid = gridEditMode ? editBeatgrid : liveBeatgrid
 
   // Keyboard shortcuts — Deck A: Space / 1-8, Deck B: Alt+Space / Alt+1-8
   const handleKey = useCallback((e: KeyboardEvent) => {
@@ -194,7 +320,7 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           currentTime={currentTime}
           cuePoints={currentTrack?.cuePoints ?? []}
           mainCueTime={mainCueTime}
-          beatgrid={liveBeatgrid}
+          beatgrid={displayBeatgrid}
           onSeek={seek}
         />
       </div>
@@ -209,10 +335,11 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           waveformStyle={waveformStyle}
           duration={duration}
           currentTime={currentTime}
-
+          isPlaying={isPlaying}
+          playbackRate={playbackRate}
           cuePoints={currentTrack?.cuePoints ?? []}
           mainCueTime={mainCueTime}
-          beatgrid={liveBeatgrid}
+          beatgrid={displayBeatgrid}
           loopStart={loopStart}
           loopEnd={loopEnd}
           isLooping={isLooping}
@@ -220,6 +347,23 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           isLoading={isLoading}
         />
       </div>
+
+      {/* ── Beatgrid edit panel (inline, below waveform) ─────────────── */}
+      {gridEditMode && (
+        <BeatgridEditPanel
+          bpm={editBpm}
+          offsetMs={editOffsetMs}
+          markerCount={editBeatgrid.length}
+          autoRunning={gridAutoRunning}
+          onNudgeBpm={nudgeBpm}
+          onNudgeOffset={nudgeOffset}
+          onSetBeatHere={setBeatHere}
+          onTap={tapBpm}
+          onAuto={autoDetectGrid}
+          onSave={saveGrid}
+          onCancel={() => setGridEditMode(false)}
+        />
+      )}
 
       {/* ── Loop controls + pitch ─────────────────────────────────────── */}
       <div className={`flex items-center gap-1 px-2 py-0.5 border-t border-white/[0.08] ${isRight ? 'flex-row-reverse' : ''}`}>
@@ -253,6 +397,22 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
         <button onClick={clearLoop} disabled={!currentTrack || (loopStart === null)} className="h-6 px-1.5 rounded text-[10px] border border-white/[0.08] text-white/40 hover:text-red-400/70 transition-colors disabled:opacity-25" title="Clear loop">✕</button>
 
         <div className="flex-1" />
+
+        {/* Beatgrid edit toggle */}
+        <button
+          onClick={() => setGridEditMode((v) => !v)}
+          disabled={!currentTrack}
+          title="Edit beatgrid"
+          className={`h-6 px-2 rounded text-[10px] font-bold border transition-colors disabled:opacity-25 ${
+            gridEditMode
+              ? 'border-orange-500/80 text-orange-400 bg-orange-500/15'
+              : 'border-white/[0.12] text-white/40 hover:border-white/30 hover:text-white/70'
+          }`}
+        >
+          GRID
+        </button>
+
+        <div className="w-px h-4 bg-white/10 mx-0.5 shrink-0" />
 
         {/* Pitch */}
         <div className={`flex items-center gap-1 ${isRight ? 'flex-row-reverse' : ''}`}>
@@ -370,6 +530,111 @@ function AnalysisIndicator({ state, onAnalyze, hasTrack }: {
     )
   }
   return null
+}
+
+// ── BeatgridEditPanel ─────────────────────────────────────────────────────────
+
+interface BeatgridEditPanelProps {
+  bpm: number
+  offsetMs: number
+  markerCount: number
+  autoRunning: boolean
+  onNudgeBpm: (delta: number) => void
+  onNudgeOffset: (deltaMs: number) => void
+  onSetBeatHere: () => void
+  onTap: () => void
+  onAuto: () => void
+  onSave: () => void
+  onCancel: () => void
+}
+
+function BeatgridEditPanel({
+  bpm, offsetMs, markerCount, autoRunning,
+  onNudgeBpm, onNudgeOffset, onSetBeatHere, onTap, onAuto, onSave, onCancel,
+}: BeatgridEditPanelProps): JSX.Element {
+  const BTN = 'h-6 px-1.5 rounded text-[9px] font-bold border border-white/[0.15] text-white/55 hover:border-orange-400/60 hover:text-orange-300/90 transition-colors'
+  const BTN_ACCENT = 'h-6 px-2 rounded text-[9px] font-bold border transition-colors'
+
+  return (
+    <div className="shrink-0 border-t border-orange-500/20 bg-orange-500/[0.04] px-2 py-1.5 space-y-1">
+      {/* Row 1: BPM */}
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="text-[8px] uppercase tracking-[0.15em] text-orange-400/70 w-8 shrink-0">BPM</span>
+
+        {([-1, -0.1, -0.01] as const).map((d) => (
+          <button key={d} onClick={() => onNudgeBpm(d)} className={BTN}>{d}</button>
+        ))}
+
+        <span className="px-1.5 text-[13px] font-bold text-white tabular-nums select-none min-w-[4.5rem] text-center">
+          {bpm.toFixed(2)}
+        </span>
+
+        {([0.01, 0.1, 1] as const).map((d) => (
+          <button key={d} onClick={() => onNudgeBpm(d)} className={BTN}>+{d}</button>
+        ))}
+
+        <div className="w-px h-4 bg-white/10 mx-0.5 shrink-0" />
+
+        <button onClick={() => onNudgeBpm(-(bpm / 2))} className={BTN} title="Halve BPM">½</button>
+        <button onClick={() => onNudgeBpm(bpm)}         className={BTN} title="Double BPM">×2</button>
+
+        <div className="w-px h-4 bg-white/10 mx-0.5 shrink-0" />
+
+        <button
+          onClick={onTap}
+          className={`${BTN_ACCENT} border-white/20 text-white/60 hover:border-orange-400/60 hover:text-orange-300/90`}
+          title="Tap to detect tempo"
+        >TAP</button>
+
+        <div className="flex-1" />
+
+        <span className="text-[8px] text-white/20 tabular-nums">{markerCount} beats</span>
+      </div>
+
+      {/* Row 2: Offset + actions */}
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="text-[8px] uppercase tracking-[0.15em] text-orange-400/70 w-8 shrink-0">POS</span>
+
+        {([-10, -1, -0.1] as const).map((d) => (
+          <button key={d} onClick={() => onNudgeOffset(d)} className={BTN}>{d}ms</button>
+        ))}
+
+        <span className="px-1.5 text-[11px] font-bold text-white/80 tabular-nums select-none min-w-[4.5rem] text-center">
+          {(offsetMs / 1000).toFixed(3)}s
+        </span>
+
+        {([0.1, 1, 10] as const).map((d) => (
+          <button key={d} onClick={() => onNudgeOffset(d)} className={BTN}>+{d}ms</button>
+        ))}
+
+        <div className="w-px h-4 bg-white/10 mx-0.5 shrink-0" />
+
+        <button
+          onClick={onSetBeatHere}
+          className={`${BTN_ACCENT} border-white/20 text-white/60 hover:border-orange-400/60 hover:text-orange-300/90`}
+          title="Snap nearest beat to the current playhead position"
+        >SET BEAT HERE</button>
+
+        <button
+          onClick={onAuto}
+          disabled={autoRunning}
+          className={`${BTN_ACCENT} border-white/20 text-white/60 hover:border-orange-400/60 hover:text-orange-300/90 disabled:opacity-40`}
+          title="Auto-detect first beat offset"
+        >{autoRunning ? 'detecting…' : 'AUTO'}</button>
+
+        <div className="flex-1" />
+
+        <button
+          onClick={onCancel}
+          className={`${BTN_ACCENT} border-white/[0.15] text-white/40 hover:text-white/70`}
+        >cancel</button>
+        <button
+          onClick={onSave}
+          className={`${BTN_ACCENT} border-orange-500/60 bg-orange-500/15 text-orange-300 hover:bg-orange-500/25`}
+        >SAVE GRID</button>
+      </div>
+    </div>
+  )
 }
 
 interface HotCuePadProps {

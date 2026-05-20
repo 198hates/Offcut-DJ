@@ -4,6 +4,7 @@ import { useToastStore } from '../store/toastStore'
 import { CamelotWheel } from './CamelotWheel'
 import { BeatgridEditor } from './BeatgridEditor'
 import { compatibilityScore } from '../lib/compatibility'
+import { generateCuesForFile } from '../lib/analyzer'
 import { useDeckAStore } from '../store/playerStore'
 import type { Track, CuePoint, BeatgridMarker } from '@shared/types'
 
@@ -307,6 +308,31 @@ function Spec({ label, value, accent }: { label: string; value: string; accent?:
 // ── Edit tab ──────────────────────────────────────────────────────────────────
 
 function EditTab({ draft, set }: { draft: Track; set: <K extends keyof Track>(key: K, value: Track[K]) => void }): JSX.Element {
+  const [generatingCues, setGeneratingCues] = useState(false)
+  const [cueError, setCueError] = useState<string | null>(null)
+  const showToast = useToastStore((s) => s.show)
+
+  const handleAutoCue = async (): Promise<void> => {
+    if (draft.cuePoints.length > 0) {
+      if (!window.confirm(`Replace the ${draft.cuePoints.length} existing cue point${draft.cuePoints.length !== 1 ? 's' : ''} with auto-generated cues?`)) return
+    }
+    setGeneratingCues(true)
+    setCueError(null)
+    try {
+      const cues = await generateCuesForFile(draft.filePath)
+      if (cues.length === 0) {
+        setCueError('No structural cues detected — track may be too short or have uniform energy')
+      } else {
+        set('cuePoints', cues)
+        showToast(`${cues.length} cue point${cues.length !== 1 ? 's' : ''} generated — save to apply`, 'success')
+      }
+    } catch (err) {
+      setCueError((err as Error).message || 'Analysis failed')
+    } finally {
+      setGeneratingCues(false)
+    }
+  }
+
   return (
     <div className="p-3 space-y-3">
       <Field label="Colour tag">
@@ -377,8 +403,28 @@ function EditTab({ draft, set }: { draft: Track; set: <K extends keyof Track>(ke
         <CustomTagEditor tags={draft.customTags} onChange={(t) => set('customTags', t)} />
       </Field>
 
-      <div className="border-t border-border/20 pt-3">
-        <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-muted mb-2">Cue Points</p>
+      <div className="border-t border-border/20 pt-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-muted">Cue Points</p>
+          <button
+            onClick={handleAutoCue}
+            disabled={generatingCues}
+            title="Analyse energy curve and auto-place structural cue points"
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-accent/10 hover:bg-accent/20 disabled:opacity-40 text-accent font-mono text-[9px] uppercase tracking-[0.1em] rounded border border-accent/25 transition-colors"
+          >
+            {generatingCues ? (
+              <>
+                <span className="inline-block w-2.5 h-2.5 border border-accent/60 border-t-accent rounded-full animate-spin" />
+                analysing…
+              </>
+            ) : (
+              draft.cuePoints.length > 0 ? 'regenerate' : 'auto-cue'
+            )}
+          </button>
+        </div>
+        {cueError && (
+          <p className="font-mono text-[9px] text-red-400">{cueError}</p>
+        )}
         <CuePointList cuePoints={draft.cuePoints} onChange={(cues) => set('cuePoints', cues)} />
       </div>
     </div>

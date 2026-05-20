@@ -460,7 +460,7 @@ function detectStructuralCues(
   if (mixInBar < 0) mixInBar = Math.min(8, bars.length - 1)
 
   if (mixInBar < bars.length) {
-    cues.push({ positionMs: bars[mixInBar], label: '1', color: '#3CA86A' })
+    cues.push({ positionMs: bars[mixInBar], label: 'Mix In', color: '#3CA86A' })
   }
 
   // ── Cue 2: first drop ─────────────────────────────────────────────────────
@@ -472,7 +472,7 @@ function detectStructuralCues(
   }
   if (dropBar >= 0) {
     dropBar = snap(dropBar, 4)
-    cues.push({ positionMs: bars[dropBar], label: '2', color: '#FF4D14' })
+    cues.push({ positionMs: bars[dropBar], label: 'Drop', color: '#FF4D14' })
   }
 
   // ── Cue 3: breakdown ──────────────────────────────────────────────────────
@@ -485,7 +485,7 @@ function detectStructuralCues(
     }
     if (bdBar >= 0) {
       bdBar = snap(bdBar, 4)
-      cues.push({ positionMs: bars[bdBar], label: '3', color: '#3CA8C0' })
+      cues.push({ positionMs: bars[bdBar], label: 'Break', color: '#3CA8C0' })
     }
   }
 
@@ -500,7 +500,7 @@ function detectStructuralCues(
   if (outroBar >= 0 && bars.length - outroBar >= 8 && outroBar !== dropBar) {
     outroBar = snap(outroBar, 4)
     if (outroBar < bars.length)
-      cues.push({ positionMs: bars[outroBar], label: '4', color: '#A855C8' })
+      cues.push({ positionMs: bars[outroBar], label: 'Outro', color: '#A855C8' })
   }
 
   return cues

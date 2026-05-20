@@ -1,7 +1,10 @@
-import type { AnalyzerResult } from './analyzerWorker'
+import type { AnalyzerResult, SuggestedCue } from './analyzerWorker'
+import type { CuePoint } from '@shared/types'
 
 // Vite worker import — bundled separately, runs off-thread
 import AnalyzerWorker from './analyzerWorker?worker'
+
+export type { SuggestedCue }
 
 export async function analyzeAudio(buffer: AudioBuffer): Promise<AnalyzerResult> {
   return new Promise((resolve, reject) => {
@@ -20,6 +23,34 @@ export async function analyzeAudio(buffer: AudioBuffer): Promise<AnalyzerResult>
     const mono = toMono(buffer)
     worker.postMessage({ samples: mono, sampleRate: buffer.sampleRate }, [mono.buffer])
   })
+}
+
+/**
+ * Run just the structural cue analysis for a track.
+ * Decodes the raw audio bytes, runs the full worker (BPM + structural cues),
+ * and returns CuePoint[] ready to store.  Uses indices 0–3 for the 4 cue slots.
+ *
+ * @param filePath – native file path (used only to read via Electron API)
+ * @param existingBpm – if provided, used only as a hint; analysis always runs in full
+ */
+export async function generateCuesForFile(filePath: string): Promise<CuePoint[]> {
+  const ab          = await window.api.audio.readFile(filePath)
+  const ctx         = new AudioContext()
+  const audioBuffer = await ctx.decodeAudioData(ab)
+  await ctx.close()
+  const result      = await analyzeAudio(audioBuffer)
+  return suggestedCuesToCuePoints(result.suggestedCues)
+}
+
+/** Map SuggestedCue[] → CuePoint[] (hotcues, indices 0-N) */
+export function suggestedCuesToCuePoints(suggested: SuggestedCue[]): CuePoint[] {
+  return suggested.map((c, i) => ({
+    index: i,
+    type: 'hotcue' as const,
+    positionMs: c.positionMs,
+    color: c.color,
+    label: c.label,
+  }))
 }
 
 function toMono(buffer: AudioBuffer): Float32Array {

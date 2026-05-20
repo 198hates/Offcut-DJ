@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
-import { analyzeAudio } from '../../lib/analyzer'
+import { analyzeAudio, generateCuesForFile } from '../../lib/analyzer'
 import { generateBeatgrid } from '../../lib/compatibility'
 import { dbscan, clusterName, clusterKeyLabel } from '../../lib/clustering'
 import { SmartFixesPage } from '../SmartFixes'
@@ -373,6 +373,47 @@ function HealthTab(): JSX.Element {
   }
 
   const totalDupeCount = dupes?.reduce((s, g) => s + g.length, 0) ?? 0
+
+  // ── Auto-cue batch ────────────────────────────────────────────────────────
+  type CuePhase = 'idle' | 'running' | 'done'
+  const [cuePhase, setCuePhase] = useState<CuePhase>('idle')
+  const [cueProgress, setCueProgress] = useState({ current: 0, total: 0 })
+  const [cueCurrentTitle, setCueCurrentTitle] = useState('')
+  const [cueResult, setCueResult] = useState<{ generated: number; failed: Track[] } | null>(null)
+  const cueCancelRef = useRef(false)
+
+  const tracksNeedingCues = tracks.filter((t) => t.cuePoints.length === 0 && t.bpm != null)
+
+  const startAutoCue = useCallback(async (): Promise<void> => {
+    if (!tracksNeedingCues.length) return
+    cueCancelRef.current = false
+    setCueResult(null)
+    setCuePhase('running')
+    setCueProgress({ current: 0, total: tracksNeedingCues.length })
+
+    let generated = 0
+    const failedTracks: Track[] = []
+
+    for (let i = 0; i < tracksNeedingCues.length; i++) {
+      if (cueCancelRef.current) break
+      const track = tracksNeedingCues[i]
+      setCueProgress({ current: i + 1, total: tracksNeedingCues.length })
+      setCueCurrentTitle(track.title || track.filePath.split('/').pop() || '')
+      try {
+        const cues = await generateCuesForFile(track.filePath)
+        if (cues.length > 0) {
+          await updateTrack({ id: track.id, cuePoints: cues })
+          generated++
+        }
+      } catch {
+        failedTracks.push(track)
+      }
+    }
+
+    setCuePhase('done')
+    setCueResult({ generated, failed: failedTracks })
+    if (generated > 0) await useLibraryStore.getState().loadLibrary()
+  }, [tracksNeedingCues, updateTrack])
 
   return (
     <div className="h-full overflow-y-auto p-6 space-y-8 max-w-3xl">
@@ -800,6 +841,131 @@ function HealthTab(): JSX.Element {
 
       <div className="border-t border-border/20" />
       <AutoGroupSection tracks={tracks} />
+
+      {/* ── Auto-Cue Generation ───────────────────────────────────────────── */}
+      <div className="border-t border-border/20" />
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
+              <span className="text-accent mr-1.5">08</span>auto-cue generation
+            </h2>
+            <p className="font-mono text-[10px] text-muted mt-0.5">
+              analyses energy curve to place mix-in, drop, breakdown and outro markers
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {cuePhase === 'running' && (
+              <button
+                onClick={() => { cueCancelRef.current = true }}
+                className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors"
+              >cancel</button>
+            )}
+            <button
+              onClick={startAutoCue}
+              disabled={cuePhase === 'running' || tracksNeedingCues.length === 0}
+              className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors"
+            >
+              {cuePhase === 'running' ? 'generating…' : cuePhase === 'done' ? 're-run' : 'generate cues'}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <AnalysisStatCard
+            label="need cue points"
+            value={tracksNeedingCues.length.toLocaleString()}
+            sub={`of ${tracks.length.toLocaleString()} tracks`}
+            accent={tracksNeedingCues.length > 0}
+          />
+          <AnalysisStatCard
+            label="have cue points"
+            value={tracks.filter((t) => t.cuePoints.length > 0).toLocaleString
+              ? tracks.filter((t) => t.cuePoints.length > 0).length.toLocaleString()
+              : '0'}
+          />
+          <AnalysisStatCard
+            label="cues per track"
+            value={tracks.length > 0
+              ? (tracks.reduce((s, t) => s + t.cuePoints.length, 0) / tracks.filter(t => t.cuePoints.length > 0).length || 0).toFixed(1)
+              : '—'}
+            sub="avg (tracks with cues)"
+          />
+        </div>
+
+        <div className="bg-ink/[0.03] border border-border/20 rounded px-4 py-3 space-y-1">
+          <p className="font-mono text-[9px] uppercase tracking-[0.15em] text-muted">what gets placed</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
+            {[
+              { color: '#3CA86A', label: 'Mix In', desc: 'first energy rise above intro' },
+              { color: '#FF4D14', label: 'Drop',   desc: 'global energy peak' },
+              { color: '#3CA8C0', label: 'Break',  desc: 'post-drop energy dip' },
+              { color: '#A855C8', label: 'Outro',  desc: 'energy falls and stays low' },
+            ].map(({ color, label, desc }) => (
+              <div key={label} className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                <span className="font-mono text-[9px] font-bold text-ink w-12 shrink-0">{label}</span>
+                <span className="font-mono text-[9px] text-muted">{desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {cuePhase === 'running' && (
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between">
+              <span className="font-mono text-[10px] text-accent uppercase tracking-[0.1em]">analysing tracks</span>
+              <span className="font-mono text-[10px] text-muted tabular-nums">
+                {cueProgress.current} / {cueProgress.total}
+              </span>
+            </div>
+            <div className="h-1 bg-border/30 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-accent rounded-full transition-all"
+                style={{ width: `${cueProgress.total ? (cueProgress.current / cueProgress.total) * 100 : 0}%` }}
+              />
+            </div>
+            <p className="font-mono text-[9px] text-muted truncate">{cueCurrentTitle}</p>
+          </div>
+        )}
+
+        {cuePhase === 'done' && cueResult && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-4 font-mono text-[10px]">
+              <span className="text-green-600 dark:text-green-400">
+                ✓ {cueResult.generated} track{cueResult.generated !== 1 ? 's' : ''} got cues
+              </span>
+              {cueResult.failed.length > 0 && (
+                <span className="text-red-500">{cueResult.failed.length} failed</span>
+              )}
+              {cueCancelRef.current && <span className="text-muted">· cancelled</span>}
+            </div>
+            {cueResult.failed.length > 0 && (
+              <div className="space-y-px max-h-40 overflow-y-auto">
+                {cueResult.failed.map((t) => (
+                  <div key={t.id} className="flex items-center gap-3 px-3 py-1.5 bg-red-500/5 border border-red-500/15 rounded">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-mono text-[10px] text-ink truncate">{t.title || t.filePath.split('/').pop() || t.id}</p>
+                      <p className="font-mono text-[8.5px] text-muted truncate">{t.artist || t.filePath}</p>
+                    </div>
+                    <button
+                      onClick={() => window.api.settings.openInFinder(t.filePath)}
+                      className="shrink-0 font-mono text-[9px] text-muted/60 hover:text-accent transition-colors"
+                      title="Reveal in Finder"
+                    >↗</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {tracksNeedingCues.length === 0 && cuePhase === 'idle' && tracks.length > 0 && (
+          <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+            <span>✓</span> all {tracks.filter(t => t.cuePoints.length > 0).length.toLocaleString()} analysed tracks have cue points
+          </p>
+        )}
+      </section>
     </div>
   )
 }
