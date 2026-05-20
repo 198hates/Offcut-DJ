@@ -53,7 +53,8 @@ const COL_MAP: Record<string, string> = {
   durationSeconds: 'duration_seconds',
   dateAdded: 'date_added',
   sourceIds: 'source_ids',
-  cuePoints: 'cue_points'
+  cuePoints: 'cue_points',
+  customTags: 'custom_tags'
 }
 
 export function registerLibraryHandlers(): void {

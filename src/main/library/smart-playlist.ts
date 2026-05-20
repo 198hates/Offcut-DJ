@@ -15,6 +15,33 @@ export function resolveSmartPlaylist(db: Database.Database, rules: SmartRule[]):
   const params: (string | number)[] = []
 
   for (const rule of rules) {
+    // custom_tags is a JSON object column — use json_extract for per-key matching
+    if (rule.field === 'customTag') {
+      const key = rule.customTagKey?.trim() ?? ''
+      if (!key) continue
+      const path = `$.${key}`
+      const val  = String(rule.value)
+      switch (rule.op) {
+        case 'is':
+          clauses.push(`json_extract(custom_tags, ?) = ?`)
+          params.push(path, val)
+          break
+        case 'is_not':
+          clauses.push(`(json_extract(custom_tags, ?) IS NULL OR json_extract(custom_tags, ?) != ?)`)
+          params.push(path, path, val)
+          break
+        case 'contains':
+          clauses.push(`json_extract(custom_tags, ?) LIKE ?`)
+          params.push(path, `%${val}%`)
+          break
+        case 'not_contains':
+          clauses.push(`(json_extract(custom_tags, ?) IS NULL OR json_extract(custom_tags, ?) NOT LIKE ?)`)
+          params.push(path, path, `%${val}%`)
+          break
+      }
+      continue
+    }
+
     // tags is a JSON array column — match with LIKE
     if (rule.field === 'tags') {
       const val = String(rule.value)

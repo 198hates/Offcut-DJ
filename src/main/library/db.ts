@@ -38,6 +38,7 @@ export function rowToTrack(row: Record<string, unknown>): Track {
     dateAdded: row.date_added as string,
     comment: row.comment as string,
     tags: JSON.parse(row.tags as string),
+    customTags: JSON.parse((row.custom_tags as string) || '{}'),
     cuePoints: JSON.parse(row.cue_points as string),
     beatgrid: JSON.parse(row.beatgrid as string),
     sourceIds: JSON.parse(row.source_ids as string)

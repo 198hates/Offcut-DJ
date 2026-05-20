@@ -16,6 +16,7 @@ const FIELDS: { value: SmartRuleField; label: string; type: 'text' | 'numeric' |
   { value: 'lastPlayedAt',    label: 'last played',    type: 'date'    },
   { value: 'energy',          label: 'energy',         type: 'numeric' },
   { value: 'tags',            label: 'tag',            type: 'text'    },
+  { value: 'customTag',       label: 'custom field',   type: 'text'    },
 ]
 
 const OPS_FOR_TYPE: Record<string, { value: SmartRuleOp; label: string }[]> = {
@@ -95,6 +96,9 @@ export function SmartPlaylistEditor({ playlist, onSave, onClose }: Props): JSX.E
   const changeValue = (i: number, value: SmartRule['value']): void =>
     setRules((r) => r.map((rule, idx) => (idx === i ? { ...rule, value } : rule)))
 
+  const changeCustomTagKey = (i: number, key: string): void =>
+    setRules((r) => r.map((rule, idx) => (idx === i ? { ...rule, customTagKey: key } : rule)))
+
   const handleSave = (): void => {
     if (!name.trim()) return
     onSave(name.trim(), rules)
@@ -143,6 +147,7 @@ export function SmartPlaylistEditor({ playlist, onSave, onClose }: Props): JSX.E
                   onFieldChange={(f) => changeField(i, f)}
                   onOpChange={(op) => changeOp(i, op)}
                   onValueChange={(v) => changeValue(i, v)}
+                  onCustomTagKeyChange={(k) => changeCustomTagKey(i, k)}
                   onRemove={() => removeRule(i)}
                   canRemove={rules.length > 1}
                 />
@@ -183,19 +188,31 @@ interface RuleRowProps {
   onFieldChange: (f: SmartRuleField) => void
   onOpChange: (op: SmartRuleOp) => void
   onValueChange: (v: SmartRule['value']) => void
+  onCustomTagKeyChange: (key: string) => void
   onRemove: () => void
   canRemove: boolean
 }
 
-function RuleRow({ rule, onFieldChange, onOpChange, onValueChange, onRemove, canRemove }: RuleRowProps): JSX.Element {
+function RuleRow({ rule, onFieldChange, onOpChange, onValueChange, onCustomTagKeyChange, onRemove, canRemove }: RuleRowProps): JSX.Element {
   const type = fieldType(rule.field)
   const ops  = OPS_FOR_TYPE[type]
 
   return (
-    <div className="flex items-center gap-1.5 bg-ink/[0.03] border border-border/25 rounded px-2 py-1.5">
+    <div className="flex items-center gap-1.5 bg-ink/[0.03] border border-border/25 rounded px-2 py-1.5 flex-wrap">
       <select value={rule.field} onChange={(e) => onFieldChange(e.target.value as SmartRuleField)} className={SEL}>
         {FIELDS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
       </select>
+
+      {/* Extra key input for custom field rules */}
+      {rule.field === 'customTag' && (
+        <input
+          type="text"
+          value={rule.customTagKey ?? ''}
+          onChange={(e) => onCustomTagKeyChange(e.target.value)}
+          placeholder="field name…"
+          className={INP}
+        />
+      )}
 
       <select value={rule.op} onChange={(e) => onOpChange(e.target.value as SmartRuleOp)} className={SEL}>
         {ops.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -220,7 +237,7 @@ function RuleRow({ rule, onFieldChange, onOpChange, onValueChange, onRemove, can
           value={String(rule.value)}
           onChange={(e) => onValueChange(e.target.value)}
           className="bg-paper border border-border/40 rounded px-2 py-1.5 font-mono text-[10px] text-ink outline-none focus:border-accent flex-1 min-w-0 placeholder-muted"
-          placeholder="value…"
+          placeholder={rule.field === 'customTag' ? 'expected value…' : 'value…'}
         />
       )}
 

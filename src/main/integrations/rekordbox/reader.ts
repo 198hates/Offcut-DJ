@@ -63,6 +63,7 @@ export function importFromIntegration(appDb: Database.Database, xmlPath: string)
         dateAdded: String(t['@_DateAdded'] ?? new Date().toISOString()),
         comment: String(t['@_Comments'] ?? ''),
         tags: [],
+        customTags: {},
         cuePoints: cueArr
           .filter((c) => c && typeof c === 'object')
           .map((c, i) => rbCueToPoint(c as Record<string, unknown>, i)),

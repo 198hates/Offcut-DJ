@@ -54,6 +54,7 @@ export function importFromIntegration(appDb: Database.Database, seratoDir: strin
             dateAdded: new Date().toISOString(),
             comment: '',
             tags: [],
+        customTags: {},
             cuePoints: geob.cuePoints,
             beatgrid: geob.beatgrid,
             energy: null,

@@ -121,6 +121,7 @@ export function importFromRekordboxDb(
           dateAdded: String(row.StockDate ?? new Date().toISOString()),
           comment: String(row.Commnt ?? ''),
           tags: [],
+        customTags: {},
           cuePoints: cues.map((c, i) => rbCueToPoint(c, i)),
           beatgrid: [],
           energy: null,

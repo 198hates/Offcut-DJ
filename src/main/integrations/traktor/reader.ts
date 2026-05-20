@@ -64,6 +64,7 @@ export function importFromIntegration(db: Database.Database, nmlPath: string): I
         dateAdded: String(info['@_IMPORT_DATE'] ?? new Date().toISOString()),
         comment: String(info['@_COMMENT'] ?? ''),
         tags: [],
+        customTags: {},
         cuePoints,
         beatgrid: [],
           energy: null,

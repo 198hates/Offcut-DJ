@@ -61,6 +61,7 @@ export function importFromIntegration(appDb: Database.Database, dbPath: string):
           dateAdded: row.dateAdded ? String(row.dateAdded) : new Date().toISOString(),
           comment: String(row.comment ?? ''),
           tags: [],
+        customTags: {},
           cuePoints: cues,
           beatgrid: [],
           energy: null,

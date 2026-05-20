@@ -57,6 +57,7 @@ export function importFromIntegration(db: Database.Database, xmlPath: string): I
         dateAdded: t['Date Added'] ? String(t['Date Added']) : new Date().toISOString(),
         comment: String(t['Comments'] ?? ''),
         tags: [],
+        customTags: {},
         cuePoints: [],
         beatgrid: [],
           energy: null,

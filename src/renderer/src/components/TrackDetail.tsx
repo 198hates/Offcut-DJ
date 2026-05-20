@@ -73,6 +73,7 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
         energy: draft.energy,
         comment: draft.comment,
         tags: draft.tags,
+        customTags: draft.customTags,
         cuePoints: draft.cuePoints
       })
       setDirty(false)
@@ -269,6 +270,20 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
         </div>
       )}
 
+      {/* Custom fields */}
+      {Object.keys(draft.customTags).length > 0 && (
+        <div className="px-3 py-3 border-t border-border/20">
+          <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted mb-2">
+            <span className="text-accent mr-1">08</span>custom fields
+          </p>
+          <div className="space-y-1">
+            {Object.entries(draft.customTags).map(([k, v]) => (
+              <Spec key={k} label={k} value={v} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* File meta */}
       <div className="px-3 py-2 border-t border-border/20 space-y-1">
         <Spec label="File" value={draft.filePath.split('/').pop() ?? draft.filePath} />
@@ -358,6 +373,10 @@ function EditTab({ draft, set }: { draft: Track; set: <K extends keyof Track>(ke
         <TagEditor tags={draft.tags} onChange={(tags) => set('tags', tags)} />
       </Field>
 
+      <Field label="Custom Fields">
+        <CustomTagEditor tags={draft.customTags} onChange={(t) => set('customTags', t)} />
+      </Field>
+
       <div className="border-t border-border/20 pt-3">
         <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-muted mb-2">Cue Points</p>
         <CuePointList cuePoints={draft.cuePoints} onChange={(cues) => set('cuePoints', cues)} />
@@ -412,6 +431,65 @@ function TagEditor({ tags, onChange }: { tags: string[]; onChange: (t: string[])
       <input value={input} onChange={(e) => setInput(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add() } }}
         placeholder="add tag, press Enter…" className={INPUT} />
+    </div>
+  )
+}
+
+function CustomTagEditor({ tags, onChange }: { tags: Record<string, string>; onChange: (t: Record<string, string>) => void }): JSX.Element {
+  const [newKey, setNewKey] = useState('')
+  const [newVal, setNewVal] = useState('')
+
+  const add = (): void => {
+    const k = newKey.trim()
+    if (!k) return
+    onChange({ ...tags, [k]: newVal.trim() })
+    setNewKey('')
+    setNewVal('')
+  }
+
+  const entries = Object.entries(tags)
+
+  return (
+    <div className="space-y-1.5">
+      {entries.map(([k, v]) => (
+        <div key={k} className="flex items-center gap-1.5 bg-ink/[0.03] border border-border/25 rounded px-2 py-1">
+          <span className="font-mono text-[9px] text-muted shrink-0 min-w-[60px] truncate" title={k}>{k}</span>
+          <span className="font-mono text-[8px] text-muted/50 shrink-0">·</span>
+          <input
+            value={v}
+            onChange={(e) => onChange({ ...tags, [k]: e.target.value })}
+            className="flex-1 min-w-0 bg-transparent outline-none font-mono text-[10.5px] text-ink focus:text-ink border-b border-transparent focus:border-accent/50 transition-colors py-0.5"
+          />
+          <button
+            onClick={() => { const { [k]: _, ...rest } = tags; onChange(rest) }}
+            className="shrink-0 text-muted/50 hover:text-red-500 transition-colors font-mono text-xs leading-none ml-1"
+          >×</button>
+        </div>
+      ))}
+      <div className="flex gap-1">
+        <input
+          value={newKey}
+          onChange={(e) => setNewKey(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+          placeholder="field…"
+          className={INPUT + ' flex-1 min-w-0'}
+        />
+        <input
+          value={newVal}
+          onChange={(e) => setNewVal(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+          placeholder="value…"
+          className={INPUT + ' flex-1 min-w-0'}
+        />
+        <button
+          onClick={add}
+          disabled={!newKey.trim()}
+          className="shrink-0 px-2 py-1 bg-accent/10 hover:bg-accent/20 text-accent rounded font-mono text-[10px] transition-colors disabled:opacity-40"
+        >+</button>
+      </div>
+      {entries.length === 0 && (
+        <p className="font-mono text-[9px] text-muted/50 italic">no custom fields — add one above</p>
+      )}
     </div>
   )
 }

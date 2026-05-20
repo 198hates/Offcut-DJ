@@ -34,18 +34,20 @@ export interface Track {
   dateAdded: string
   comment: string
   tags: string[]
+  customTags: Record<string, string>   // user-defined key→value fields
   cuePoints: CuePoint[]
   beatgrid: BeatgridMarker[]
   sourceIds: Partial<Record<IntegrationId, string>>
 }
 
-export type SmartRuleField = 'bpm' | 'key' | 'genre' | 'artist' | 'album' | 'rating' | 'title' | 'comment' | 'durationSeconds' | 'dateAdded' | 'playCount' | 'lastPlayedAt' | 'energy' | 'tags'
+export type SmartRuleField = 'bpm' | 'key' | 'genre' | 'artist' | 'album' | 'rating' | 'title' | 'comment' | 'durationSeconds' | 'dateAdded' | 'playCount' | 'lastPlayedAt' | 'energy' | 'tags' | 'customTag'
 export type SmartRuleOp = 'is' | 'is_not' | 'contains' | 'not_contains' | 'greater_than' | 'less_than' | 'between' | 'in_last_days'
 
 export interface SmartRule {
   field: SmartRuleField
   op: SmartRuleOp
   value: string | number | [number, number]
+  customTagKey?: string   // only used when field === 'customTag'
 }
 
 export interface Playlist {
