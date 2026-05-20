@@ -162,6 +162,29 @@ export function registerLibraryHandlers(): void {
     db.prepare('DELETE FROM playlists WHERE id = ?').run(id)
   })
 
+  // ── Set Builder ───────────────────────────────────────────────────────────
+  // A "set" is a folder-type playlist; chapters are its non-folder children.
+
+  ipcMain.handle('library:createSet', (_e, name: string): Playlist => {
+    const id = randomUUID()
+    const maxSort = ((db.prepare("SELECT COALESCE(MAX(sort_order),-1) as m FROM playlists WHERE parent_id IS NULL").get()) as { m: number }).m
+    db.prepare("INSERT INTO playlists (id, name, is_folder, sort_order, source_ids) VALUES (?, ?, 1, ?, '{}')").run(id, name, maxSort + 1)
+    return rowToPlaylist(db.prepare('SELECT * FROM playlists WHERE id = ?').get(id) as Record<string, unknown>, [])
+  })
+
+  ipcMain.handle('library:createChapter', (_e, setId: string, name: string, color: string): Playlist => {
+    const id = randomUUID()
+    const maxSort = ((db.prepare("SELECT COALESCE(MAX(sort_order),-1) as m FROM playlists WHERE parent_id = ?").get(setId)) as { m: number }).m
+    db.prepare("INSERT INTO playlists (id, name, parent_id, color, sort_order, source_ids) VALUES (?, ?, ?, ?, ?, '{}')").run(id, name, setId, color, maxSort + 1)
+    return rowToPlaylist(db.prepare('SELECT * FROM playlists WHERE id = ?').get(id) as Record<string, unknown>, [])
+  })
+
+  ipcMain.handle('library:reorderChapters', (_e, setId: string, orderedIds: string[]): void => {
+    const stmt = db.prepare("UPDATE playlists SET sort_order = ?, updated_at = datetime('now') WHERE id = ? AND parent_id = ?")
+    const update = db.transaction(() => { orderedIds.forEach((cid, i) => stmt.run(i, cid, setId)) })
+    update()
+  })
+
   // ── Auto Group ────────────────────────────────────────────────────────────
   // Replaces all auto-group playlists with the provided clusters.
   // Each cluster becomes a named playlist inside an "Auto Groups" folder.

@@ -43,6 +43,9 @@ declare global {
         importFromRekordboxDb: (dbPath?: string) => Promise<ImportResult>
         exportToRekordboxDb: (dbPath?: string) => Promise<ExportResult>
         runAutoGroup: (clusters: { name: string; trackIds: string[] }[]) => Promise<void>
+        createSet: (name: string) => Promise<Playlist>
+        createChapter: (setId: string, name: string, color: string) => Promise<Playlist>
+        reorderChapters: (setId: string, orderedIds: string[]) => Promise<void>
       }
       audio: {
         readFile: (filePath: string) => Promise<ArrayBuffer>

@@ -60,7 +60,12 @@ const api = {
     exportToRekordboxDb: (dbPath?: string) =>
       ipcRenderer.invoke('library:exportToRekordboxDb', dbPath),
     runAutoGroup: (clusters: { name: string; trackIds: string[] }[]) =>
-      ipcRenderer.invoke('library:runAutoGroup', clusters)
+      ipcRenderer.invoke('library:runAutoGroup', clusters),
+    createSet: (name: string) => ipcRenderer.invoke('library:createSet', name),
+    createChapter: (setId: string, name: string, color: string) =>
+      ipcRenderer.invoke('library:createChapter', setId, name, color),
+    reorderChapters: (setId: string, orderedIds: string[]) =>
+      ipcRenderer.invoke('library:reorderChapters', setId, orderedIds)
   },
   audio: {
     readFile: (filePath: string): Promise<ArrayBuffer> =>

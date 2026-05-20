@@ -61,6 +61,9 @@ interface LibraryState {
   importFromIntegration: (integrationId: IntegrationId, filePath?: string) => Promise<ImportResult>
   exportToIntegration: (integrationId: IntegrationId, filePath?: string) => Promise<ExportResult>
   createPlaylist: (name: string) => Promise<Playlist>
+  createSet: (name: string) => Promise<Playlist>
+  createChapter: (setId: string, name: string, color: string) => Promise<Playlist>
+  reorderChapters: (setId: string, orderedIds: string[]) => Promise<void>
   createSmartPlaylist: (name: string, rules: SmartRule[]) => Promise<void>
   updateSmartPlaylistRules: (id: string, name: string, rules: SmartRule[]) => Promise<void>
   renamePlaylist: (id: string, name: string) => Promise<void>
@@ -68,6 +71,7 @@ interface LibraryState {
   deletePlaylist: (id: string) => Promise<void>
   reorderPlaylistTracks: (playlistId: string, orderedIds: string[]) => Promise<void>
   addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<void>
+  removeTracksFromPlaylist: (playlistId: string, trackIds: string[]) => Promise<void>
   setSelectedTrackIds: (ids: Set<string>) => void
   setActivePlaylistId: (id: string | null) => void
   setDragging: (ids: string[]) => void
@@ -194,6 +198,28 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     return pl
   },
 
+  createSet: async (name) => {
+    const newSet = await window.api.library.createSet(name)
+    set((s) => ({ playlists: [...s.playlists, newSet] }))
+    return newSet
+  },
+
+  createChapter: async (setId, name, color) => {
+    const chapter = await window.api.library.createChapter(setId, name, color)
+    set((s) => ({ playlists: [...s.playlists, chapter] }))
+    return chapter
+  },
+
+  reorderChapters: async (setId, orderedIds) => {
+    await window.api.library.reorderChapters(setId, orderedIds)
+    set((s) => ({
+      playlists: s.playlists.map((p) => {
+        const idx = orderedIds.indexOf(p.id)
+        return idx >= 0 ? { ...p, sortOrder: idx } : p
+      })
+    }))
+  },
+
   createSmartPlaylist: async (name, rules) => {
     const pl = await window.api.library.createSmartPlaylist(name, rules)
     set((s) => ({ playlists: [...s.playlists, pl] }))
@@ -237,6 +263,18 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       playlists: s.playlists.map((p) =>
         p.id === playlistId
           ? { ...p, trackIds: [...new Set([...p.trackIds, ...trackIds])] }
+          : p
+      )
+    }))
+  },
+
+  removeTracksFromPlaylist: async (playlistId, trackIds) => {
+    await window.api.library.removeTracksFromPlaylist(playlistId, trackIds)
+    const idSet = new Set(trackIds)
+    set((s) => ({
+      playlists: s.playlists.map((p) =>
+        p.id === playlistId
+          ? { ...p, trackIds: p.trackIds.filter((id) => !idSet.has(id)) }
           : p
       )
     }))

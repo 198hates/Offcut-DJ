@@ -1,4 +1,4 @@
-export type Section = 'library' | 'sync' | 'analysis' | 'settings'
+export type Section = 'library' | 'sync' | 'analysis' | 'builder' | 'settings'
 
 interface Props {
   active: Section
@@ -36,6 +36,18 @@ function AnalysisIcon() {
   )
 }
 
+function BuilderIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      {/* Three chapter blocks on a baseline — energy arc silhouette */}
+      <rect x="1"   y="8"   width="3.5" height="5"   rx="0.5"/>
+      <rect x="5.5" y="5"   width="5"   height="8"   rx="0.5"/>
+      <rect x="11.5" y="7"  width="3.5" height="6"   rx="0.5"/>
+      <rect x="1"   y="14"  width="14"  height="1"   rx="0.4"/>
+    </svg>
+  )
+}
+
 function GearIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -46,9 +58,10 @@ function GearIcon() {
 }
 
 const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; label: string }[] = [
-  { id: 'library',  Icon: LibIcon,      label: 'Library'  },
-  { id: 'sync',     Icon: SyncIcon,     label: 'Sync'     },
-  { id: 'analysis', Icon: AnalysisIcon, label: 'Analysis' },
+  { id: 'library',  Icon: LibIcon,      label: 'Library'      },
+  { id: 'sync',     Icon: SyncIcon,     label: 'Sync'         },
+  { id: 'analysis', Icon: AnalysisIcon, label: 'Analysis'     },
+  { id: 'builder',  Icon: BuilderIcon,  label: 'Set Builder'  },
 ]
 
 export function NavRail({ active, onNavigate }: Props): JSX.Element {

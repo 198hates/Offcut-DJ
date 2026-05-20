@@ -3,6 +3,7 @@ import { LibraryPage } from './pages/Library'
 import { LibraryHealthPage } from './pages/LibraryHealth'
 import { SettingsPage } from './pages/Settings'
 import { SyncPage } from './pages/Sync'
+import { SetBuilderPage } from './pages/SetBuilder'
 import { Sidebar } from './components/Sidebar'
 import { NavRail } from './components/NavRail'
 import type { Section } from './components/NavRail'
@@ -66,6 +67,7 @@ export default function App(): JSX.Element {
             {activePage === 'library'  && <LibraryPage />}
             {activePage === 'sync'     && <SyncPage />}
             {activePage === 'analysis' && <LibraryHealthPage />}
+            {activePage === 'builder'  && <SetBuilderPage />}
             {activePage === 'settings' && <SettingsPage />}
           </div>
           {activePage === 'library' && detailTrackId && (
