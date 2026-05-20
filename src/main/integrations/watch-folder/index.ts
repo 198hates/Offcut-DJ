@@ -40,8 +40,9 @@ async function importFile(filePath: string): Promise<void> {
       dateAdded: new Date().toISOString(),
       comment: (c.comment as { text: string }[] | undefined)?.[0]?.text ?? '',
       tags: [],
+      customTags: {},
       cuePoints: [],
-      beatgrid: null,
+      beatgrid: [],
       sourceIds: {}
     }
 

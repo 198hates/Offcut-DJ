@@ -8,6 +8,7 @@ const INTEGRATIONS: { id: IntegrationId; label: string; canImport: boolean; canE
   { id: 'serato',      label: 'Serato',      canImport: true,  canExport: true  },
   { id: 'apple-music', label: 'Apple Music', canImport: true,  canExport: false },
   { id: 'engine-dj',   label: 'Engine DJ',   canImport: true,  canExport: true  },
+  { id: 'virtualdj',   label: 'VirtualDJ',   canImport: false, canExport: true  },
   { id: 'm3u',         label: 'M3U',         canImport: false, canExport: true  },
 ]
 

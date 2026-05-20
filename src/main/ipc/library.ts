@@ -22,6 +22,7 @@ import {
   getDefaultEngineDbPath
 } from '../integrations/engine-dj/reader'
 import { exportToIntegration as exportM3u } from '../integrations/m3u/writer'
+import { exportToIntegration as exportVirtualDj } from '../integrations/virtualdj/writer'
 import { analyzeBeats, isModelAvailable, getDefaultModelPath, warmModel } from '../integrations/beat-analysis'
 import { writeTagsToFile } from '../integrations/file-tags/writer'
 import { startWatcher } from '../integrations/watch-folder'
@@ -45,7 +46,8 @@ const WRITERS: Partial<Record<IntegrationId, IntegrationWriter>> = {
   traktor: exportTraktor,
   serato: exportSerato,
   'engine-dj': exportEngineDj,
-  m3u: exportM3u
+  m3u: exportM3u,
+  virtualdj: exportVirtualDj
 }
 
 const COL_MAP: Record<string, string> = {
@@ -529,7 +531,8 @@ function getImportFilters(id: IntegrationId): Electron.FileFilter[] {
 function getExportFilters(id: IntegrationId): Electron.FileFilter[] {
   const map: Partial<Record<IntegrationId, Electron.FileFilter>> = {
     rekordbox: { name: 'Rekordbox XML', extensions: ['xml'] },
-    traktor: { name: 'Traktor Collection (NML)', extensions: ['nml'] }
+    traktor: { name: 'Traktor Collection (NML)', extensions: ['nml'] },
+    virtualdj: { name: 'VirtualDJ Database', extensions: ['xml'] }
   }
   return [map[id] ?? { name: 'All Files', extensions: ['*'] }]
 }
