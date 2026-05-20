@@ -3,6 +3,7 @@ import { useLibraryStore } from '../../store/libraryStore'
 import { analyzeAudio } from '../../lib/analyzer'
 import { generateBeatgrid } from '../../lib/compatibility'
 import { dbscan, clusterName, clusterKeyLabel } from '../../lib/clustering'
+import { SmartFixesPage } from '../SmartFixes'
 import type { Track, Playlist } from '@shared/types'
 
 type DuplicateGroup = Track[]
@@ -61,6 +62,30 @@ type AnalysisPhase = 'idle' | 'tags' | 'audio' | 'done'
 type BeatPhase = 'idle' | 'running' | 'done'
 
 export function LibraryHealthPage(): JSX.Element {
+  const [tab, setTab] = useState<'health' | 'fixes'>('health')
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Tab bar */}
+      <div className="shrink-0 flex items-center gap-0 px-3 pt-2 pb-0 border-b border-border/20">
+        {([['health', 'Library Health'], ['fixes', 'Smart Fixes']] as const).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.15em] border-b-2 transition-colors -mb-px ${
+              tab === id
+                ? 'text-accent border-accent'
+                : 'text-muted border-transparent hover:text-ink'
+            }`}
+          >{label}</button>
+        ))}
+      </div>
+      {tab === 'health' ? <HealthTab /> : <SmartFixesPage />}
+    </div>
+  )
+}
+
+function HealthTab(): JSX.Element {
   const { tracks, playlists, deleteTracks, updateTrack } = useLibraryStore()
   const [dupes, setDupes] = useState<DuplicateGroup[] | null>(null)
 

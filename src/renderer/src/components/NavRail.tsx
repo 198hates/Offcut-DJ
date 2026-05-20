@@ -60,7 +60,7 @@ function GearIcon() {
 const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; label: string }[] = [
   { id: 'library',  Icon: LibIcon,      label: 'Library'      },
   { id: 'sync',     Icon: SyncIcon,     label: 'Sync'         },
-  { id: 'analysis', Icon: AnalysisIcon, label: 'Analysis'     },
+  { id: 'analysis', Icon: AnalysisIcon, label: 'Analysis & Fixes' },
   { id: 'builder',  Icon: BuilderIcon,  label: 'Set Builder'  },
 ]
 

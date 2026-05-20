@@ -59,8 +59,9 @@ export function Sidebar(): JSX.Element {
     setSmartEditorPlaylist(undefined)
   }
 
-  const sets      = playlists.filter((p) => !p.isFolder && !p.isSmart && !p.isAutoGroup)
-  const smart     = playlists.filter((p) => !p.isFolder && p.isSmart)
+  const regular   = playlists.filter((p) => !p.parentId && !p.isFolder && !p.isSmart && !p.isAutoGroup)
+  const smart     = playlists.filter((p) => !p.parentId && !p.isFolder && p.isSmart)
+  const folders   = playlists.filter((p) => !p.parentId && p.isFolder && !p.isAutoGroup)
   const autoGroups = playlists.filter((p) => !p.isFolder && p.isAutoGroup)
 
   return (
@@ -92,7 +93,7 @@ export function Sidebar(): JSX.Element {
             <div className="flex items-center justify-between px-2.5 pt-3 pb-1">
               <p className="text-[9px] font-mono font-bold uppercase tracking-[0.2em] text-muted">
                 <span className="text-accent mr-1">01</span>playlists
-                <span className="ml-1 text-muted/60">· {sets.length}</span>
+                <span className="ml-1 text-muted/60">· {regular.length}</span>
               </p>
               <div className="flex items-center gap-1.5">
                 <button
@@ -126,7 +127,7 @@ export function Sidebar(): JSX.Element {
             )}
 
             <div className="space-y-px">
-              {sets.map((pl) => (
+              {regular.map((pl) => (
                 <PlaylistItem
                   key={pl.id}
                   playlist={pl}
@@ -141,7 +142,7 @@ export function Sidebar(): JSX.Element {
                   onEditSmart={() => setSmartEditorPlaylist(pl)}
                 />
               ))}
-              {sets.length === 0 && !addingPlaylist && (
+              {regular.length === 0 && !addingPlaylist && (
                 <p className="px-3 py-1 text-[10px] font-mono text-muted/50 italic">no playlists yet</p>
               )}
             </div>
@@ -173,6 +174,16 @@ export function Sidebar(): JSX.Element {
                   ))}
                 </div>
               </>
+            )}
+
+            {/* Sets (folder playlists — created via Set Builder) */}
+            {folders.length > 0 && (
+              <FoldersSection
+                folders={folders}
+                playlists={playlists}
+                activePlaylistId={activePlaylistId}
+                onSelect={setActivePlaylistId}
+              />
             )}
 
             {/* Auto Groups (generated) */}
@@ -453,6 +464,82 @@ function PlaylistItem({
         <span className="shrink-0 px-2 text-accent text-xs font-bold">+</span>
       )}
     </div>
+  )
+}
+
+// ── FoldersSection ────────────────────────────────────────────────────────────
+// Shows folder-type playlists (sets from Set Builder) with their children
+
+function FoldersSection({ folders, playlists, activePlaylistId, onSelect }: {
+  folders: Playlist[]
+  playlists: Playlist[]
+  activePlaylistId: string | null
+  onSelect: (id: string) => void
+}): JSX.Element {
+  const [open, setOpen] = useState(true)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  const toggleFolder = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  return (
+    <>
+      <div className="flex items-center justify-between px-2.5 pt-3 pb-1">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-1 text-[9px] font-mono font-bold uppercase tracking-[0.2em] text-muted hover:text-ink transition-colors"
+        >
+          <span className="text-accent mr-0.5">03</span>sets
+          <span className="ml-1 text-muted/60">· {folders.length}</span>
+          <span className="ml-1 text-muted/40">{open ? '▾' : '▸'}</span>
+        </button>
+      </div>
+      {open && (
+        <div className="space-y-px">
+          {folders.map((folder) => {
+            const children = playlists.filter((p) => p.parentId === folder.id && !p.isFolder)
+            const isExpanded = expanded.has(folder.id)
+            return (
+              <div key={folder.id}>
+                {/* Folder row */}
+                <button
+                  onClick={() => toggleFolder(folder.id)}
+                  className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left hover:bg-ink/[0.04] transition-colors group"
+                >
+                  <span className="font-mono text-[9px] text-muted/50">{isExpanded ? '▾' : '▸'}</span>
+                  <span className="font-mono text-[10px] font-bold text-ink-soft truncate flex-1">{folder.name}</span>
+                  <span className="font-mono text-[9px] text-muted/50 tabular-nums shrink-0">{children.length}</span>
+                </button>
+                {/* Children */}
+                {isExpanded && children.map((ch) => (
+                  <button
+                    key={ch.id}
+                    onClick={() => onSelect(ch.id)}
+                    className={`w-full flex items-center gap-2 pl-6 pr-2.5 py-1 text-left transition-colors ${
+                      activePlaylistId === ch.id
+                        ? 'bg-accent/[0.07] text-ink'
+                        : 'text-ink-soft hover:bg-ink/[0.04] hover:text-ink'
+                    }`}
+                  >
+                    <span
+                      className="w-1.5 h-1.5 rounded-sm shrink-0"
+                      style={{ background: ch.color || '#8A8474' }}
+                    />
+                    <span className="font-mono text-[10px] truncate flex-1">{ch.name}</span>
+                    <span className="font-mono text-[9px] text-muted/50 tabular-nums">{ch.trackIds.length}</span>
+                  </button>
+                ))}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </>
   )
 }
 

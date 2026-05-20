@@ -33,7 +33,8 @@ const OVERSCAN      = 8
 
 const COLUMNS: { key: keyof Track; label: string; width: string }[] = [
   { key: 'title',           label: 'Title',  width: 'auto' },
-  { key: 'artist',          label: 'Artist', width: '130px'},
+  { key: 'artist',          label: 'Artist', width: '110px'},
+  { key: 'genre',           label: 'Genre',  width: '80px' },
   { key: 'bpm',             label: 'BPM',    width: '52px' },
   { key: 'key',             label: 'Key',    width: '40px' },
   { key: 'energy',          label: 'Nrg',    width: '56px' },
@@ -681,6 +682,11 @@ function TrackRow({ track, isSelected, onClick, onDoubleClick, onContextMenu, on
       {/* Artist */}
       <td className="px-2 max-w-0 overflow-hidden">
         <span className="truncate block font-mono text-[10px] text-ink-soft">{track.artist || '—'}</span>
+      </td>
+
+      {/* Genre */}
+      <td className="px-2 max-w-0 overflow-hidden">
+        <span className="truncate block font-mono text-[9px] text-muted">{track.genre || '—'}</span>
       </td>
 
       {/* BPM */}

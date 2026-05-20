@@ -57,7 +57,7 @@ export default function App(): JSX.Element {
       ))}
 
       <Titlebar />
-      <FnBus />
+      {activePage === 'library' && <FnBus />}
 
       <div className="flex flex-1 overflow-hidden">
         <NavRail active={activePage} onNavigate={setActivePage} />
