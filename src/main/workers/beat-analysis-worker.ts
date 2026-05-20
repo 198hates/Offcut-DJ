@@ -1,28 +1,18 @@
 /**
- * Persistent beat-analysis worker.
+ * Persistent beat-analysis child process.
  *
- * Stays alive for the lifetime of the app. The main process sends one
- * { filePath } message at a time and waits for the result before sending
- * the next — i.e. requests are serialised by the caller (index.ts).
+ * Launched via child_process.fork() — a fully isolated OS process.
+ * If ONNX crashes this process (SIGSEGV, abort), the parent is unaffected.
  *
- * Loading the ONNX model once and keeping it resident eliminates:
- *   - Per-track model load cost (~100 MB disk I/O + native init each time)
- *   - ONNX global-state conflicts between the main-process warmModel()
- *     session and per-track worker sessions (the previous crash cause)
- *
- * If a native crash occurs (ONNX assertion / segfault), the worker process
- * dies. The main process detects the 'exit' event, restarts the worker for
- * the next track, and the Electron app is never affected.
+ * Uses process.send / process.on('message') for IPC (standard fork API).
+ * The ONNX model path is passed in process.env.BEAT_MODEL_PATH.
+ * The model is loaded on first use and cached for the process lifetime.
  */
-import { workerData, parentPort } from 'worker_threads'
 import { decodeAudioToPcm } from '../integrations/beat-analysis/audio-decode'
 import { computeMelSpectrogram, MEL_CONFIG } from '../integrations/beat-analysis/mel-spectrogram'
 import { runBeatAnalysis } from '../integrations/beat-analysis/beat-model'
 
-interface WorkerInit  { modelPath: string }
-interface TrackRequest { filePath: string }
-
-const { modelPath } = workerData as WorkerInit
+const modelPath = process.env.BEAT_MODEL_PATH ?? ''
 
 async function analyseTrack(filePath: string): Promise<void> {
   const samples    = await decodeAudioToPcm(filePath, MEL_CONFIG.sampleRate)
@@ -37,7 +27,7 @@ async function analyseTrack(filePath: string): Promise<void> {
   const meanConf  = markers.reduce((s, m) => s + (m.confidence ?? 1), 0) / (markers.length || 1)
   const barCount  = markers.filter((m) => m.isDownbeat).length
 
-  parentPort!.postMessage({
+  process.send!({
     success: true,
     markers,
     durationMs,
@@ -47,17 +37,10 @@ async function analyseTrack(filePath: string): Promise<void> {
   })
 }
 
-// Pre-load the ONNX model as soon as the worker starts so the first real
-// analysis request doesn't pay the cold-start cost.
-// We import via the model module so the cached _session is populated.
-import('../integrations/beat-analysis/beat-model')
-  .then(({ runBeatAnalysis: _ }) => { /* module loaded, session will init on first call */ })
-  .catch(() => { /* model file missing — will surface on first request */ })
-
-parentPort!.on('message', async (req: TrackRequest) => {
+process.on('message', async (req: { filePath: string }) => {
   try {
     await analyseTrack(req.filePath)
   } catch (err) {
-    parentPort!.postMessage({ success: false, error: (err as Error).message })
+    process.send!({ success: false, error: (err as Error).message })
   }
 })

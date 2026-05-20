@@ -1,4 +1,4 @@
-import { Worker } from 'worker_threads'
+import { fork, type ChildProcess } from 'child_process'
 import { join } from 'path'
 import { isModelAvailable, getDefaultModelPath } from './beat-model'
 import type { BeatgridMarker } from '../../../shared/types'
@@ -14,37 +14,38 @@ export interface BeatAnalysisResult {
 }
 
 /**
- * Persistent worker — the model is loaded once and reused across all tracks.
+ * Persistent child process for ONNX beat analysis.
  *
- * Previous architecture spawned one worker per track: the ONNX model was
- * loaded from disk on every call (~100 MB each time), and the main process
- * also created its own ONNX session via warmModel(), causing native-level
- * conflicts between main-thread and worker-thread ONNX state that crashed
- * the Electron process after a few tracks.
+ * worker_threads share process memory with the parent — a native crash
+ * (ONNX abort/SIGSEGV) inside a worker_thread kills the entire Electron
+ * app. child_process.fork() creates a fully independent OS process:
+ * if ONNX crashes the child, the parent gets a 'close' event, marks
+ * the track as failed, and starts a fresh child for the next track.
+ * The Electron app is never affected.
  *
- * Now: one long-lived worker owns all ONNX state. Main process never
- * touches onnxruntime. If the worker crashes (native ONNX bug), it is
- * restarted transparently for the next track without killing the app.
+ * The model is loaded once when the child starts and stays resident,
+ * so repeated analysis calls pay no per-track cold-start cost.
  */
 
 type PendingRequest = {
   resolve: (r: BeatAnalysisResult) => void
-  reject: (e: Error) => void
-  timer: ReturnType<typeof setTimeout>
+  reject:  (e: Error) => void
+  timer:   ReturnType<typeof setTimeout>
 }
 
-const TIMEOUT_MS    = 5 * 60_000   // 5 min hard limit per track
-const WORKER_PATH   = join(__dirname, 'beat-analysis-worker.js')
+const TIMEOUT_MS  = 5 * 60_000   // 5 min hard cap per track
+const WORKER_PATH = join(__dirname, 'beat-analysis-worker.js')
 
-let _worker:  Worker | null = null
+let _child:   ChildProcess | null = null
 let _pending: PendingRequest | null = null
 
-function spawnWorker(): Worker {
-  const worker = new Worker(WORKER_PATH, {
-    workerData: { modelPath: getDefaultModelPath() }
+function spawnChild(): ChildProcess {
+  const child = fork(WORKER_PATH, [], {
+    env: { ...process.env, BEAT_MODEL_PATH: getDefaultModelPath() },
+    silent: true,   // suppress child stdout/stderr from leaking into app logs
   })
 
-  worker.on('message', (msg: ({ success: true } & BeatAnalysisResult) | { success: false; error: string }) => {
+  child.on('message', (msg: ({ success: true } & BeatAnalysisResult) | { success: false; error: string }) => {
     const p = _pending; _pending = null
     if (!p) return
     clearTimeout(p.timer)
@@ -52,44 +53,50 @@ function spawnWorker(): Worker {
     else p.reject(new Error(msg.error))
   })
 
-  worker.on('error', (err) => {
-    if (_worker === worker) _worker = null
+  child.on('error', (err) => {
+    if (_child === child) _child = null
     const p = _pending; _pending = null
     if (!p) return
     clearTimeout(p.timer)
     p.reject(err)
   })
 
-  worker.on('exit', (code) => {
-    if (_worker === worker) _worker = null
+  // 'close' fires after stdio streams close — more reliable than 'exit' for fork
+  child.on('close', (code, signal) => {
+    if (_child === child) _child = null
     const p = _pending; _pending = null
     if (!p) return
     clearTimeout(p.timer)
-    if (code !== 0) p.reject(new Error(`Beat worker crashed (exit ${code}) — track skipped`))
-    // code 0 = already resolved via 'message'
+    if (code !== 0 || signal) {
+      p.reject(new Error(
+        signal
+          ? `Beat process killed by signal ${signal} — track skipped`
+          : `Beat process exited with code ${code} — track skipped`
+      ))
+    }
+    // code 0 + no signal = already resolved via 'message'
   })
 
-  return worker
+  return child
 }
 
-function ensureWorker(): Worker {
-  if (!_worker) _worker = spawnWorker()
-  return _worker
+function ensureChild(): ChildProcess {
+  if (!_child) _child = spawnChild()
+  return _child
 }
 
 /**
- * Warm the worker — starts it and pre-loads the ONNX model so the first
- * real analysis call doesn't pay the cold-start cost.
- * Safe to call from main process: no ONNX code runs here.
+ * Warm: start the child process so the first real analysis call
+ * doesn't pay the process-launch + model-load cost (~1–2 s).
  */
 export function warmModel(): void {
   if (!isModelAvailable()) return
-  try { ensureWorker() } catch { /* model not installed */ }
+  try { ensureChild() } catch { /* model not installed */ }
 }
 
 /**
  * Analyse beats for one track.
- * Requests are serialised through the single persistent worker.
+ * Requests are serialised: callers must await each call before making the next.
  */
 export function analyzeBeats(filePath: string): Promise<BeatAnalysisResult> {
   if (!isModelAvailable()) {
@@ -97,18 +104,17 @@ export function analyzeBeats(filePath: string): Promise<BeatAnalysisResult> {
   }
 
   if (_pending) {
-    // Belt-and-braces: callers should await sequentially, but protect just in case
-    return Promise.reject(new Error('Beat analysis already in progress — await the current call first'))
+    return Promise.reject(new Error('Beat analysis already in progress'))
   }
 
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       _pending = null
-      _worker?.terminate(); _worker = null   // hard-kill; next call will restart
+      _child?.kill('SIGKILL'); _child = null
       reject(new Error('Beat analysis timed out (>5 min) — track skipped'))
     }, TIMEOUT_MS)
 
     _pending = { resolve, reject, timer }
-    ensureWorker().postMessage({ filePath })
+    ensureChild().send({ filePath })
   })
 }
