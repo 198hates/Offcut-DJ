@@ -371,6 +371,10 @@ export function OrdersPage(): JSX.Element {
   // Road Not Taken state
   const [showRnt, setShowRnt] = useState(false)
   const [rntSlot, setRntSlot] = useState(0)   // index: 0 = before track 1, N = after track N
+  // USB import state
+  type UsbSet = { name: string; usbId: string; date: string | null; tracks: { title: string; artist: string; bpm: number | null; key: string | null; durationSeconds: number | null; position: number; localTrackId: string | null }[] }
+  const [usbSets, setUsbSets] = useState<UsbSet[] | null>(null)
+  const [usbLoading, setUsbLoading] = useState(false)
 
   useEffect(() => {
     window.api.library.getRunningOrders().then((ros) => {
@@ -441,32 +445,29 @@ export function OrdersPage(): JSX.Element {
 
   // ── Pioneer USB import ───────────────────────────────────────────────────────
 
-  type UsbSet = { name: string; usbId: string; date: string | null; tracks: { title: string; artist: string; bpm: number | null; key: string | null; durationSeconds: number | null; position: number; localTrackId: string | null }[] }
-
   const importFromUsb = useCallback(async () => {
-    // Try auto-detect first, fall back to folder picker
-    let usbRoot = await window.api.library.findPioneerUsb()
-    if (!usbRoot) usbRoot = await window.api.library.browseForUsb()
-    if (!usbRoot) return
+    setUsbLoading(true)
+    try {
+      let usbRoot = await window.api.library.findPioneerUsb()
+      if (!usbRoot) usbRoot = await window.api.library.browseForUsb()
+      if (!usbRoot) return
 
-    const result = await window.api.library.readUsbHistory(usbRoot)
-    if ('error' in result) {
-      alert(`Could not read USB: ${(result as { error: string }).error}`)
-      return
+      const result = await window.api.library.readUsbHistory(usbRoot)
+      if ('error' in (result as Record<string, unknown>)) {
+        alert(`Could not read USB: ${(result as { error: string }).error}`)
+        return
+      }
+      const sets = result as UsbSet[]
+      if (!sets.length) { alert('No HISTORY playlists found on this USB.'); return }
+      setUsbSets(sets)
+    } finally {
+      setUsbLoading(false)
     }
-    const sets = result as UsbSet[]
-    if (!sets.length) { alert('No HISTORY playlists found on this USB.'); return }
+  }, [])
 
-    // Prompt which set to import (use the first / newest by default for now)
-    const chosen = sets[0]   // newest set (reversed in reader)
-    const label = chosen.date ? `${chosen.name} (${chosen.date})` : chosen.name
-    if (!window.confirm(`Import "${label}" as a running order?\n${chosen.tracks.length} tracks · ${chosen.tracks.filter((t) => t.localTrackId).length} matched in library`)) return
-
-    // Create a running order from the USB set
+  const importUsbSet = useCallback(async (chosen: UsbSet) => {
     const date = chosen.date ?? new Date().toISOString().slice(0, 10)
     const ro = await window.api.library.createRunningOrder(`${chosen.name} · ${date}`)
-
-    // Add matched tracks first; leave unmatched as placeholders we can't add
     const matchedIds = chosen.tracks
       .filter((t) => t.localTrackId)
       .map((t) => t.localTrackId as string)
@@ -483,6 +484,7 @@ export function OrdersPage(): JSX.Element {
       setOrders((prev) => [...prev, ro])
     }
     setActiveId(ro.id)
+    setUsbSets(null)
   }, [setOrders, setActiveId])
 
   const deleteOrder = async (id: string) => {
@@ -580,6 +582,29 @@ export function OrdersPage(): JSX.Element {
             </button>
           </div>
         </div>
+        {/* USB history picker */}
+        {usbSets && (
+          <div className="shrink-0 border-b border-border/30 bg-chassis-soft">
+            <div className="flex items-center justify-between px-3 py-1.5">
+              <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-accent">USB history</span>
+              <button onClick={() => setUsbSets(null)} className="font-mono text-[8px] text-muted/40 hover:text-muted transition-colors">✕</button>
+            </div>
+            <div className="flex flex-col divide-y divide-border/20 max-h-40 overflow-y-auto">
+              {usbSets.map((s) => {
+                const matched = s.tracks.filter((t) => t.localTrackId).length
+                return (
+                  <button key={s.usbId}
+                    onClick={() => importUsbSet(s)}
+                    className="w-full text-left px-3 py-1.5 hover:bg-accent/[0.05] transition-colors">
+                    <p className="font-mono text-[9px] text-ink">{s.name}</p>
+                    <p className="font-mono text-[7.5px] text-muted/50">{s.tracks.length} tracks · {matched} in library{s.date ? ` · ${s.date}` : ''}</p>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto">
           {orders.length === 0 ? (
             <p className="px-3 py-4 font-mono text-[9px] text-muted/50 italic">no orders yet</p>
