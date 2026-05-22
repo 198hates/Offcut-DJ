@@ -15,7 +15,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { keyBlipColor } from '../../components/CamelotWheel'
-import { compatibilityScore } from '../../lib/compatibility'
+import { compatibilityScore, camelotDistance, harmonicScore } from '../../lib/compatibility'
 import { scoreLibrary, transitionContext } from '../../lib/roadNotTaken'
 import type { RunningOrder, OrderEntry, TransitionKind, Track } from '@shared/types'
 import { randomUUID } from '../../lib/uuid'
@@ -181,11 +181,11 @@ function OrderArc({ tracks, lens }: { tracks: (Track | null)[]; lens: Lens }): J
 // ── Entry row ─────────────────────────────────────────────────────────────────
 
 function EntryRow({
-  entry, index, track, isLast,
+  entry, index, track, nextTrack, isLast,
   onToggleFlexible, onSetTransition, onSetNote, onRemove,
   onDragStart, onDragOver, onDrop, isDragOver,
 }: {
-  entry: OrderEntry; index: number; track: Track | null; isLast: boolean
+  entry: OrderEntry; index: number; track: Track | null; nextTrack: Track | null; isLast: boolean
   onToggleFlexible: () => void
   onSetTransition: (k: TransitionKind | null) => void
   onSetNote: (note: string) => void
@@ -351,6 +351,48 @@ function EntryRow({
           )}
         </div>
       )}
+
+      {/* ── Transition connector ── */}
+      {!isLast && (() => {
+        const fromKey = track?.key ?? null
+        const toKey   = nextTrack?.key ?? null
+        const dist    = camelotDistance(fromKey, toKey)
+        const score   = harmonicScore(fromKey, toKey)
+        const bpmDelta = track?.bpm != null && nextTrack?.bpm != null
+          ? (nextTrack.bpm - track.bpm)
+          : null
+        const dotColor = dist === 0 ? '#4A9B6F' : dist === 1 ? '#6BAA7E' : dist === 2 ? '#C9A02C' : '#B86E72'
+        return (
+          <div className="flex items-center gap-2 px-9 py-0.5" style={{ background: 'rgba(255,255,255,0.012)' }}>
+            {/* Key journey */}
+            {fromKey && toKey ? (
+              <>
+                <span className="font-mono text-[7.5px]" style={{ color: keyBlipColor(fromKey) }}>{fromKey}</span>
+                <span className="text-[7px] text-muted/25">→</span>
+                <span className="font-mono text-[7.5px]" style={{ color: keyBlipColor(toKey) }}>{toKey}</span>
+                {/* Compatibility dots (5 max) */}
+                <div className="flex items-center gap-0.5">
+                  {[0,1,2,3,4].map((i) => (
+                    <span key={i} className="w-1 h-1 rounded-full"
+                      style={{ background: i < Math.round(score * 5) ? dotColor : 'rgba(255,255,255,0.08)' }} />
+                  ))}
+                </div>
+                {dist === 0 && <span className="font-mono text-[6.5px] text-emerald-500/60 uppercase tracking-[0.08em]">perfect</span>}
+                {dist === 1 && <span className="font-mono text-[6.5px] text-green-400/50 uppercase tracking-[0.08em]">compatible</span>}
+                {dist >= 3 && <span className="font-mono text-[6.5px] text-amber-500/50 uppercase tracking-[0.08em]">risky</span>}
+              </>
+            ) : (
+              <span className="font-mono text-[7px] text-muted/20">—</span>
+            )}
+            {/* BPM delta */}
+            {bpmDelta != null && Math.abs(bpmDelta) > 0.5 && (
+              <span className="font-mono text-[7px] text-muted/30 ml-1 tabular-nums">
+                {bpmDelta > 0 ? '+' : ''}{bpmDelta.toFixed(0)} bpm
+              </span>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }
@@ -712,6 +754,7 @@ export function OrdersPage(): JSX.Element {
                   entry={entry}
                   index={idx}
                   track={trackMap.get(entry.trackId) ?? null}
+                  nextTrack={idx < active.entries.length - 1 ? (trackMap.get(active.entries[idx + 1].trackId) ?? null) : null}
                   isLast={idx === active.entries.length - 1}
                   onToggleFlexible={() => patchEntry(idx, { flexible: !entry.flexible })}
                   onSetTransition={(k) => patchEntry(idx, {
