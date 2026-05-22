@@ -94,6 +94,18 @@ const REMIXER_RE = [
   /\s*(?:\(|\[)(?:remixed|mixed)\s+by\s+([^)\]]+)(?:\)|\])/i,
 ]
 
+/** Extract a usable title from a bare file path, stripping extension + leading numbers */
+function titleFromPath(filePath: string): string | null {
+  const base = filePath.split('/').pop()?.split('\\').pop() ?? ''
+  const noExt = base.replace(/\.[a-zA-Z0-9]{2,4}$/, '').trim()
+  if (!noExt) return null
+  // Remove leading track numbers
+  const cleaned = noExt.replace(/^\d{1,3}[\s._-]+/, '').trim()
+  // If "Artist - Title" format, take the right half
+  const split = cleaned.match(/^.+?\s+[-–—]\s+(.+)$/)
+  return (split ? split[1] : cleaned).trim() || null
+}
+
 function extractRemixer(title: string): { title: string; remixerTag: string } | null {
   for (const re of REMIXER_RE) {
     const m = title.match(re)
@@ -336,6 +348,50 @@ const FIXES: Fix[] = [
         const canon = canonical.get(t.artist.toLowerCase().trim())
         if (canon && t.artist !== canon)
           results.push({ trackId: t.id, display: t.title || t.filePath, field: 'artist', before: t.artist, after: canon })
+      }
+      return results
+    }
+  },
+  {
+    id: 'fill-missing-title',
+    label: 'fill missing title',
+    description: 'tracks with an empty title field — derives a title from the filename',
+    icon: '?→',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        if (t.title && t.title.trim()) continue   // has a title already
+        const derived = titleFromPath(t.filePath)
+        if (derived) results.push({ trackId: t.id, display: t.filePath, field: 'title', before: '—', after: derived })
+      }
+      return results
+    }
+  },
+  {
+    id: 'bpm-doubling',
+    label: 'fix BPM doubling',
+    description: 'detects tracks where the stored BPM is half or double the analysed BPM — common when different tools disagree on half-time or double-time',
+    icon: '×2',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        if (!t.bpm || !t.analysedBeatgrid) continue
+        const stored   = t.bpm
+        const analysed = t.analysedBeatgrid.medianBpm
+        if (!analysed || analysed <= 0) continue
+
+        // Is stored BPM about half the analysed?  → double it
+        if (Math.abs(stored * 2 - analysed) / analysed < 0.04) {
+          const fixed = Math.round(stored * 2 * 10) / 10
+          results.push({ trackId: t.id, display: t.title || t.filePath, field: 'bpm',
+            before: `${stored.toFixed(1)} bpm (stored)`, after: `${fixed.toFixed(1)}` })
+        }
+        // Is stored BPM about double the analysed? → halve it
+        else if (Math.abs(stored / 2 - analysed) / analysed < 0.04) {
+          const fixed = Math.round(stored / 2 * 10) / 10
+          results.push({ trackId: t.id, display: t.title || t.filePath, field: 'bpm',
+            before: `${stored.toFixed(1)} bpm (stored)`, after: `${fixed.toFixed(1)}` })
+        }
       }
       return results
     }
