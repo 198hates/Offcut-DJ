@@ -634,7 +634,24 @@ export function OrdersPage(): JSX.Element {
     const majorCount = modes.filter((m) => m === 'major').length
     const mode = modes.length > 0 ? (majorCount > modes.length / 2 ? 'major' : 'minor') : null
 
-    return { avgHarm, bpmRange, mode }
+    // Energy arc description
+    const energies = ts.map((t) => t.energy).filter((e): e is number => e != null)
+    let energyDesc: string | null = null
+    if (energies.length >= 4) {
+      const first = energies.slice(0, Math.floor(energies.length / 3))
+      const last  = energies.slice(-Math.floor(energies.length / 3))
+      const avgFirst = first.reduce((s, e) => s + e, 0) / first.length
+      const avgLast  = last.reduce((s, e) => s + e, 0) / last.length
+      const delta = avgLast - avgFirst
+      if (delta > 1.0)  energyDesc = 'building energy'
+      else if (delta < -1.0) energyDesc = 'winding down'
+      else energyDesc = 'steady energy'
+    }
+
+    // Unique keys used
+    const uniqueKeys = new Set(ts.map((t) => t.key).filter(Boolean))
+
+    return { avgHarm, bpmRange, mode, energyDesc, uniqueKeyCount: uniqueKeys.size }
   }, [activeTrackList])
 
   // ── Road Not Taken — scored candidates for a specific transition slot ────────
@@ -984,6 +1001,14 @@ export function OrdersPage(): JSX.Element {
                 {setStats && (
                   <span className={`font-mono text-[7.5px] shrink-0 ${setStats.avgHarm >= 0.70 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
                     ⬡ {Math.round(setStats.avgHarm * 100)}% harmonic avg
+                  </span>
+                )}
+                {setStats?.bpmRange && (
+                  <span className="font-mono text-[7.5px] text-muted/30 shrink-0">
+                    {setStats.bpmRange} bpm
+                    {setStats.mode ? ` · ${setStats.mode}` : ''}
+                    {setStats.uniqueKeyCount ? ` · ${setStats.uniqueKeyCount} keys` : ''}
+                    {setStats.energyDesc ? ` · ${setStats.energyDesc}` : ''}
                   </span>
                 )}
               </div>
