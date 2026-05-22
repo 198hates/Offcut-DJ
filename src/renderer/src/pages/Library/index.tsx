@@ -539,6 +539,16 @@ export function LibraryPage(): JSX.Element {
                       action: () => addTracksToPlaylist(pl.id, ctxIds)
                     }))
                   },
+                  {
+                    label: 'Create playlist from selection',
+                    action: async () => {
+                      const name = window.prompt('New playlist name:', ctxTrack?.artist || 'New Playlist')
+                      if (!name?.trim()) return
+                      const { createPlaylist: cp, addTracksToPlaylist: atp } = useLibraryStore.getState()
+                      const newPl = await cp(name.trim())
+                      await atp(newPl.id, ctxIds)
+                    }
+                  },
                   ...(activePlaylistId && !playlists.find((p) => p.id === activePlaylistId)?.isSmart ? [{
                     label: 'Remove from playlist',
                     action: () => window.api.library.removeTracksFromPlaylist(activePlaylistId, ctxIds)
