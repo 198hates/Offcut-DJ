@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
+import type { Playlist } from '@shared/types'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { compatibilityScore, camelotDistance, harmonicScore } from '../../lib/compatibility'
 import { scoreLibrary, transitionContext } from '../../lib/roadNotTaken'
@@ -400,10 +401,11 @@ function EntryRow({
 // ── Orders page ───────────────────────────────────────────────────────────────
 
 export function OrdersPage(): JSX.Element {
-  const { tracks } = useLibraryStore()
+  const { tracks, playlists } = useLibraryStore()
 
   const [orders, setOrders] = useState<RunningOrder[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [showPlaylistPicker, setShowPlaylistPicker] = useState(false)
   const [lens, setLens] = useState<Lens>('bpm')
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleVal, setTitleVal] = useState('')
@@ -484,6 +486,18 @@ export function OrdersPage(): JSX.Element {
     setOrders((prev) => [...prev, ro])
     setActiveId(ro.id)
   }
+
+  const createFromPlaylist = useCallback(async (pl: Playlist) => {
+    setShowPlaylistPicker(false)
+    const ro = await window.api.library.createRunningOrder(pl.name)
+    const entries: OrderEntry[] = pl.trackIds.map((id) => ({
+      id: crypto.randomUUID(), trackId: id, plannedTransition: null, note: null, flexible: false,
+    }))
+    const updated = { ...ro, entries }
+    await window.api.library.updateRunningOrder(ro.id, { entries })
+    setOrders((prev) => [...prev, updated])
+    setActiveId(ro.id)
+  }, [])
 
   // ── Pioneer USB import ───────────────────────────────────────────────────────
 
@@ -640,16 +654,43 @@ export function OrdersPage(): JSX.Element {
       <div className="w-44 shrink-0 flex flex-col border-r border-border/30 bg-chassis">
         <div className="shrink-0 flex items-center justify-between px-3 py-2 border-b border-border/30">
           <span className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-accent">Orders</span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 relative">
             <button onClick={importFromUsb}
               title="Import from Pioneer USB"
               className="font-mono text-[7.5px] text-muted/40 hover:text-accent transition-colors px-1">
-              USB
+              {usbLoading ? '…' : 'USB'}
+            </button>
+            {/* From playlist button */}
+            <button
+              onClick={() => setShowPlaylistPicker((v) => !v)}
+              title="Create from playlist"
+              className="font-mono text-[7.5px] text-muted/40 hover:text-accent transition-colors px-1">
+              PL
             </button>
             <button onClick={createOrder}
               className="w-5 h-5 flex items-center justify-center text-muted hover:text-accent transition-colors text-base leading-none">
               +
             </button>
+            {/* Playlist picker dropdown */}
+            {showPlaylistPicker && (
+              <div className="absolute top-full right-0 z-30 mt-1 w-52 bg-chassis border border-border/40 rounded shadow-xl max-h-60 overflow-y-auto">
+                <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/30">
+                  <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-muted/50">create from playlist</span>
+                  <button onClick={() => setShowPlaylistPicker(false)} className="text-muted/30 hover:text-muted text-xs">✕</button>
+                </div>
+                {playlists.filter((p) => !p.isFolder && !p.isSmart && p.trackIds.length > 0).map((pl) => (
+                  <button key={pl.id}
+                    onClick={() => createFromPlaylist(pl)}
+                    className="w-full text-left px-3 py-1.5 hover:bg-accent/[0.05] border-b border-border/10 transition-colors">
+                    <p className="font-mono text-[9px] text-ink truncate">{pl.name}</p>
+                    <p className="font-mono text-[7.5px] text-muted/40">{pl.trackIds.length} tracks</p>
+                  </button>
+                ))}
+                {playlists.filter((p) => !p.isFolder && !p.isSmart && p.trackIds.length > 0).length === 0 && (
+                  <p className="font-mono text-[8px] text-muted/30 px-3 py-2 italic">no playlists found</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
         {/* USB history picker */}
