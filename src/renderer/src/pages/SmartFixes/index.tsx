@@ -429,13 +429,15 @@ const FIXES: Fix[] = [
         if (Math.abs(stored * 2 - analysed) / analysed < 0.04) {
           const fixed = Math.round(stored * 2 * 10) / 10
           results.push({ trackId: t.id, display: t.title || t.filePath, field: 'bpm',
-            before: `${stored.toFixed(1)} bpm (stored)`, after: `${fixed.toFixed(1)}` })
+            before: `${stored.toFixed(1)} bpm`, after: `${fixed.toFixed(1)} bpm`,
+            extra: { bpm: fixed } })
         }
         // Is stored BPM about double the analysed? → halve it
         else if (Math.abs(stored / 2 - analysed) / analysed < 0.04) {
           const fixed = Math.round(stored / 2 * 10) / 10
           results.push({ trackId: t.id, display: t.title || t.filePath, field: 'bpm',
-            before: `${stored.toFixed(1)} bpm (stored)`, after: `${fixed.toFixed(1)}` })
+            before: `${stored.toFixed(1)} bpm`, after: `${fixed.toFixed(1)} bpm`,
+            extra: { bpm: fixed } })
         }
       }
       return results
