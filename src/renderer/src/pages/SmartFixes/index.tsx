@@ -106,6 +106,37 @@ function titleFromPath(filePath: string): string | null {
   return (split ? split[1] : cleaned).trim() || null
 }
 
+// Key notation normalization — converts any known format to Camelot (e.g. "Cmaj" → "8B")
+const KEY_TO_CAMELOT: Record<string, string> = {
+  'Cmaj': '8B',  'C#maj': '3B', 'Dbmaj': '3B', 'Dmaj': '10B', 'D#maj': '5B',
+  'Ebmaj': '5B', 'Emaj': '12B','Fmaj': '7B',   'F#maj': '2B', 'Gbmaj': '2B',
+  'Gmaj': '9B',  'G#maj': '4B', 'Abmaj': '4B', 'Amaj': '11B', 'A#maj': '6B',
+  'Bbmaj': '6B', 'Bmaj': '1B',
+  'Cmin': '5A',  'C#min': '12A','Dbmin': '12A','Dmin': '7A',  'D#min': '2A',
+  'Ebmin': '2A', 'Emin': '9A', 'Fmin': '4A',   'F#min': '11A','Gbmin': '11A',
+  'Gmin': '6A',  'G#min': '1A', 'Abmin': '1A', 'Amin': '8A',  'A#min': '3A',
+  'Bbmin': '3A', 'Bmin': '10A',
+  // "C Major" / "C Minor" style
+  'C Major': '8B',  'C# Major': '3B', 'Db Major': '3B', 'D Major': '10B',
+  'D# Major': '5B', 'Eb Major': '5B', 'E Major': '12B', 'F Major': '7B',
+  'F# Major': '2B', 'Gb Major': '2B', 'G Major': '9B',  'G# Major': '4B',
+  'Ab Major': '4B', 'A Major': '11B', 'A# Major': '6B', 'Bb Major': '6B',
+  'B Major': '1B',
+  'C Minor': '5A',  'C# Minor': '12A','Db Minor': '12A','D Minor': '7A',
+  'D# Minor': '2A', 'Eb Minor': '2A', 'E Minor': '9A',  'F Minor': '4A',
+  'F# Minor': '11A','Gb Minor': '11A','G Minor': '6A',  'G# Minor': '1A',
+  'Ab Minor': '1A', 'A Minor': '8A',  'A# Minor': '3A', 'Bb Minor': '3A',
+  'B Minor': '10A',
+}
+const CAMELOT_RE = /^\d{1,2}[AB]$/i
+
+function normalizeKeyToCamelot(key: string | null | undefined): string | null {
+  if (!key) return null
+  const trimmed = key.trim()
+  if (CAMELOT_RE.test(trimmed)) return null   // already Camelot — no change needed
+  return KEY_TO_CAMELOT[trimmed] ?? null
+}
+
 function extractRemixer(title: string): { title: string; remixerTag: string } | null {
   for (const re of REMIXER_RE) {
     const m = title.match(re)
@@ -348,6 +379,20 @@ const FIXES: Fix[] = [
         const canon = canonical.get(t.artist.toLowerCase().trim())
         if (canon && t.artist !== canon)
           results.push({ trackId: t.id, display: t.title || t.filePath, field: 'artist', before: t.artist, after: canon })
+      }
+      return results
+    }
+  },
+  {
+    id: 'normalize-key',
+    label: 'normalize key notation',
+    description: 'converts key fields from "Cmaj", "C Major", "C Minor" formats to Camelot notation (e.g. 8B, 5A) — required for harmonic mixing features',
+    icon: '♩→',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        const camelot = normalizeKeyToCamelot(t.key)
+        if (camelot) results.push({ trackId: t.id, display: t.title || t.filePath, field: 'key', before: t.key!, after: camelot })
       }
       return results
     }
