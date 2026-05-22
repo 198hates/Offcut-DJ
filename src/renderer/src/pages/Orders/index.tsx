@@ -854,6 +854,34 @@ export function OrdersPage(): JSX.Element {
               </button>
             )}
 
+            {/* Copy as text */}
+            <button
+              onClick={async () => {
+                const lines = [
+                  `N° ${String(active.catalogNum).padStart(3,'0')} · ${active.title || 'Running Order'}`,
+                  '─'.repeat(52),
+                  ...activeTrackList.map((t, i) => {
+                    if (!t) return `${String(i+1).padStart(2,'0')} · [unresolved]`
+                    const bpm   = t.bpm   ? `${t.bpm.toFixed(0)} bpm` : ''
+                    const key   = t.key   ?? ''
+                    const nrg   = t.energy != null ? `nrg ${t.energy}` : ''
+                    const dur   = t.durationSeconds
+                      ? `${Math.floor(t.durationSeconds/60)}:${String(Math.round(t.durationSeconds%60)).padStart(2,'0')}`
+                      : ''
+                    const meta = [bpm, key, nrg].filter(Boolean).join(' · ')
+                    return `${String(i+1).padStart(2,'0')} · ${t.title} – ${t.artist}${meta ? ` (${meta})` : ''}${dur ? ` · ${dur}` : ''}`
+                  }),
+                  '─'.repeat(52),
+                  `${active.entries.length} cuts · ${fmtDur(totalDurSec)}`,
+                ]
+                await navigator.clipboard.writeText(lines.join('\n'))
+              }}
+              className="shrink-0 font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded px-2 py-0.5 transition-colors"
+              title="Copy running order as plain text"
+            >
+              copy
+            </button>
+
             {/* M3U export */}
             <button
               onClick={async () => {
