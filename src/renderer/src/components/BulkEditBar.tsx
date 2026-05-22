@@ -28,6 +28,8 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
       const patch: Partial<Track> = {}
       if (field === 'bpm') patch.bpm = Number(value) || null
       else if (field === 'rating') patch.rating = Number(value)
+      else if (field === 'energy') patch.energy = Number(value)
+      else if (field === 'mood') patch.mood = Number(value)
       else if (field === 'key') patch.key = value || null
       else if (field === 'genre') patch.genre = value
       else if (field === 'artist') patch.artist = value
@@ -71,6 +73,8 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
           <option value="key">key</option>
           <option value="bpm">bpm</option>
           <option value="rating">rating</option>
+          <option value="energy">energy (1–10)</option>
+          <option value="mood">mood (−1 dark → +1 bright)</option>
         </select>
 
         {field === 'key' && (
@@ -84,7 +88,29 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
             {[1,2,3,4,5].map((r) => <option key={r} value={r}>{'★'.repeat(r)}</option>)}
           </select>
         )}
-        {field && !['key','rating'].includes(field) && (
+        {field === 'energy' && (
+          <select value={value} onChange={(e) => setValue(e.target.value)} className={SEL}>
+            <option value="">—</option>
+            {[1,2,3,4,5,6,7,8,9,10].map((e) => <option key={e} value={e}>{e}</option>)}
+          </select>
+        )}
+        {field === 'mood' && (
+          <select value={value} onChange={(e) => setValue(e.target.value)} className={SEL}>
+            <option value="">—</option>
+            <option value="-1.0">−1.0 · very dark</option>
+            <option value="-0.8">−0.8 · dark</option>
+            <option value="-0.6">−0.6 · dark</option>
+            <option value="-0.4">−0.4 · melancholic</option>
+            <option value="-0.2">−0.2 · melancholic</option>
+            <option value="0.0">0.0 · neutral</option>
+            <option value="0.2">+0.2 · uplifting</option>
+            <option value="0.4">+0.4 · uplifting</option>
+            <option value="0.6">+0.6 · euphoric</option>
+            <option value="0.8">+0.8 · euphoric</option>
+            <option value="1.0">+1.0 · very euphoric</option>
+          </select>
+        )}
+        {field && !['key','rating','energy','mood'].includes(field) && (
           <input
             type={field === 'bpm' ? 'number' : 'text'}
             placeholder={`new ${field}…`}
