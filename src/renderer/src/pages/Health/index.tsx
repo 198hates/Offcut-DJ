@@ -55,11 +55,11 @@ function trackScore(t: Track): number {
   )
 }
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }): JSX.Element {
+function StatCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }): JSX.Element {
   return (
-    <div className="bg-ink/[0.03] border border-border/25 rounded p-3 space-y-0.5">
+    <div className={`border rounded p-3 space-y-0.5 ${accent ? 'bg-amber-500/[0.06] border-amber-500/25' : 'bg-ink/[0.03] border-border/25'}`}>
       <p className="font-mono text-[9px] uppercase tracking-[0.15em] text-muted">{label}</p>
-      <p className="font-mono text-lg font-bold tabular-nums text-ink">{value}</p>
+      <p className={`font-mono text-lg font-bold tabular-nums ${accent ? 'text-amber-400' : 'text-ink'}`}>{value}</p>
       {sub && <p className="font-mono text-[9px] text-muted/70">{sub}</p>}
     </div>
   )
@@ -68,18 +68,33 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
 // ── Library Stats ─────────────────────────────────────────────────────────────
 
 function StatsSection({ tracks }: { tracks: Track[] }): JSX.Element {
+  const n = tracks.length
+  const withBpm     = tracks.filter((t) => t.bpm != null).length
+  const withKey     = tracks.filter((t) => t.key).length
+  const withEnergy  = tracks.filter((t) => t.energy != null).length
+  const withGenre   = tracks.filter((t) => t.genre?.trim()).length
+  const withCues    = tracks.filter((t) => t.cuePoints.length > 0).length
+  const withBeatgrid= tracks.filter((t) => t.analysedBeatgrid != null).length
+  const needsAny    = tracks.filter((t) => !t.bpm || !t.key).length
+  const rated       = tracks.filter((t) => t.rating > 0).length
+  const tagged      = tracks.filter((t) => t.tags.length > 0).length
+
   return (
     <section className="space-y-4">
       <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
         <span className="text-accent mr-1.5">01</span>library stats
       </h2>
       <div className="grid grid-cols-3 gap-3">
-        <StatCard label="total tracks" value={tracks.length.toLocaleString()} />
-        <StatCard label="with bpm"   value={tracks.filter((t) => t.bpm != null).length.toLocaleString()} sub={pct(tracks.filter((t) => t.bpm != null).length, tracks.length)} />
-        <StatCard label="with key"   value={tracks.filter((t) => t.key).length.toLocaleString()} sub={pct(tracks.filter((t) => t.key).length, tracks.length)} />
-        <StatCard label="with cues"  value={tracks.filter((t) => t.cuePoints.length > 0).length.toLocaleString()} sub={pct(tracks.filter((t) => t.cuePoints.length > 0).length, tracks.length)} />
-        <StatCard label="rated"      value={tracks.filter((t) => t.rating > 0).length.toLocaleString()} sub={pct(tracks.filter((t) => t.rating > 0).length, tracks.length)} />
-        <StatCard label="tagged"     value={tracks.filter((t) => t.tags.length > 0).length.toLocaleString()} sub={pct(tracks.filter((t) => t.tags.length > 0).length, tracks.length)} />
+        <StatCard label="total tracks" value={n.toLocaleString()} />
+        <StatCard label="with bpm"     value={withBpm.toLocaleString()} sub={pct(withBpm, n)} />
+        <StatCard label="with key"     value={withKey.toLocaleString()} sub={pct(withKey, n)} />
+        <StatCard label="with energy"  value={withEnergy.toLocaleString()} sub={pct(withEnergy, n)} />
+        <StatCard label="with genre"   value={withGenre.toLocaleString()} sub={pct(withGenre, n)} />
+        <StatCard label="with cues"    value={withCues.toLocaleString()} sub={pct(withCues, n)} />
+        <StatCard label="beatgrid v2"  value={withBeatgrid.toLocaleString()} sub={pct(withBeatgrid, n)} />
+        <StatCard label="needs analysis" value={needsAny.toLocaleString()} sub={pct(needsAny, n)} accent={needsAny > 0} />
+        <StatCard label="rated"        value={rated.toLocaleString()} sub={pct(rated, n)} />
+        <StatCard label="tagged"       value={tagged.toLocaleString()} sub={pct(tagged, n)} />
       </div>
     </section>
   )
