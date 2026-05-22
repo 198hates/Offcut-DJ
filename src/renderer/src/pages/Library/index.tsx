@@ -669,13 +669,20 @@ function TrackRow({ track, isSelected, onClick, onDoubleClick, onContextMenu, on
             )
             return null
           })()}
-          {track.bpm != null && (
+          {track.bpm != null ? (
             <span title="BPM analysed" style={{ lineHeight: 0 }}>
               <svg width="9" height="7" viewBox="0 0 9 7" fill="currentColor"
                 style={{ color: 'rgb(var(--accent-rgb) / 0.65)' }}>
                 <rect x="0"   y="3"   width="2" height="4" rx="0.4"/>
                 <rect x="3.5" y="0"   width="2" height="7" rx="0.4"/>
                 <rect x="7"   y="1.5" width="2" height="5.5" rx="0.4"/>
+              </svg>
+            </span>
+          ) : (
+            <span title="No BPM or key — run analysis" style={{ lineHeight: 0 }}>
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.2"
+                style={{ color: 'rgba(180,160,140,0.22)' }}>
+                <circle cx="4" cy="4" r="3" strokeDasharray="1.5 2.5"/>
               </svg>
             </span>
           )}
