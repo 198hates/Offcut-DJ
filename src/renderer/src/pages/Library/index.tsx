@@ -171,7 +171,7 @@ export function LibraryPage(): JSX.Element {
       }
       return
     }
-  }, [sorted, lastClickedId, selectedTrackIds, activePlaylistId, loadTrackA, loadTrackB, previewToggle, setSelectedTrackIds])
+  }, [sorted, lastClickedId, selectedTrackIds, activePlaylistId, loadTrackA, loadTrackB, previewToggle, setSelectedTrackIds, setLastClickedId])
 
   const handleRowClick = useCallback((e: React.MouseEvent, id: string) => {
     containerRef.current?.focus()

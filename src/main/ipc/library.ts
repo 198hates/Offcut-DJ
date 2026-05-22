@@ -1,4 +1,4 @@
-import { ipcMain, dialog } from 'electron'
+import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { existsSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { getLibraryDb, rowToTrack, rowToPlaylist } from '../library/db'
@@ -160,10 +160,9 @@ export function registerLibraryHandlers(): void {
       db.prepare(
         "UPDATE tracks SET play_count = play_count + 1, last_played_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
       ).run(id)
-      const { v4: uuid } = require('uuid')
       db.prepare(
         "INSERT INTO play_history (id, track_id, played_at, mixed_from, deck_id) VALUES (?, ?, datetime('now'), ?, ?)"
-      ).run(uuid(), id, opts?.mixedFrom ?? null, opts?.deckId ?? null)
+      ).run(randomUUID(), id, opts?.mixedFrom ?? null, opts?.deckId ?? null)
       return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown>)
     }
   )
@@ -684,10 +683,10 @@ ${rows}
 <div class="footer">Crate · running order</div>
 </body></html>`
 
-    const { BrowserWindow } = require('electron')
     const win = new BrowserWindow({ show: false })
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
-    await new Promise((r) => win.webContents.once('did-finish-load', r))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await new Promise<void>((r) => (win.webContents as any).once('did-finish-load', r))
     const pdfBuf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
     win.close()
 
@@ -697,7 +696,7 @@ ${rows}
       filters: [{ name: 'PDF', extensions: ['pdf'] }]
     })
     if (res.canceled || !res.filePath) return { saved: false }
-    require('fs').writeFileSync(res.filePath, pdfBuf)
+    writeFileSync(res.filePath, pdfBuf)
     return { saved: true, path: res.filePath }
   })
 

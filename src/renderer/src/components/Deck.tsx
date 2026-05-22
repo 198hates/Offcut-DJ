@@ -183,6 +183,9 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
     if (e.altKey !== wantAlt) return
 
     if (e.code === 'Space' && !e.metaKey && !e.ctrlKey) {
+      // Only handle Space if it hasn't already been claimed by a focused element
+      // (e.g. the Library list handles Space for 30s preview when it has focus).
+      if (e.defaultPrevented) return
       e.preventDefault()
       togglePlay()
     }

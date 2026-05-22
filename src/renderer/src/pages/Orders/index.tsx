@@ -707,8 +707,10 @@ export function OrdersPage(): JSX.Element {
         let freshnessBonus = 0
         if (t.lastPlayedAt) {
           const days = (Date.now() - new Date(t.lastPlayedAt).getTime()) / 86400000
-          if (days > 180) freshnessBonus = +0.12   // rediscovery — hasn't been out in 6 months
-          else if (days < 7) freshnessBonus = -0.08 // heavy rotation penalty
+          if (!isNaN(days)) {
+            if (days > 180) freshnessBonus = +0.12   // rediscovery — hasn't been out in 6 months
+            else if (days < 7) freshnessBonus = -0.08 // heavy rotation penalty
+          }
         } else if (t.playCount === 0) {
           freshnessBonus = +0.05                    // never played — slight positive
         }
