@@ -621,6 +621,27 @@ export function OrdersPage(): JSX.Element {
     })
   }, [active, activeTrackList])
 
+  // ── Pre-gig checklist ────────────────────────────────────────────────────────
+
+  const gigChecklist = useMemo(() => {
+    if (!active || active.entries.length === 0) return null
+    const ts = activeTrackList.filter(Boolean) as NonNullable<typeof activeTrackList[number]>[]
+
+    const missingAnalysis = ts.filter((t) => !t.bpm || !t.key)
+    const riskyTransitions: number[] = []
+    for (let i = 0; i < ts.length - 1; i++) {
+      if (camelotDistance(ts[i].key, ts[i + 1].key) >= 3) riskyTransitions.push(i)
+    }
+    const missingTracks   = active.entries.length - ts.length   // unresolved track IDs
+    const needsAnalysis   = missingAnalysis.length > 0
+    const hasRiskyTrans   = riskyTransitions.length > 0
+    const hasMissing      = missingTracks > 0
+
+    const ready = !needsAnalysis && !hasRiskyTrans && !hasMissing
+
+    return { ready, missingAnalysis, riskyTransitions, missingTracks, total: active.entries.length }
+  }, [active, activeTrackList])
+
   // ── What's next — freshness-weighted suggestions ─────────────────────────────
   const suggestions = useMemo(() => {
     if (!active?.entries.length) return []
@@ -826,6 +847,35 @@ export function OrdersPage(): JSX.Element {
               delete
             </button>
           </div>
+
+          {/* ── Pre-gig checklist ─────────────────────────────────────── */}
+          {gigChecklist && (
+            <div className={`shrink-0 border-b flex items-center gap-3 px-4 py-1.5 ${
+              gigChecklist.ready
+                ? 'border-emerald-600/20 bg-emerald-600/[0.04]'
+                : 'border-amber-500/15 bg-amber-500/[0.03]'
+            }`}>
+              <span className={`font-mono text-[8px] uppercase tracking-[0.15em] shrink-0 ${gigChecklist.ready ? 'text-emerald-500/70' : 'text-amber-400/70'}`}>
+                {gigChecklist.ready ? '✓ set ready' : 'checklist'}
+              </span>
+              <div className="flex items-center gap-3 flex-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                <span className={`font-mono text-[7.5px] shrink-0 ${gigChecklist.missingTracks === 0 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
+                  {gigChecklist.missingTracks === 0 ? `✓ ${gigChecklist.total} tracks matched` : `⚠ ${gigChecklist.missingTracks} tracks unresolved`}
+                </span>
+                <span className={`font-mono text-[7.5px] shrink-0 ${gigChecklist.missingAnalysis.length === 0 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
+                  {gigChecklist.missingAnalysis.length === 0 ? '✓ all tracks analysed' : `⚠ ${gigChecklist.missingAnalysis.length} missing BPM/key`}
+                </span>
+                <span className={`font-mono text-[7.5px] shrink-0 ${gigChecklist.riskyTransitions.length === 0 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
+                  {gigChecklist.riskyTransitions.length === 0 ? '✓ no risky transitions' : `⚠ ${gigChecklist.riskyTransitions.length} clashing keys`}
+                </span>
+                {setStats && (
+                  <span className={`font-mono text-[7.5px] shrink-0 ${setStats.avgHarm >= 0.70 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
+                    ⬡ {Math.round(setStats.avgHarm * 100)}% harmonic avg
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Arc */}
           <div className="shrink-0 border-b border-border/20" style={{ background: '#0d0b08' }}>
