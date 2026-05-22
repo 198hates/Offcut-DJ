@@ -8,6 +8,7 @@ import { keyBlipColor } from '../../components/CamelotWheel'
 import { ContextMenu } from '../../components/ContextMenu'
 import { analyzeAudio } from '../../lib/analyzer'
 import { magicSort, compatibilityScore, generateBeatgrid } from '../../lib/compatibility'
+import { usePreview } from '../../hooks/usePreview'
 import { useToastStore } from '../../store/toastStore'
 import type { Track } from '@shared/types'
 
@@ -51,6 +52,7 @@ export function LibraryPage(): JSX.Element {
   const showToast = useToastStore((s) => s.show)
   const loadTrackA = useDeckAStore((s) => s.loadTrack)
   const loadTrackB = useDeckBStore((s) => s.loadTrack)
+  const { previewId, toggle: previewToggle } = usePreview()
   const filteredTracks = useLibraryStore((s) => s.filteredTracks())
   const allTracks = useLibraryStore((s) => s.tracks)
 
@@ -516,6 +518,11 @@ export function LibraryPage(): JSX.Element {
             sections={[
               {
                 items: [
+                  {
+                    label: previewId === ctxMenu?.trackId ? '■ stop preview' : '▶ preview 30s',
+                    disabled: isMulti,
+                    action: () => ctxTrack && previewToggle(ctxTrack)
+                  },
                   {
                     label: 'Load to Deck A',
                     shortcut: '↵',
