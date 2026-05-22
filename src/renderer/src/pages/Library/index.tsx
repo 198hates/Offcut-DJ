@@ -655,6 +655,18 @@ function TrackRow({ track, isSelected, onClick, onDoubleClick, onContextMenu, on
       <td className="w-4">
         <div className="flex flex-col items-center gap-px">
           {/* Freshness dot */}
+          {(() => {
+            // "New to library" — added within 7 days
+            const addedDays = track.dateAdded
+              ? (Date.now() - new Date(track.dateAdded).getTime()) / 86400000
+              : Infinity
+            if (addedDays < 7) return (
+              <span title="Added within the last 7 days" style={{ lineHeight: 0 }}>
+                <svg width="5" height="5" viewBox="0 0 5 5"><circle cx="2.5" cy="2.5" r="2.5" fill="rgba(78,112,144,0.80)"/></svg>
+              </span>
+            )
+            return null
+          })()}
           {track.playCount > 0 && track.lastPlayedAt && (() => {
             const days = (Date.now() - new Date(track.lastPlayedAt).getTime()) / 86400000
             if (days > 180) return (
