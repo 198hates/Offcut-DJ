@@ -529,6 +529,26 @@ export function CompassPage(): JSX.Element {
     setLassoIds(new Set())
   }, [lassoTrackList])
 
+  const [lassoOrders, setLassoOrders] = useState<{ id: string; title: string; catalogNum: number }[]>([])
+  const [showLassoOrderPicker, setShowLassoOrderPicker] = useState(false)
+
+  const sendLassoToOrder = useCallback(async (orderId: string) => {
+    if (!lassoTrackList.length) return
+    const orders = await window.api.library.getRunningOrders()
+    const order = orders.find((o) => o.id === orderId)
+    if (!order) return
+    const existingSet = new Set(order.entries.map((e) => e.trackId))
+    const newEntries = [
+      ...order.entries,
+      ...lassoTrackList
+        .filter((t) => !existingSet.has(t.id))
+        .map((t) => ({ id: crypto.randomUUID(), trackId: t.id, plannedTransition: null, note: null, flexible: false as const }))
+    ]
+    await window.api.library.updateRunningOrder(orderId, { entries: newEntries })
+    setLassoIds(new Set())
+    setShowLassoOrderPicker(false)
+  }, [lassoTrackList])
+
   // ── Hover tooltip ─────────────────────────────────────────────────────────────
 
   const hoverTrack = useMemo(() =>
@@ -656,6 +676,29 @@ export function CompassPage(): JSX.Element {
                 className="font-mono text-[9px] uppercase tracking-[0.1em] text-accent hover:text-ink border border-accent/40 hover:bg-accent/10 px-3 py-1 rounded transition-colors">
                 add to set builder
               </button>
+              {/* Add to running order */}
+              <div className="relative">
+                <button
+                  onClick={async () => {
+                    const ros = await window.api.library.getRunningOrders()
+                    setLassoOrders(ros.map((r) => ({ id: r.id, title: r.title, catalogNum: r.catalogNum })))
+                    setShowLassoOrderPicker((v) => !v)
+                  }}
+                  className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-white/20 hover:bg-white/[0.06] px-3 py-1 rounded transition-colors">
+                  → order
+                </button>
+                {showLassoOrderPicker && lassoOrders.length > 0 && (
+                  <div className="absolute bottom-9 left-0 bg-chassis border border-border/40 rounded shadow-xl min-w-[180px]">
+                    {lassoOrders.map((ro) => (
+                      <button key={ro.id}
+                        onClick={() => sendLassoToOrder(ro.id)}
+                        className="w-full text-left px-3 py-1.5 border-b border-border/20 last:border-0 font-mono text-[9px] text-muted hover:text-ink hover:bg-ink/[0.05] transition-colors">
+                        N° {String(ro.catalogNum).padStart(3,'0')} · {ro.title || 'Untitled'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button onClick={() => setLassoIds(new Set())}
                 className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink transition-colors">
                 clear
