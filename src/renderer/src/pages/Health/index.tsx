@@ -674,6 +674,86 @@ function AutoGroupSection({ tracks }: { tracks: Track[] }): JSX.Element {
   )
 }
 
+// ── Genre Playlists ────────────────────────────────────────────────────────────
+
+function GenrePlaylistsSection({ tracks, playlists }: { tracks: Track[]; playlists: Playlist[] }): JSX.Element {
+  const loadLibrary = useLibraryStore((s) => s.loadLibrary)
+  const [running, setRunning] = useState(false)
+  const [result, setResult]   = useState<{ created: number; updated: number } | null>(null)
+
+  const genreCounts = new Map<string, number>()
+  for (const t of tracks) {
+    if (t.genre?.trim()) genreCounts.set(t.genre, (genreCounts.get(t.genre) ?? 0) + 1)
+  }
+  const genres = [...genreCounts.entries()].sort((a, b) => b[1] - a[1])
+
+  const run = useCallback(async () => {
+    setRunning(true)
+    setResult(null)
+    let created = 0, updated = 0
+    for (const [genre, ] of genres) {
+      const trackIds = tracks.filter((t) => t.genre === genre).map((t) => t.id)
+      const existing = playlists.find((p) => p.name === genre && !p.isSmart && !p.isFolder)
+      if (existing) {
+        // Update: add any new tracks not already in the playlist
+        const existingSet = new Set(existing.trackIds)
+        const toAdd = trackIds.filter((id) => !existingSet.has(id))
+        if (toAdd.length > 0) {
+          await window.api.library.addTracksToPlaylist(existing.id, toAdd)
+          updated++
+        }
+      } else {
+        const pl = await window.api.library.createPlaylist(genre)
+        await window.api.library.addTracksToPlaylist(pl.id, trackIds)
+        created++
+      }
+    }
+    await loadLibrary()
+    setResult({ created, updated })
+    setRunning(false)
+  }, [genres, playlists, tracks, loadLibrary])
+
+  return (
+    <section className="space-y-4">
+      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
+        <span className="text-accent mr-1.5">06</span>genre playlists
+      </h2>
+      <p className="font-mono text-[10px] text-muted/70">
+        creates one playlist per genre from the tracks in your library — updates existing playlists if they already exist
+      </p>
+
+      {genres.length === 0 ? (
+        <p className="font-mono text-[10px] text-muted/50 italic">no genre tags in library — run Smart Fixes → Suggest Genres first</p>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+            {genres.map(([g, c]) => (
+              <span key={g} className="font-mono text-[8.5px] px-2 py-0.5 bg-ink/[0.05] border border-border/25 rounded">
+                {g} <span className="text-muted/50">{c}</span>
+              </span>
+            ))}
+          </div>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={run}
+              disabled={running}
+              className="font-mono text-[9px] uppercase tracking-[0.1em] px-4 py-1.5 rounded border transition-colors disabled:opacity-40
+                border-accent/40 text-accent hover:bg-accent/[0.08]"
+            >
+              {running ? 'creating…' : `create ${genres.length} genre playlists`}
+            </button>
+            {result && (
+              <span className="font-mono text-[9px] text-green-600 dark:text-green-400">
+                ✓ {result.created} created · {result.updated} updated
+              </span>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function HealthPage(): JSX.Element {
@@ -697,6 +777,8 @@ export function HealthPage(): JSX.Element {
       <PlayHistorySection tracks={tracks} />
       <div className="border-t border-border/20" />
       <AutoGroupSection tracks={tracks} />
+      <div className="border-t border-border/20" />
+      <GenrePlaylistsSection tracks={tracks} playlists={playlists} />
     </div>
   )
 }
