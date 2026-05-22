@@ -1137,23 +1137,37 @@ export function OrdersPage(): JSX.Element {
 
               {showRnt && (
                 <div className="px-3 pb-3">
-                  {/* Slot selector — pill per transition */}
-                  <div className="flex flex-wrap gap-1 mb-2">
-                    {rntSlotLabels.map((label, i) => (
-                      <button
-                        key={i}
-                        onClick={() => setRntSlot(i)}
-                        title={label}
-                        className={`font-mono text-[7.5px] px-2 py-0.5 rounded transition-colors border ${
-                          rntSlot === i
-                            ? 'bg-accent/15 text-accent border-accent/30'
-                            : 'text-muted/40 border-border/20 hover:text-muted hover:border-border/40'
-                        }`}
+                  {/* Slot selector — pills for short sets, dropdown for long */}
+                  {rntSlotLabels.length <= 10 ? (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {rntSlotLabels.map((label, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setRntSlot(i)}
+                          title={label}
+                          className={`font-mono text-[7.5px] px-2 py-0.5 rounded transition-colors border ${
+                            rntSlot === i
+                              ? 'bg-accent/15 text-accent border-accent/30'
+                              : 'text-muted/40 border-border/20 hover:text-muted hover:border-border/40'
+                          }`}
+                        >
+                          {i === 0 ? '⟨open⟩' : `${i}→${i + 1}`}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mb-2">
+                      <select
+                        value={rntSlot}
+                        onChange={(e) => setRntSlot(Number(e.target.value))}
+                        className="bg-paper border border-border/40 rounded px-2 py-0.5 font-mono text-[9px] text-ink outline-none focus:border-accent cursor-pointer"
                       >
-                        {i === 0 ? '⟨open⟩' : `${i}→${i + 1}`}
-                      </button>
-                    ))}
-                  </div>
+                        {rntSlotLabels.map((label, i) => (
+                          <option key={i} value={i}>{i === 0 ? '⟨Opening slot⟩' : `${i}→${i+1} · ${label.slice(0, 60)}`}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {/* Context blurb */}
                   {(() => {
