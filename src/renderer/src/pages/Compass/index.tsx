@@ -17,7 +17,8 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { TrackDetail } from '../../components/TrackDetail'
-import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
+// deck stores reserved for future "load to deck" from Compass
+// import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
 import type { Track } from '@shared/types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -102,9 +103,6 @@ function convexHull(pts: [number, number][]): [number, number][] {
 
 export function CompassPage(): JSX.Element {
   const { tracks, playlists } = useLibraryStore()
-  const loadTrackA = useDeckAStore((s) => s.loadTrack)
-  const loadTrackB = useDeckBStore((s) => s.loadTrack)
-
   // ── View state ──────────────────────────────────────────────────────────────
   const [xAxis, setXAxis]       = useState<XAxis>('danceability')
   const [yAxis, setYAxis]       = useState<YAxis>('energy')
@@ -192,15 +190,6 @@ export function CompassPage(): JSX.Element {
     return {
       cx: MARGIN.left + dx * w * z + px,
       cy: MARGIN.top  + (1 - dy) * h * z + py,
-    }
-  }, [getPlotSize])
-
-  /** Canvas pixel → data [0,1] */
-  const fromCanvas = useCallback((cx: number, cy: number, z: number, px: number, py: number) => {
-    const { w, h } = getPlotSize()
-    return {
-      dx: (cx - MARGIN.left - px) / (w * z),
-      dy: 1 - (cy - MARGIN.top - py) / (h * z),
     }
   }, [getPlotSize])
 

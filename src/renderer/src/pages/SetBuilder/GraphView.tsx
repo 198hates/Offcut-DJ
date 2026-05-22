@@ -77,7 +77,7 @@ function edgeColor(a: Track, b: Track): { color: string; width: number } {
 
 // ── GraphView ─────────────────────────────────────────────────────────────────
 
-export function GraphView({ chapters, chapterTracks, profiles, activeChapterId, onAddTracks, onLoadA }: GraphViewProps): JSX.Element {
+export function GraphView({ chapterTracks, profiles, activeChapterId, onAddTracks, onLoadA }: GraphViewProps): JSX.Element {
   const { tracks: allTracks } = useLibraryStore()
   const canvasRef    = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -89,7 +89,6 @@ export function GraphView({ chapters, chapterTracks, profiles, activeChapterId, 
   const [dismissed,  setDismissed]  = useState<Set<string>>(new Set())
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 500 })
 
-  const activeChapter = chapters.find((c) => c.id === activeChapterId) ?? null
   const anchorTracks  = activeChapterId ? (chapterTracks.get(activeChapterId) ?? []) : []
 
   // ── Candidate pool ──────────────────────────────────────────────────────────

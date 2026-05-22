@@ -1,5 +1,17 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, AppSettings, SmartRule } from '../shared/types'
+import type {
+  Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId,
+  AppSettings, SmartRule, RunningOrder, EditLineage, CutHistory
+} from '../shared/types'
+
+/** USB history types — mirrored from pioneer-usb/history-reader */
+interface UsbPlayedTrack {
+  title: string; artist: string; bpm: number | null; key: string | null
+  durationSeconds: number | null; position: number; localTrackId: string | null
+}
+interface UsbPlayedSet {
+  name: string; usbId: string; date: string | null; tracks: UsbPlayedTrack[]
+}
 
 declare global {
   interface Window {
@@ -20,7 +32,9 @@ declare global {
         updateSmartPlaylistRules: (id: string, name: string, rules: SmartRule[]) => Promise<void>
         renamePlaylist: (id: string, name: string) => Promise<void>
         updatePlaylistColor: (id: string, color: string) => Promise<void>
-        recordPlay: (id: string) => Promise<Track>
+        recordPlay: (id: string, opts?: { mixedFrom?: string; deckId?: 'A' | 'B' }) => Promise<Track>
+        getCutHistory: (trackId: string) => Promise<CutHistory>
+        updateEditLineage: (trackId: string, lineage: EditLineage) => Promise<void>
         getPlayHistory: (weeks?: number) => Promise<{ day: string; count: number }[]>
         deletePlaylist: (id: string) => Promise<void>
         reorderPlaylistTracks: (playlistId: string, orderedIds: string[]) => Promise<void>
@@ -47,6 +61,14 @@ declare global {
         createSet: (name: string) => Promise<Playlist>
         createChapter: (setId: string, name: string, color: string) => Promise<Playlist>
         reorderChapters: (setId: string, orderedIds: string[]) => Promise<void>
+        getRunningOrders: () => Promise<RunningOrder[]>
+        createRunningOrder: (title: string) => Promise<RunningOrder>
+        updateRunningOrder: (id: string, patch: Partial<RunningOrder>) => Promise<RunningOrder>
+        deleteRunningOrder: (id: string) => Promise<void>
+        exportOrderPDF: (id: string) => Promise<{ saved: boolean; path?: string }>
+        findPioneerUsb: () => Promise<string | null>
+        browseForUsb: () => Promise<string | null>
+        readUsbHistory: (usbRoot: string) => Promise<UsbPlayedSet[]>
       }
       audio: {
         readFile: (filePath: string) => Promise<ArrayBuffer>
@@ -55,6 +77,7 @@ declare global {
           artist: string | null; album: string | null; genre: string | null
           comment: string | null
         } | null>
+        readArtwork: (filePath: string) => Promise<string | null>
       }
       settings: {
         get: () => Promise<AppSettings>

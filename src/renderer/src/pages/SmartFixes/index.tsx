@@ -540,13 +540,10 @@ export function SmartFixesPage(): JSX.Element {
       count++
     }
     setApplied((a) => ({ ...a, [fix.id]: count }))
-    // Remove applied results, keep unselected ones
-    setResults((r) => ({ ...r, [fix.id]: res.filter((_, i) => !sel.has(i)) }))
-    setSelections((s) => {
-      const remaining = new Set<number>()
-      res.forEach((_, i) => { if (!sel.has(i)) remaining.add(i) })
-      return { ...s, [fix.id]: remaining }
-    })
+    // Remove applied results, keep unselected ones; re-index selection from 0
+    const remaining = res.filter((_, i) => !sel.has(i))
+    setResults((r) => ({ ...r, [fix.id]: remaining }))
+    setSelections((s) => ({ ...s, [fix.id]: new Set(remaining.map((_, i) => i)) }))
     setApplying(null)
   }, [results, selections, updateTrack])
 

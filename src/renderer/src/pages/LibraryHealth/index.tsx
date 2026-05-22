@@ -880,9 +880,7 @@ function HealthTab(): JSX.Element {
           />
           <AnalysisStatCard
             label="have cue points"
-            value={tracks.filter((t) => t.cuePoints.length > 0).toLocaleString
-              ? tracks.filter((t) => t.cuePoints.length > 0).length.toLocaleString()
-              : '0'}
+            value={tracks.filter((t) => t.cuePoints.length > 0).length.toLocaleString()}
           />
           <AnalysisStatCard
             label="cues per track"

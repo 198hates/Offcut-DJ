@@ -235,7 +235,7 @@ class AudioEngine {
 
   getLevel(): number {
     if (!this.analyser) return 0
-    this.analyser.getFloatTimeDomainData(this.analyserBuf)
+    this.analyser.getFloatTimeDomainData(this.analyserBuf as Float32Array<ArrayBuffer>)
     let sum = 0
     for (let i = 0; i < this.analyserBuf.length; i++) {
       sum += this.analyserBuf[i] * this.analyserBuf[i]

@@ -269,7 +269,7 @@ export function batchInferGenres(
   tracks: Track[],
   confidenceThreshold = 0.55
 ): { trackId: string; genre: string; confidence: number; reasoning: string }[] {
-  const results = []
+  const results: { trackId: string; genre: string; confidence: number; reasoning: string }[] = []
   for (const track of tracks) {
     if (track.genre) continue    // already has a genre — skip
     const result = inferGenre(track)

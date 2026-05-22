@@ -21,10 +21,7 @@ import { keyBlipColor } from '../../components/CamelotWheel'
 import { compatibilityScore, camelotDistance, harmonicScore, magicSort } from '../../lib/compatibility'
 import { scoreLibrary, transitionContext } from '../../lib/roadNotTaken'
 import type { RunningOrder, OrderEntry, TransitionKind, Track } from '@shared/types'
-import { randomUUID } from '../../lib/uuid'
-
-// ── Tiny UUID shim (renderer has no Node crypto) ─────────────────────────────
-// imported from a small helper; fall back to Math.random if unavailable
+// crypto.randomUUID() is used throughout (browser built-in)
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -100,8 +97,6 @@ function OrderArc({ tracks, lens }: { tracks: (Track | null)[]; lens: Lens }): J
       })
 
     } else if (lens === 'energy') {
-      const vals = tracks.map((t) => t?.energy ?? null)
-
       // Area fill
       ctx.beginPath()
       ctx.moveTo(xs[0], PAD.t + ph)
@@ -525,11 +520,12 @@ export function OrdersPage(): JSX.Element {
       if (!usbRoot) return
 
       const result = await window.api.library.readUsbHistory(usbRoot)
-      if ('error' in (result as Record<string, unknown>)) {
-        alert(`Could not read USB: ${(result as { error: string }).error}`)
+      const raw = result as unknown as UsbSet[] | { error: string }
+      if (!Array.isArray(raw)) {
+        alert(`Could not read USB: ${(raw as { error: string }).error}`)
         return
       }
-      const sets = result as UsbSet[]
+      const sets = raw
       if (!sets.length) { alert('No HISTORY playlists found on this USB.'); return }
       setUsbSets(sets)
     } finally {
