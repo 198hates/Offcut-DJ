@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
+import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
 import type { Playlist } from '@shared/types'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { compatibilityScore, camelotDistance, harmonicScore, magicSort } from '../../lib/compatibility'
@@ -402,6 +403,8 @@ function EntryRow({
 
 export function OrdersPage(): JSX.Element {
   const { tracks, playlists } = useLibraryStore()
+  const deckATrack = useDeckAStore((s) => s.currentTrack)
+  const deckBTrack = useDeckBStore((s) => s.currentTrack)
 
   const [orders, setOrders] = useState<RunningOrder[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -810,6 +813,35 @@ export function OrdersPage(): JSX.Element {
                 </span>
               )}
             </span>
+
+            {/* Add playing track from deck */}
+            {(deckATrack || deckBTrack) && (
+              <div className="relative group shrink-0">
+                <span className="font-mono text-[8.5px] text-muted/40 group-hover:hidden">
+                  {deckATrack ? `A: ${deckATrack.title.slice(0, 10)}` : `B: ${deckBTrack!.title.slice(0, 10)}`}
+                </span>
+                <div className="hidden group-hover:flex items-center gap-1">
+                  {deckATrack && (
+                    <button
+                      onClick={() => addTracks([deckATrack.id])}
+                      title={`Add Deck A: ${deckATrack.title}`}
+                      className="font-mono text-[7.5px] uppercase tracking-[0.08em] text-muted hover:text-accent border border-border/30 hover:border-accent/30 rounded px-1.5 py-0.5 transition-colors"
+                    >
+                      +A
+                    </button>
+                  )}
+                  {deckBTrack && (
+                    <button
+                      onClick={() => addTracks([deckBTrack.id])}
+                      title={`Add Deck B: ${deckBTrack.title}`}
+                      className="font-mono text-[7.5px] uppercase tracking-[0.08em] text-muted hover:text-accent border border-border/30 hover:border-accent/30 rounded px-1.5 py-0.5 transition-colors"
+                    >
+                      +B
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Magic sort */}
             {active.entries.length >= 2 && (
