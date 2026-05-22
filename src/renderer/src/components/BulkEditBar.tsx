@@ -5,6 +5,19 @@ import type { Track } from '@shared/types'
 
 const KEY_OPTIONS = ['','1A','2A','3A','4A','5A','6A','7A','8A','9A','10A','11A','12A','1B','2B','3B','4B','5B','6B','7B','8B','9B','10B','11B','12B']
 
+const COLOR_OPTIONS = [
+  { label: 'none', value: '' },
+  { label: 'red', value: '#B86E72' },
+  { label: 'orange', value: '#C9803A' },
+  { label: 'yellow', value: '#C9A02C' },
+  { label: 'green', value: '#6E8059' },
+  { label: 'teal', value: '#3CA8A1' },
+  { label: 'blue', value: '#4E7090' },
+  { label: 'indigo', value: '#6060A0' },
+  { label: 'purple', value: '#8A5B9A' },
+  { label: 'pink', value: '#B84A76' },
+]
+
 interface BulkEditBarProps {
   selectedIds: string[]
   onClearSelection: () => void
@@ -30,6 +43,7 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
       else if (field === 'rating') patch.rating = Number(value)
       else if (field === 'energy') patch.energy = Number(value)
       else if (field === 'mood') patch.mood = Number(value)
+      else if (field === 'color') patch.color = value
       else if (field === 'key') patch.key = value || null
       else if (field === 'genre') patch.genre = value
       else if (field === 'artist') patch.artist = value
@@ -75,6 +89,7 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
           <option value="rating">rating</option>
           <option value="energy">energy (1–10)</option>
           <option value="mood">mood (−1 dark → +1 bright)</option>
+          <option value="color">colour tag</option>
         </select>
 
         {field === 'key' && (
@@ -110,7 +125,19 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
             <option value="1.0">+1.0 · very euphoric</option>
           </select>
         )}
-        {field && !['key','rating','energy','mood'].includes(field) && (
+        {field === 'color' && (
+          <div className="flex items-center gap-1">
+            {COLOR_OPTIONS.map((c) => (
+              <button key={c.value}
+                onClick={() => setValue(c.value)}
+                title={c.label}
+                className={`w-5 h-5 rounded border transition-all ${value === c.value ? 'border-ink/50 scale-110' : 'border-border/30 opacity-70 hover:opacity-100'}`}
+                style={{ background: c.value || 'transparent' }}
+              />
+            ))}
+          </div>
+        )}
+        {field && !['key','rating','energy','mood','color'].includes(field) && (
           <input
             type={field === 'bpm' ? 'number' : 'text'}
             placeholder={`new ${field}…`}
@@ -123,7 +150,7 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
         {field && (
           <button
             onClick={applyEdit}
-            disabled={applying || !value}
+            disabled={applying || (field !== 'color' && !value)}
             className="px-2.5 py-1 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.1em] rounded transition-colors"
           >
             {applying ? 'applying…' : `apply to ${n}`}
