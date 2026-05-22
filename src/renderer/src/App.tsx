@@ -28,6 +28,7 @@ export default function App(): JSX.Element {
   const [activePage, setActivePage] = useState<Section>('library')
   const [detailTrackId, setDetailTrackId] = useState<string | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [showShortcuts, setShowShortcuts] = useState(false)
 
   useEffect(() => { loadLibrary() }, [loadLibrary])
 
@@ -103,13 +104,62 @@ export default function App(): JSX.Element {
         }}>
           Set in Fraunces &amp; IBM Plex Mono. Made for the long mix.
         </span>
-        <span className="font-mono text-[7.5px] tracking-[0.18em] uppercase text-muted/50">
-          sn 2026·0001 / field unit · not for resale
-        </span>
+        <button
+          onClick={() => setShowShortcuts(true)}
+          className="font-mono text-[7.5px] tracking-[0.18em] uppercase text-muted/30 hover:text-muted/70 transition-colors"
+          title="Keyboard shortcuts"
+        >
+          sn 2026·0001 / field unit · not for resale · ?
+        </button>
       </div>
 
       <Toast />
       {showOnboarding && <Onboarding onComplete={() => setShowOnboarding(false)} />}
+      {showShortcuts && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowShortcuts(false)}>
+          <div className="bg-chassis border border-border/40 rounded-lg shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.15em] text-ink">Keyboard Shortcuts</h2>
+              <button onClick={() => setShowShortcuts(false)} className="text-muted hover:text-ink text-lg leading-none">×</button>
+            </div>
+            <div className="space-y-3 font-mono text-[9.5px]">
+              {[
+                ['Player', [
+                  ['Space', 'Play / Pause Deck A'],
+                  ['Alt+Space', 'Play / Pause Deck B'],
+                  ['1–8', 'Jump to hot cue (Deck A)'],
+                  ['Shift+1–8', 'Set hot cue (Deck A)'],
+                  ['Alt+1–8', 'Jump to hot cue (Deck B)'],
+                ]],
+                ['Navigation', [
+                  ['⌘F / Ctrl+F', 'Open Advanced Search'],
+                ]],
+                ['Library', [
+                  ['Click', 'Select track'],
+                  ['⌘+Click', 'Multi-select'],
+                  ['Shift+Click', 'Range select'],
+                  ['⌘A', 'Select all'],
+                  ['Delete', 'Remove selected from playlist'],
+                  ['Enter', 'Load to Deck A'],
+                  ['Shift+Enter', 'Load to Deck B'],
+                ]],
+              ].map(([section, shortcuts]) => (
+                <div key={section as string}>
+                  <p className="text-accent/70 uppercase tracking-[0.12em] text-[8px] mb-1.5">{section as string}</p>
+                  <div className="space-y-1">
+                    {(shortcuts as [string, string][]).map(([key, desc]) => (
+                      <div key={key} className="flex items-baseline justify-between gap-4">
+                        <code className="bg-ink/[0.07] border border-border/30 rounded px-1.5 py-0.5 text-ink-soft text-[8.5px] shrink-0">{key}</code>
+                        <span className="text-muted/70 text-right">{desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
