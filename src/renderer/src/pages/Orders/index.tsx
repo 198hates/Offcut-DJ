@@ -565,6 +565,26 @@ export function OrdersPage(): JSX.Element {
     if (activeId === id) setActiveId(orders.find((o) => o.id !== id)?.id ?? null)
   }
 
+  const duplicateOrder = useCallback(async () => {
+    if (!active) return
+    const newTitle = `${active.title || 'Running Order'} (copy)`
+    const ro = await window.api.library.createRunningOrder(newTitle)
+    if (active.entries.length) {
+      await window.api.library.updateRunningOrder(ro.id, { entries: active.entries.map((e) => ({
+        ...e, id: crypto.randomUUID()  // fresh IDs for the copy
+      })) })
+      const refreshed = await window.api.library.getRunningOrders()
+      const found = refreshed.find((r) => r.id === ro.id)
+      if (found) {
+        setOrders((prev) => [...prev, found])
+        setActiveId(found.id)
+        return
+      }
+    }
+    setOrders((prev) => [...prev, ro])
+    setActiveId(ro.id)
+  }, [active])
+
   // ── Library drag-drop (from Library page) ────────────────────────────────────
 
   const handleContainerDragOver = (e: React.DragEvent) => {
@@ -921,6 +941,15 @@ export function OrdersPage(): JSX.Element {
               title="Export as PDF programme"
             >
               PDF
+            </button>
+
+            {/* Duplicate */}
+            <button
+              onClick={duplicateOrder}
+              className="shrink-0 font-mono text-[8.5px] text-muted/30 hover:text-muted transition-colors"
+              title="Duplicate this order"
+            >
+              copy
             </button>
 
             {/* Delete */}
