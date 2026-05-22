@@ -27,17 +27,33 @@ const SEL = 'bg-ink/5 border border-border/40 rounded px-2 py-1 font-mono text-[
 const INP = 'bg-paper border border-border/40 rounded px-2 py-1 font-mono text-[10px] text-ink outline-none focus:border-accent placeholder-muted'
 
 export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps): JSX.Element {
-  const { bulkUpdateTracks, deleteTracks, playlists, addTracksToPlaylist } = useLibraryStore()
+  const { bulkUpdateTracks, deleteTracks, playlists, addTracksToPlaylist, tracks, updateTrack } = useLibraryStore()
   const { show } = useToastStore()
-  const [field, setField] = useState<keyof Track | ''>('')
+  const [field, setField] = useState<keyof Track | '' | 'add-tag'>('')
   const [value, setValue] = useState('')
   const [applying, setApplying] = useState(false)
   const n = selectedIds.length
 
   const applyEdit = async (): Promise<void> => {
-    if (!field || value === '') return
+    if (!field || (field !== 'color' && value === '')) return
     setApplying(true)
     try {
+      if (field === 'add-tag') {
+        // Add tag to each track individually (need existing tags)
+        const tag = value.trim().toLowerCase().replace(/\s+/g, '-')
+        if (!tag) return
+        let count = 0
+        for (const id of selectedIds) {
+          const track = tracks.find((t) => t.id === id)
+          if (!track) continue
+          if (track.tags.includes(tag)) continue   // already has this tag
+          await updateTrack({ id, tags: [...track.tags, tag] })
+          count++
+        }
+        show(`tagged ${count} track${count !== 1 ? 's' : ''} with "${tag}"`, 'success')
+        setField(''); setValue('')
+        return
+      }
       const patch: Partial<Track> = {}
       if (field === 'bpm') patch.bpm = Number(value) || null
       else if (field === 'rating') patch.rating = Number(value)
@@ -90,6 +106,7 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
           <option value="energy">energy (1–10)</option>
           <option value="mood">mood (−1 dark → +1 bright)</option>
           <option value="color">colour tag</option>
+          <option value="add-tag">add tag</option>
         </select>
 
         {field === 'key' && (
@@ -137,7 +154,17 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
             ))}
           </div>
         )}
-        {field && !['key','rating','energy','mood','color'].includes(field) && (
+        {field === 'add-tag' && (
+          <input
+            type="text"
+            placeholder="tag name… (spaces → hyphens)"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && applyEdit()}
+            className={`${INP} w-44`}
+          />
+        )}
+        {field && !['key','rating','energy','mood','color','add-tag'].includes(field) && (
           <input
             type={field === 'bpm' ? 'number' : 'text'}
             placeholder={`new ${field}…`}
