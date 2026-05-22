@@ -25,6 +25,7 @@ import { exportToIntegration as exportM3u } from '../integrations/m3u/writer'
 import { exportToIntegration as exportVirtualDj } from '../integrations/virtualdj/writer'
 import { analyzeBeats, isModelAvailable, getDefaultModelPath, warmModel } from '../integrations/beat-analysis'
 import { writeTagsToFile } from '../integrations/file-tags/writer'
+import { readUsbHistory, findPioneerUsbMount } from '../integrations/pioneer-usb/history-reader'
 import { startWatcher } from '../integrations/watch-folder'
 import { loadSettings, saveSettings } from '../settings'
 import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule } from '../../shared/types'
@@ -698,6 +699,30 @@ ${rows}
     if (res.canceled || !res.filePath) return { saved: false }
     require('fs').writeFileSync(res.filePath, pdfBuf)
     return { saved: true, path: res.filePath }
+  })
+
+  // ── Pioneer USB history ──────────────────────────────────────────────────────
+
+  ipcMain.handle('library:findPioneerUsb', (): string | null => {
+    return findPioneerUsbMount()
+  })
+
+  ipcMain.handle('library:browseForUsb', async (): Promise<string | null> => {
+    const res = await dialog.showOpenDialog({
+      title: 'Choose Pioneer USB drive (select the drive root)',
+      properties: ['openDirectory'],
+    })
+    if (res.canceled || !res.filePaths.length) return null
+    return res.filePaths[0]
+  })
+
+  ipcMain.handle('library:readUsbHistory', (_e, usbRoot: string) => {
+    const db = getLibraryDb()
+    try {
+      return readUsbHistory(usbRoot, db)
+    } catch (err) {
+      return { error: (err as Error).message }
+    }
   })
 }
 

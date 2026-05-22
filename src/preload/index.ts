@@ -81,7 +81,13 @@ const api = {
     deleteRunningOrder: (id: string) =>
       ipcRenderer.invoke('library:deleteRunningOrder', id),
     exportOrderPDF: (id: string) =>
-      ipcRenderer.invoke('library:exportOrderPDF', id) as Promise<{ saved: boolean; path?: string }>
+      ipcRenderer.invoke('library:exportOrderPDF', id) as Promise<{ saved: boolean; path?: string }>,
+    findPioneerUsb: (): Promise<string | null> =>
+      ipcRenderer.invoke('library:findPioneerUsb'),
+    browseForUsb: (): Promise<string | null> =>
+      ipcRenderer.invoke('library:browseForUsb'),
+    readUsbHistory: (usbRoot: string) =>
+      ipcRenderer.invoke('library:readUsbHistory', usbRoot)
   },
   audio: {
     readFile: (filePath: string): Promise<ArrayBuffer> =>

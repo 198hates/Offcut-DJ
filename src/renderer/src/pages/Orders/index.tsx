@@ -439,6 +439,52 @@ export function OrdersPage(): JSX.Element {
     setActiveId(ro.id)
   }
 
+  // ── Pioneer USB import ───────────────────────────────────────────────────────
+
+  type UsbSet = { name: string; usbId: string; date: string | null; tracks: { title: string; artist: string; bpm: number | null; key: string | null; durationSeconds: number | null; position: number; localTrackId: string | null }[] }
+
+  const importFromUsb = useCallback(async () => {
+    // Try auto-detect first, fall back to folder picker
+    let usbRoot = await window.api.library.findPioneerUsb()
+    if (!usbRoot) usbRoot = await window.api.library.browseForUsb()
+    if (!usbRoot) return
+
+    const result = await window.api.library.readUsbHistory(usbRoot)
+    if ('error' in result) {
+      alert(`Could not read USB: ${(result as { error: string }).error}`)
+      return
+    }
+    const sets = result as UsbSet[]
+    if (!sets.length) { alert('No HISTORY playlists found on this USB.'); return }
+
+    // Prompt which set to import (use the first / newest by default for now)
+    const chosen = sets[0]   // newest set (reversed in reader)
+    const label = chosen.date ? `${chosen.name} (${chosen.date})` : chosen.name
+    if (!window.confirm(`Import "${label}" as a running order?\n${chosen.tracks.length} tracks · ${chosen.tracks.filter((t) => t.localTrackId).length} matched in library`)) return
+
+    // Create a running order from the USB set
+    const date = chosen.date ?? new Date().toISOString().slice(0, 10)
+    const ro = await window.api.library.createRunningOrder(`${chosen.name} · ${date}`)
+
+    // Add matched tracks first; leave unmatched as placeholders we can't add
+    const matchedIds = chosen.tracks
+      .filter((t) => t.localTrackId)
+      .map((t) => t.localTrackId as string)
+
+    if (matchedIds.length) {
+      const existingIds = new Set(ro.entries.map((e) => e.trackId))
+      const newEntries: import('@shared/types').OrderEntry[] = matchedIds
+        .filter((id) => !existingIds.has(id))
+        .map((id) => ({ id: crypto.randomUUID(), trackId: id, plannedTransition: null, note: null, flexible: false }))
+      const updated = { ...ro, entries: [...ro.entries, ...newEntries] }
+      await window.api.library.updateRunningOrder(ro.id, { entries: updated.entries })
+      setOrders((prev) => [...prev, updated])
+    } else {
+      setOrders((prev) => [...prev, ro])
+    }
+    setActiveId(ro.id)
+  }, [setOrders, setActiveId])
+
   const deleteOrder = async (id: string) => {
     await window.api.library.deleteRunningOrder(id)
     setOrders((prev) => prev.filter((o) => o.id !== id))
@@ -522,10 +568,17 @@ export function OrdersPage(): JSX.Element {
       <div className="w-44 shrink-0 flex flex-col border-r border-border/30 bg-chassis">
         <div className="shrink-0 flex items-center justify-between px-3 py-2 border-b border-border/30">
           <span className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-accent">Orders</span>
-          <button onClick={createOrder}
-            className="w-5 h-5 flex items-center justify-center text-muted hover:text-accent transition-colors text-base leading-none">
-            +
-          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={importFromUsb}
+              title="Import from Pioneer USB"
+              className="font-mono text-[7.5px] text-muted/40 hover:text-accent transition-colors px-1">
+              USB
+            </button>
+            <button onClick={createOrder}
+              className="w-5 h-5 flex items-center justify-center text-muted hover:text-accent transition-colors text-base leading-none">
+              +
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           {orders.length === 0 ? (
@@ -811,6 +864,13 @@ export function OrdersPage(): JSX.Element {
               className="font-mono text-[9px] uppercase tracking-[0.1em] text-accent hover:text-ink border border-accent/30 hover:border-accent/60 rounded px-4 py-2 transition-colors">
               create first order
             </button>
+            <div className="pt-1">
+              <button onClick={importFromUsb}
+                className="font-mono text-[8px] uppercase tracking-[0.08em] text-muted/40 hover:text-muted border border-border/20 hover:border-border/50 rounded px-3 py-1.5 transition-colors">
+                ⬛ import from pioneer usb
+              </button>
+              <p className="font-mono text-[7px] text-muted/25 mt-1">reads HISTORY playlists from a plugged-in Pioneer USB</p>
+            </div>
           </div>
         </div>
       )}
