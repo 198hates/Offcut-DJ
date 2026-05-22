@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { RekordboxSync } from '../../components/RekordboxSync'
 import type { IntegrationId } from '@shared/types'
@@ -44,13 +45,32 @@ function IntegrationGrid({ ids, busy, busyLabel, onClick }: {
 
 export function SyncPage(): JSX.Element {
   const { importFromIntegration, exportToIntegration, stats, isImporting, isExporting } = useLibraryStore()
+  const [lastImport, setLastImport] = useState<string | null>(null)
+
+  useEffect(() => {
+    window.api.settings.get().then((s) => setLastImport(s.lastImportedAt))
+  }, [isImporting])   // refresh after an import completes
+
+  const fmtLastImport = lastImport
+    ? (() => {
+        const d = new Date(lastImport)
+        const days = Math.floor((Date.now() - d.getTime()) / 86400000)
+        if (days === 0) return 'today'
+        if (days === 1) return 'yesterday'
+        if (days < 7) return `${days}d ago`
+        return d.toLocaleDateString()
+      })()
+    : null
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
-      <div className="px-5 pt-4 pb-2.5 border-b border-border/20 shrink-0">
+      <div className="px-5 pt-4 pb-2.5 border-b border-border/20 shrink-0 flex items-baseline gap-4">
         <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
           <span className="text-accent mr-1">02</span>sync
         </p>
+        {fmtLastImport && (
+          <span className="font-mono text-[8.5px] text-muted/40">last import: {fmtLastImport}</span>
+        )}
       </div>
 
       <div className="px-5 py-5 space-y-8 max-w-lg">
