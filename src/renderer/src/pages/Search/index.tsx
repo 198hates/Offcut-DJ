@@ -159,6 +159,14 @@ export function SearchPage(): JSX.Element {
   const [sortBy,      setSortBy]      = useState<'title' | 'bpm' | 'energy' | 'rating'>('title')
   const [showSend,    setShowSend]    = useState(false)
   const [sending,     setSending]     = useState(false)
+  const [showOrderSend, setShowOrderSend] = useState(false)
+  const [runningOrders, setRunningOrders] = useState<{ id: string; title: string; catalogNum: number }[]>([])
+
+  useEffect(() => {
+    window.api.library.getRunningOrders().then((ros) =>
+      setRunningOrders(ros.map((r) => ({ id: r.id, title: r.title, catalogNum: r.catalogNum })))
+    )
+  }, [])
 
   // ── Available filter options ──────────────────────────────────────────────
   const allGenres = useMemo(() => [...new Set(tracks.map((t) => t.genre).filter(Boolean))].sort(), [tracks])
@@ -370,6 +378,44 @@ export function SearchPage(): JSX.Element {
               </div>
             )}
           </div>
+
+          {/* Add to running order */}
+          {runningOrders.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowOrderSend((v) => !v)}
+                disabled={results.length === 0}
+                className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 hover:border-border/70 rounded px-2 py-0.5 transition-colors disabled:opacity-30"
+              >
+                add to order
+              </button>
+              {showOrderSend && (
+                <div className="absolute right-0 top-7 z-30 bg-chassis border border-border/40 rounded shadow-xl min-w-[200px] max-h-48 overflow-y-auto">
+                  {runningOrders.map((ro) => (
+                    <button key={ro.id}
+                      onClick={async () => {
+                        setSending(true)
+                        const trackIds = results.map((t) => t.id)
+                        const existing = await window.api.library.getRunningOrders().then((ros) => ros.find((r) => r.id === ro.id))
+                        if (existing) {
+                          const existingSet = new Set(existing.entries.map((e) => e.trackId))
+                          const newEntries = [
+                            ...existing.entries,
+                            ...trackIds.filter((id) => !existingSet.has(id)).map((id) => ({ id: crypto.randomUUID(), trackId: id, plannedTransition: null, note: null, flexible: false as const }))
+                          ]
+                          await window.api.library.updateRunningOrder(ro.id, { entries: newEntries })
+                        }
+                        setShowOrderSend(false); setSending(false)
+                      }}
+                      disabled={sending}
+                      className="w-full text-left px-3 py-1.5 border-b border-border/20 last:border-b-0 transition-colors hover:bg-ink/[0.05]">
+                      <p className="font-mono text-[8.5px] text-ink">N° {String(ro.catalogNum).padStart(3,'0')} · {ro.title || 'Untitled'}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Save as Smart Playlist */}
           <button
