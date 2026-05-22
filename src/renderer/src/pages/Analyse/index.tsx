@@ -75,7 +75,8 @@ function BpmKeySection(): JSX.Element {
   const [phase, setPhase]   = useState<AnalysisPhase>('idle')
   const [progress, setProgress] = useState({ current: 0, total: 0 })
   const [currentTitle, setCurrentTitle] = useState('')
-  const [result, setResult] = useState<{ updated: number; skipped: number; failed: Track[] } | null>(null)
+  const [result, setResult] = useState<{ updated: number; skipped: number; failed: Track[]; updatedIds: string[] } | null>(null)
+  const [writingTags, setWritingTags] = useState(false)
   const cancelRef = useRef(false)
 
   const needingAnalysis    = tracks.filter((t) => !t.bpm || !t.key || t.energy == null || t.danceability == null)
@@ -91,6 +92,7 @@ function BpmKeySection(): JSX.Element {
     setProgress({ current: 0, total: needingAnalysis.length })
     let updated = 0, skipped = 0
     const failed: Track[] = []
+    const updatedIds: string[] = []
 
     // Phase 1: read embedded tags (fast)
     setPhase('tags')
@@ -106,7 +108,7 @@ function BpmKeySection(): JSX.Element {
           const newKey = (!track.key && tags.key) ? tags.key : track.key
           if (newBpm !== track.bpm || newKey !== track.key) {
             await updateTrack({ id: track.id, bpm: newBpm, key: newKey })
-            updated++
+            updated++; updatedIds.push(track.id)
           }
         }
       } catch { /* fall through to Phase 2 */ }
@@ -119,7 +121,7 @@ function BpmKeySection(): JSX.Element {
     })
     if (!stillNeeding.length) {
       setPhase('done')
-      setResult({ updated, skipped, failed })
+      setResult({ updated, skipped, failed, updatedIds })
       return
     }
 
@@ -148,13 +150,13 @@ function BpmKeySection(): JSX.Element {
           : track.cuePoints
         if (newBpm !== track.bpm || newKey !== track.key || newNrg !== track.energy || newDnce !== track.danceability || newMood !== track.mood || newGrid !== track.beatgrid || newCues !== track.cuePoints) {
           await updateTrack({ id: track.id, bpm: newBpm, key: newKey, energy: newNrg, danceability: newDnce, mood: newMood, beatgrid: newGrid, cuePoints: newCues })
-          updated++
+          updated++; updatedIds.push(track.id)
         } else skipped++
       } catch { failed.push(track) }
     }
     await ctx.close()
     setPhase('done')
-    setResult({ updated, skipped, failed })
+    setResult({ updated, skipped, failed, updatedIds })
   }, [needingAnalysis, tracks, updateTrack])
 
   const running = phase === 'tags' || phase === 'audio'
@@ -197,10 +199,25 @@ function BpmKeySection(): JSX.Element {
 
       {phase === 'done' && result && (
         <div className="space-y-3">
-          <div className="flex items-center gap-4 font-mono text-[10px]">
+          <div className="flex items-center gap-4 font-mono text-[10px] flex-wrap">
             <span className="text-green-600 dark:text-green-400">✓ {result.updated} updated</span>
             {result.skipped > 0 && <span className="text-muted">{result.skipped} unchanged</span>}
             {result.failed.length > 0 && <span className="text-red-500">{result.failed.length} failed</span>}
+            {result.updatedIds.length > 0 && (
+              <button
+                onClick={async () => {
+                  setWritingTags(true)
+                  for (const id of result.updatedIds) {
+                    try { await window.api.library.writeTagsToFile(id) } catch { /* skip unwritable */ }
+                  }
+                  setWritingTags(false)
+                }}
+                disabled={writingTags}
+                className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/30 rounded px-2 py-0.5 transition-colors disabled:opacity-40"
+              >
+                {writingTags ? 'writing…' : `write ${result.updatedIds.length} to file tags`}
+              </button>
+            )}
           </div>
           {result.failed.length > 0 && <FailedList tracks={result.failed} />}
         </div>
