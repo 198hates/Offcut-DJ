@@ -559,6 +559,34 @@ export function OrdersPage(): JSX.Element {
   )
   const fmtDur = (s: number) => `${Math.floor(s / 3600) > 0 ? `${Math.floor(s / 3600)}h ` : ''}${Math.floor((s % 3600) / 60)}m`
 
+  // ── Set statistics ──────────────────────────────────────────────────────────
+
+  const setStats = useMemo(() => {
+    const ts = activeTrackList.filter(Boolean) as NonNullable<typeof activeTrackList[number]>[]
+    if (ts.length < 2) return null
+
+    // Average transition harmonic score
+    let totalHarm = 0, harmCount = 0
+    for (let i = 0; i < ts.length - 1; i++) {
+      const s = harmonicScore(ts[i].key, ts[i + 1].key)
+      totalHarm += s; harmCount++
+    }
+    const avgHarm = harmCount > 0 ? totalHarm / harmCount : 0
+
+    // BPM range
+    const bpms = ts.map((t) => t.bpm).filter((b): b is number => b != null)
+    const bpmRange = bpms.length > 1
+      ? `${Math.min(...bpms).toFixed(0)}–${Math.max(...bpms).toFixed(0)}`
+      : bpms.length === 1 ? `${bpms[0].toFixed(0)}` : null
+
+    // Most common key mode
+    const modes = ts.map((t) => t.key?.toUpperCase().endsWith('B') ? 'major' : 'minor').filter(Boolean)
+    const majorCount = modes.filter((m) => m === 'major').length
+    const mode = modes.length > 0 ? (majorCount > modes.length / 2 ? 'major' : 'minor') : null
+
+    return { avgHarm, bpmRange, mode }
+  }, [activeTrackList])
+
   // ── Road Not Taken — scored candidates for a specific transition slot ────────
   const rntCandidates = useMemo(() => {
     if (!active || active.entries.length === 0) return []
@@ -701,6 +729,13 @@ export function OrdersPage(): JSX.Element {
 
             <span className="font-mono text-[8.5px] text-muted/50 shrink-0 tabular-nums">
               {active.entries.length} cuts · {fmtDur(totalDurSec)}
+              {setStats?.bpmRange && <span className="text-muted/35"> · {setStats.bpmRange} bpm</span>}
+              {setStats && (
+                <span title={`Avg harmonic compatibility: ${Math.round(setStats.avgHarm * 100)}%`}
+                  style={{ marginLeft: 6, color: setStats.avgHarm >= 0.75 ? '#4A9B6F' : setStats.avgHarm >= 0.55 ? '#C9A02C' : '#B86E72' }}>
+                  ⬡{Math.round(setStats.avgHarm * 100)}%
+                </span>
+              )}
             </span>
 
             {/* PDF export */}
