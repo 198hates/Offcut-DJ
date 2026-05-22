@@ -72,6 +72,14 @@ function removeNumberPrefix(str: string): string {
   return str.replace(/^\d{1,3}[\s._-]+/, '').trim()
 }
 
+// Version qualifier patterns — things like "(Radio Edit)", "(Extended Mix)", "(Original Mix)"
+// that the user may want stripped for cleaner titles. Only common, unambiguous patterns.
+const VERSION_RE = /\s*(?:\(|\[)\s*(?:radio\s+edit|radio\s+version|single\s+edit|single\s+version|extended(?:\s+version|\s+mix)?|extended\s+instrumental|album\s+version|original\s+mix|club\s+mix|instrumental(?:\s+version)?|a\s+cappella|acappella|dj\s+tool|clean(?:\s+version)?|explicit(?:\s+version)?|re-?master(?:ed)?(?:\s+version)?)\s*(?:\)|\])/gi
+
+function stripVersionQualifier(str: string): string {
+  return str.replace(VERSION_RE, '').replace(/\s{2,}/g, ' ').trim()
+}
+
 const URL_RE = /(?:https?:\/\/|www\.)\S+|\S+@\S+\.\w{2,}/gi
 
 function removeUrls(str: string): string {
@@ -379,6 +387,23 @@ const FIXES: Fix[] = [
         const canon = canonical.get(t.artist.toLowerCase().trim())
         if (canon && t.artist !== canon)
           results.push({ trackId: t.id, display: t.title || t.filePath, field: 'artist', before: t.artist, after: canon })
+      }
+      return results
+    }
+  },
+  {
+    id: 'strip-version',
+    label: 'strip version qualifiers',
+    description: 'removes "(Radio Edit)", "(Extended Mix)", "(Original Mix)", "(Remastered)" and similar from titles — preview first, never strips remixer credits',
+    icon: '(·)',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        if (!t.title) continue
+        const fixed = stripVersionQualifier(t.title)
+        if (fixed !== t.title && fixed.length > 0) {
+          results.push({ trackId: t.id, display: t.title, field: 'title', before: t.title, after: fixed })
+        }
       }
       return results
     }
