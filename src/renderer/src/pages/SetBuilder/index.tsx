@@ -275,6 +275,23 @@ export function SetBuilderPage(): JSX.Element {
     showToast(`Exported ${chapters.length} chapter${chapters.length !== 1 ? 's' : ''} as M3U`, 'success')
   }, [chapters, showToast])
 
+  const handleExportToOrder = useCallback(async () => {
+    if (!chapters.length) { showToast('No chapters to export', 'info'); return }
+    const activeSet = sets.find((s) => s.id === activeSetId)
+    const title = activeSet?.name ?? 'Set plan'
+    const date  = new Date().toISOString().slice(0, 10)
+    // Collect all track IDs from all chapters in order
+    const allIds = chapters.flatMap((ch) => chapterTracks.get(ch.id)?.map((t) => t.id) ?? [])
+    if (!allIds.length) { showToast('No tracks in any chapter', 'info'); return }
+
+    const ro = await window.api.library.createRunningOrder(`${title} · ${date}`)
+    const entries: import('@shared/types').OrderEntry[] = allIds.map((id) => ({
+      id: crypto.randomUUID(), trackId: id, plannedTransition: null, note: null, flexible: false
+    }))
+    await window.api.library.updateRunningOrder(ro.id, { entries })
+    showToast(`Created running order "${ro.title}" · navigate to Orders to see it`, 'success')
+  }, [chapters, chapterTracks, sets, activeSetId, showToast])
+
   const handleImportAutoGroups = useCallback(async () => {
     if (!activeSetId) return
     const autoGroups = playlists.filter((p) => p.isAutoGroup && !p.isFolder)
@@ -379,11 +396,18 @@ export function SetBuilderPage(): JSX.Element {
         )}
 
         {chapters.length > 0 && (
-          <button onClick={handleExport}
-            className="px-2 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 rounded transition-colors"
-            title="Export all chapters as M3U playlists">
-            export
-          </button>
+          <>
+            <button onClick={handleExportToOrder}
+              className="px-2 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/30 rounded transition-colors"
+              title="Create a running order from all chapters">
+              → order
+            </button>
+            <button onClick={handleExport}
+              className="px-2 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 rounded transition-colors"
+              title="Export all chapters as M3U playlists">
+              m3u
+            </button>
+          </>
         )}
 
         {/* Library browser toggle */}
