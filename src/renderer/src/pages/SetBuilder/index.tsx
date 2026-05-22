@@ -292,6 +292,36 @@ export function SetBuilderPage(): JSX.Element {
     showToast(`Created running order "${ro.title}" · navigate to Orders to see it`, 'success')
   }, [chapters, chapterTracks, sets, activeSetId, showToast])
 
+  // Quick Set: filter by energy/mood then magic-sort and create a chapter
+  const [showQuickSet, setShowQuickSet] = useState(false)
+  const [qsEnergy, setQsEnergy] = useState<[number, number]>([6, 9])
+  const [qsCount,  setQsCount]  = useState(12)
+
+  const handleQuickSet = useCallback(async () => {
+    if (!activeSetId) return
+    setShowQuickSet(false)
+    // Filter tracks by energy range
+    const inRange = tracks.filter((t) =>
+      t.energy != null && t.energy >= qsEnergy[0] && t.energy <= qsEnergy[1]
+      && t.bpm != null && t.key != null
+    )
+    if (!inRange.length) { showToast('No fully-analysed tracks in that energy range', 'info'); return }
+
+    // Pick random seed, magic-sort to a chapter-sized selection
+    const seed = inRange[Math.floor(Math.random() * inRange.length)]
+    const { sorted } = magicSort(inRange)
+    // Start from the seed track and take the next qsCount tracks
+    const seedIdx = sorted.findIndex((t) => t.id === seed.id)
+    const slice = [...sorted.slice(seedIdx), ...sorted.slice(0, seedIdx)].slice(0, qsCount)
+
+    const color = CHAPTER_COLORS[chapters.length % CHAPTER_COLORS.length]
+    const name  = `Quick Set · nrg ${qsEnergy[0]}–${qsEnergy[1]}`
+    const ch = await createChapter(activeSetId, name, color)
+    if (slice.length) await addTracksToPlaylist(ch.id, slice.map((t) => t.id))
+    setActiveChapterId(ch.id)
+    showToast(`Created "${name}" with ${slice.length} tracks`, 'success')
+  }, [activeSetId, tracks, qsEnergy, qsCount, chapters.length, createChapter, addTracksToPlaylist, setActiveChapterId, showToast])
+
   const handleImportAutoGroups = useCallback(async () => {
     if (!activeSetId) return
     const autoGroups = playlists.filter((p) => p.isAutoGroup && !p.isFolder)
@@ -370,6 +400,42 @@ export function SetBuilderPage(): JSX.Element {
             className="px-2 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-accent hover:text-accent/80 border border-accent/30 rounded transition-colors">
             + chapter
           </button>
+
+          {/* Quick Set generator */}
+          <div className="relative">
+            <button
+              onClick={() => setShowQuickSet((v) => !v)}
+              className="px-2 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 rounded transition-colors"
+              title="Auto-generate a chapter from energy/mood criteria">
+              quick set
+            </button>
+            {showQuickSet && (
+              <div className="absolute top-8 left-0 z-30 bg-chassis border border-border/40 rounded shadow-xl px-4 py-3 space-y-3 min-w-[200px]">
+                <p className="font-mono text-[8.5px] uppercase tracking-[0.12em] text-muted">quick set</p>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[9px] text-muted w-14 shrink-0">energy</span>
+                  <input type="number" min="1" max="10" value={qsEnergy[0]}
+                    onChange={(e) => setQsEnergy([Number(e.target.value), qsEnergy[1]])}
+                    className="w-12 bg-paper border border-border/40 rounded px-2 py-0.5 font-mono text-[9px] text-ink outline-none focus:border-accent" />
+                  <span className="font-mono text-[9px] text-muted/50">–</span>
+                  <input type="number" min="1" max="10" value={qsEnergy[1]}
+                    onChange={(e) => setQsEnergy([qsEnergy[0], Number(e.target.value)])}
+                    className="w-12 bg-paper border border-border/40 rounded px-2 py-0.5 font-mono text-[9px] text-ink outline-none focus:border-accent" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[9px] text-muted w-14 shrink-0">tracks</span>
+                  <input type="number" min="4" max="30" value={qsCount}
+                    onChange={(e) => setQsCount(Number(e.target.value))}
+                    className="w-16 bg-paper border border-border/40 rounded px-2 py-0.5 font-mono text-[9px] text-ink outline-none focus:border-accent" />
+                </div>
+                <button onClick={handleQuickSet}
+                  className="w-full px-3 py-1.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[9px] uppercase tracking-[0.1em] rounded transition-colors">
+                  generate chapter
+                </button>
+              </div>
+            )}
+          </div>
+
           <button onClick={handleImportAutoGroups}
             className="px-2 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 rounded transition-colors"
             title="Import auto-grouped clusters as chapter drafts">
