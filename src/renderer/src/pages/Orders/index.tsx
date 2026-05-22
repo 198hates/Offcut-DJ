@@ -779,6 +779,33 @@ export function OrdersPage(): JSX.Element {
               )}
             </span>
 
+            {/* M3U export */}
+            <button
+              onClick={async () => {
+                const filePaths = activeTrackList
+                  .filter(Boolean)
+                  .map((t) => t!.filePath)
+                if (!filePaths.length) return
+                const title = active.title || `Order-${active.catalogNum}`
+                const m3u = '#EXTM3U\n' + activeTrackList
+                  .filter(Boolean)
+                  .map((t) => `#EXTINF:${Math.round(t!.durationSeconds ?? 0)},${t!.artist} - ${t!.title}\n${t!.filePath}`)
+                  .join('\n')
+                // Use IPC to show a save dialog and write the file
+                const blob = new Blob([m3u], { type: 'audio/x-mpegurl' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `${title.replace(/[^a-zA-Z0-9 ]/g, '').trim()}.m3u`
+                a.click()
+                URL.revokeObjectURL(url)
+              }}
+              className="shrink-0 font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded px-2 py-0.5 transition-colors"
+              title="Export as M3U playlist"
+            >
+              M3U
+            </button>
+
             {/* PDF export */}
             <button
               onClick={async () => {
