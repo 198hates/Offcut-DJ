@@ -152,6 +152,15 @@ export function CompassPage(): JSX.Element {
     return order.filter((k) => s.has(k))
   }, [tracks])
 
+  const keyDistribution = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const t of tracks) {
+      if (t.key) counts.set(t.key, (counts.get(t.key) ?? 0) + 1)
+    }
+    return counts
+  }, [tracks])
+  const maxKeyCount = useMemo(() => Math.max(1, ...keyDistribution.values()), [keyDistribution])
+
   // Filter visibility: dim non-matching dots
   const isFiltered = filterGenres.size > 0 || filterKeys.size > 0 || filterMoods.size > 0
 
@@ -706,13 +715,15 @@ export function CompassPage(): JSX.Element {
               </div>
             </div>
 
-            {/* Key */}
+            {/* Key distribution */}
             {allKeys.length > 0 && (
               <div>
-                <p className="font-mono text-[8.5px] uppercase tracking-[0.15em] text-muted mb-1.5">Key</p>
-                <div className="flex flex-wrap gap-1">
+                <p className="font-mono text-[8.5px] uppercase tracking-[0.15em] text-muted mb-1.5">Key · distribution</p>
+                <div className="space-y-0.5">
                   {allKeys.map((k) => {
-                    const on = filterKeys.has(k)
+                    const on    = filterKeys.has(k)
+                    const count = keyDistribution.get(k) ?? 0
+                    const pct   = count / maxKeyCount
                     return (
                       <button key={k}
                         onClick={() => setFilterKeys((prev) => {
@@ -720,12 +731,18 @@ export function CompassPage(): JSX.Element {
                           on ? next.delete(k) : next.add(k)
                           return next
                         })}
-                        className={`font-mono text-[8.5px] px-1.5 py-0.5 rounded transition-colors
-                          ${on ? 'text-ink' : 'text-muted hover:text-ink'}`}
-                        style={{ background: on ? keyBlipColor(k) + '30' : undefined,
-                                 color: on ? keyBlipColor(k) : undefined }}
+                        className={`w-full flex items-center gap-2 px-1.5 py-0.5 rounded transition-colors
+                          ${on ? 'bg-white/[0.06]' : 'hover:bg-white/[0.03]'}`}
                       >
-                        {k}
+                        <span className="font-mono text-[8px] w-8 text-right shrink-0"
+                          style={{ color: keyBlipColor(k), opacity: on ? 1 : 0.65 }}>
+                          {k}
+                        </span>
+                        <div className="flex-1 h-1 bg-white/[0.06] rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all"
+                            style={{ width: `${pct * 100}%`, background: keyBlipColor(k), opacity: on ? 0.8 : 0.35 }} />
+                        </div>
+                        <span className="font-mono text-[7px] text-muted/40 w-5 text-right tabular-nums shrink-0">{count}</span>
                       </button>
                     )
                   })}
