@@ -26,14 +26,26 @@ function StatCard({ label, value, sub, accent }: {
   )
 }
 
-function ProgressBar({ current, total, label, title }: {
-  current: number; total: number; label: string; title: string
+function ProgressBar({ current, total, label, title, startTime }: {
+  current: number; total: number; label: string; title: string; startTime?: number
 }): JSX.Element {
+  const eta = (() => {
+    if (!startTime || current < 2 || !total) return null
+    const elapsed = (Date.now() - startTime) / 1000
+    const rate = current / elapsed               // tracks per second
+    const remaining = (total - current) / rate   // seconds remaining
+    if (remaining < 60) return `~${Math.round(remaining)}s`
+    return `~${Math.round(remaining / 60)}m`
+  })()
+
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between">
         <span className="font-mono text-[10px] text-accent uppercase tracking-[0.1em]">{label}</span>
-        <span className="font-mono text-[10px] text-muted tabular-nums">{current} / {total}</span>
+        <div className="flex items-baseline gap-2">
+          {eta && <span className="font-mono text-[9px] text-muted/50">{eta} remaining</span>}
+          <span className="font-mono text-[10px] text-muted tabular-nums">{current} / {total}</span>
+        </div>
       </div>
       <div className="h-1 bg-border/30 rounded-full overflow-hidden">
         <div
@@ -78,6 +90,7 @@ function BpmKeySection(): JSX.Element {
   const [result, setResult] = useState<{ updated: number; skipped: number; failed: Track[]; updatedIds: string[] } | null>(null)
   const [writingTags, setWritingTags] = useState(false)
   const cancelRef = useRef(false)
+  const startTimeRef = useRef<number>(0)
 
   const needingAnalysis    = tracks.filter((t) => !t.bpm || !t.key || t.energy == null || t.danceability == null)
   const needingBpm         = tracks.filter((t) => !t.bpm).length
@@ -88,6 +101,7 @@ function BpmKeySection(): JSX.Element {
   const start = useCallback(async () => {
     if (!needingAnalysis.length) return
     cancelRef.current = false
+    startTimeRef.current = Date.now()
     setResult(null)
     setProgress({ current: 0, total: needingAnalysis.length })
     let updated = 0, skipped = 0
@@ -195,7 +209,8 @@ function BpmKeySection(): JSX.Element {
 
       {running && <ProgressBar current={progress.current} total={progress.total}
         label={phase === 'tags' ? 'phase 1 · reading tags' : 'phase 2 · audio analysis'}
-        title={currentTitle} />}
+        title={currentTitle}
+        startTime={startTimeRef.current} />}
 
       {phase === 'done' && result && (
         <div className="space-y-3">
