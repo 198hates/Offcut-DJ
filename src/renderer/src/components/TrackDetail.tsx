@@ -4,7 +4,8 @@ import { useToastStore } from '../store/toastStore'
 import { CamelotWheel } from './CamelotWheel'
 import { BeatgridEditor } from './BeatgridEditor'
 import { compatibilityScore, harmonicScore } from '../lib/compatibility'
-import { generateCuesForFile } from '../lib/analyzer'
+import { generateCuesForFile, analyzeAudio } from '../lib/analyzer'
+import { generateBeatgrid } from '../lib/compatibility'
 import { useDeckAStore, useDeckBStore } from '../store/playerStore'
 import type { Track, CuePoint, BeatgridMarker, CutHistory, EditLineage } from '@shared/types'
 import { useArtwork } from '../hooks/useArtwork'
@@ -83,6 +84,37 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
       setTimeout(() => setSaved(false), 2000)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const [analysing, setAnalysing] = useState(false)
+  const handleReanalyse = async (): Promise<void> => {
+    if (!draft) return
+    setAnalysing(true)
+    try {
+      const ab = await window.api.audio.readFile(draft.filePath)
+      const ctx = new AudioContext()
+      const buf = await ctx.decodeAudioData(ab)
+      const r = await analyzeAudio(buf)
+      await ctx.close()
+      const newBpm = r.bpm ?? draft.bpm
+      const newGrid = (newBpm && r.offsetMs != null)
+        ? generateBeatgrid(newBpm, r.offsetMs, buf.duration * 1000) : draft.beatgrid
+      const patch: Partial<Track> & { id: string } = {
+        id: draft.id,
+        bpm: newBpm, key: r.key ?? draft.key,
+        energy: r.energy ?? draft.energy,
+        danceability: r.danceability ?? draft.danceability,
+        mood: r.mood ?? draft.mood,
+        beatgrid: newGrid,
+      }
+      await updateTrack(patch)
+      setDraft((d) => d ? { ...d, ...patch } : d)
+      showToast(`Re-analysed: ${newBpm?.toFixed(1)} bpm · ${r.key ?? '—'}`, 'success')
+    } catch (e) {
+      showToast(`Analysis failed: ${(e as Error).message}`, 'error')
+    } finally {
+      setAnalysing(false)
     }
   }
 
@@ -183,6 +215,14 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
             }`}
           >
             {saving ? 'saving…' : saved ? 'saved!' : dirty ? 'save changes' : 'no changes'}
+          </button>
+          <button
+            onClick={handleReanalyse}
+            disabled={analysing}
+            title="Re-run audio analysis: BPM, key, energy, danceability, mood"
+            className="shrink-0 px-3 py-1.5 rounded font-mono text-[10px] uppercase tracking-[0.12em] border border-border/40 text-muted hover:text-accent hover:border-accent/40 transition-colors disabled:opacity-40"
+          >
+            {analysing ? 'analysing…' : draft.bpm ? 're-analyse' : 'analyse'}
           </button>
           <button
             onClick={handleWriteToFile}
