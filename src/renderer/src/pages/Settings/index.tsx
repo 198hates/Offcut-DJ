@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import type { AppSettings } from '@shared/types'
 import { useWaveformStore, type WaveformStyle } from '../../store/waveformStore'
+import { useThemeStore } from '../../store/themeStore'
 
 type SettingsPatch = Partial<AppSettings>
 
@@ -22,9 +23,21 @@ const WAVEFORM_STYLES: { value: WaveformStyle; label: string; desc: string }[] =
 export function SettingsPage(): JSX.Element {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const { style: waveformStyle, setStyle: setWaveformStyle } = useWaveformStore()
+  const { theme: currentTheme, toggleTheme } = useThemeStore()
   const [detected, setDetected] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+
+  const applyTheme = useCallback((t: 'dark' | 'light' | 'system') => {
+    if (t === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      // Apply system preference but keep themeStore in sync
+      document.documentElement.classList.toggle('dark', prefersDark)
+      document.documentElement.dataset.theme = prefersDark ? 'dark' : 'light'
+    } else if (t !== currentTheme) {
+      toggleTheme()  // toggleTheme flips between light/dark
+    }
+  }, [currentTheme, toggleTheme])
 
   useEffect(() => {
     Promise.all([
@@ -208,7 +221,27 @@ export function SettingsPage(): JSX.Element {
 
       {/* Preferences */}
       <Section title="Preferences" icon="⚙">
-        <div className="space-y-3">
+        <div className="space-y-4">
+          {/* Theme */}
+          <div>
+            <p className="font-mono text-[10.5px] text-ink mb-1.5">colour scheme</p>
+            <div className="flex gap-2">
+              {(['dark', 'light', 'system'] as const).map((t) => (
+                <button key={t}
+                  onClick={() => applyTheme(t)}
+                  className={`font-mono text-[9px] uppercase tracking-[0.1em] px-3 py-1.5 rounded border transition-colors
+                    ${currentTheme === t
+                      ? 'border-accent/50 bg-accent/10 text-accent'
+                      : 'border-border/30 text-muted hover:text-ink hover:border-border/60'}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            <p className="font-mono text-[9.5px] text-muted/60 mt-1">'system' follows your OS light/dark preference</p>
+          </div>
+
+          {/* Welcome screen */}
           <div className="flex items-center justify-between">
             <div>
               <p className="font-mono text-[10.5px] text-ink">show welcome screen on startup</p>
