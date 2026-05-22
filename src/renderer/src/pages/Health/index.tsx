@@ -794,6 +794,43 @@ export function HealthPage(): JSX.Element {
       <AutoGroupSection tracks={tracks} />
       <div className="border-t border-border/20" />
       <GenrePlaylistsSection tracks={tracks} playlists={playlists} />
+      <div className="border-t border-border/20" />
+      {/* Library backup */}
+      <section className="space-y-4">
+        <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
+          <span className="text-accent mr-1.5">07</span>backup
+        </h2>
+        <p className="font-mono text-[10px] text-muted/70">
+          export all track metadata + playlists as JSON — keeps a local snapshot of your library data
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              const date = new Date().toISOString().slice(0, 10)
+              const backup = {
+                exportedAt: new Date().toISOString(),
+                trackCount: tracks.length,
+                playlistCount: playlists.length,
+                tracks,
+                playlists,
+              }
+              const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = `crate-backup-${date}.json`
+              a.click()
+              URL.revokeObjectURL(url)
+            }}
+            className="font-mono text-[9px] uppercase tracking-[0.1em] px-4 py-1.5 rounded border transition-colors border-border/40 text-muted hover:text-ink hover:border-border/70"
+          >
+            export {tracks.length} tracks as JSON
+          </button>
+          <span className="font-mono text-[9px] text-muted/40 tabular-nums">
+            ~{Math.round(JSON.stringify(tracks).length / 1024)} KB
+          </span>
+        </div>
+      </section>
     </div>
   )
 }
