@@ -503,21 +503,34 @@ export function SmartFixesPage(): JSX.Element {
   const { tracks, updateTrack } = useLibraryStore()
   const [openFix, setOpenFix] = useState<string | null>(null)
   const [results, setResults] = useState<Record<string, FixResult[]>>({})
+  const [selections, setSelections] = useState<Record<string, Set<number>>>({})  // fix.id → set of selected indices
   const [applying, setApplying] = useState<string | null>(null)
   const [applied, setApplied] = useState<Record<string, number>>({})
 
   const scan = useCallback((fix: Fix) => {
     const res = fix.scan(tracks)
     setResults((r) => ({ ...r, [fix.id]: res }))
+    // Default: all results selected
+    setSelections((s) => ({ ...s, [fix.id]: new Set(res.map((_, i) => i)) }))
     setOpenFix(fix.id)
   }, [tracks])
 
+  const toggleSelection = useCallback((fixId: string, idx: number) => {
+    setSelections((prev) => {
+      const cur = new Set(prev[fixId] ?? [])
+      cur.has(idx) ? cur.delete(idx) : cur.add(idx)
+      return { ...prev, [fixId]: cur }
+    })
+  }, [])
+
   const applyFix = useCallback(async (fix: Fix) => {
     const res = results[fix.id] ?? []
-    if (!res.length) return
+    const sel = selections[fix.id] ?? new Set(res.map((_, i) => i))
+    const toApply = res.filter((_, i) => sel.has(i))
+    if (!toApply.length) return
     setApplying(fix.id)
     let count = 0
-    for (const r of res) {
+    for (const r of toApply) {
       const patch: Partial<Track> & { id: string } = {
         id: r.trackId,
         [r.field]: r.after,
@@ -527,9 +540,15 @@ export function SmartFixesPage(): JSX.Element {
       count++
     }
     setApplied((a) => ({ ...a, [fix.id]: count }))
-    setResults((r) => ({ ...r, [fix.id]: [] }))
+    // Remove applied results, keep unselected ones
+    setResults((r) => ({ ...r, [fix.id]: res.filter((_, i) => !sel.has(i)) }))
+    setSelections((s) => {
+      const remaining = new Set<number>()
+      res.forEach((_, i) => { if (!sel.has(i)) remaining.add(i) })
+      return { ...s, [fix.id]: remaining }
+    })
     setApplying(null)
-  }, [results, updateTrack])
+  }, [results, selections, updateTrack])
 
   return (
     <div className="h-full overflow-y-auto p-6 space-y-2 max-w-3xl">
@@ -545,6 +564,8 @@ export function SmartFixesPage(): JSX.Element {
       {FIXES.map((fix, i) => {
         const isOpen    = openFix === fix.id
         const res       = results[fix.id] ?? []
+        const sel       = selections[fix.id] ?? new Set(res.map((_, j) => j))
+        const selCount  = res.filter((_, j) => sel.has(j)).length
         const isApplied = applied[fix.id] != null
         const isBusy    = applying === fix.id
 
@@ -607,41 +628,62 @@ export function SmartFixesPage(): JSX.Element {
                   <>
                     {/* Apply bar */}
                     <div className="flex items-center justify-between px-4 py-2 bg-accent/5 border-b border-border/20">
-                      <span className="font-mono text-[10px] text-ink-soft">
-                        <span className="text-accent font-bold">{res.length}</span> track{res.length !== 1 ? 's' : ''} affected
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const allSel = new Set(res.map((_, j) => j))
+                            const noneSel = new Set<number>()
+                            setSelections((s) => ({ ...s, [fix.id]: sel.size === res.length ? noneSel : allSel }))
+                          }}
+                          className="font-mono text-[8.5px] text-muted/50 hover:text-muted border border-border/25 rounded px-1.5 py-0.5 transition-colors"
+                        >
+                          {sel.size === res.length ? 'deselect all' : 'select all'}
+                        </button>
+                        <span className="font-mono text-[10px] text-ink-soft">
+                          <span className="text-accent font-bold">{selCount}</span>
+                          {selCount !== res.length && <span className="text-muted/50"> of {res.length}</span>}
+                          {' '}selected
+                        </span>
+                      </div>
                       <button
                         onClick={() => applyFix(fix)}
-                        disabled={isBusy}
+                        disabled={isBusy || selCount === 0}
                         className="px-4 py-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] bg-accent hover:bg-accent/90 text-paper rounded transition-colors disabled:opacity-40"
                       >
-                        {isBusy ? 'applying…' : `apply to ${res.length}`}
+                        {isBusy ? 'applying…' : `apply ${selCount}`}
                       </button>
                     </div>
 
                     {/* Before/after preview */}
                     <div className="max-h-64 overflow-y-auto divide-y divide-border/15">
-                      {res.slice(0, 200).map((r, j) => (
-                        <div key={j} className="px-4 py-2 grid grid-cols-[1fr_1fr] gap-4 items-baseline">
-                          <div className="min-w-0">
-                            <p className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted mb-0.5">
-                              {r.field}{r.extra ? ` + ${Object.keys(r.extra).join(', ')}` : ''}
-                            </p>
-                            <p className="font-sans text-[11px] text-ink-soft truncate">{r.before}</p>
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent mb-0.5">after</p>
-                            <p className="font-sans text-[11px] text-ink font-medium truncate">{r.after}</p>
-                            {r.extra && (
-                              <p className="font-mono text-[9px] text-muted truncate mt-0.5">
-                                {Object.entries(r.extra).map(([k, v]) =>
-                                  `${k}: ${Array.isArray(v) ? v.join(', ') : v}`
-                                ).join(' · ')}
+                      {res.slice(0, 200).map((r, j) => {
+                        const checked = sel.has(j)
+                        return (
+                          <div key={j}
+                            onClick={() => toggleSelection(fix.id, j)}
+                            className={`px-4 py-2 grid grid-cols-[20px_1fr_1fr] gap-4 items-baseline cursor-pointer transition-colors ${checked ? '' : 'opacity-40'} hover:bg-ink/[0.03]`}>
+                            {/* Checkbox */}
+                            <input type="checkbox" checked={checked} readOnly className="accent-accent mt-0.5" />
+                            <div className="min-w-0">
+                              <p className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted mb-0.5">
+                                {r.field}{r.extra ? ` + ${Object.keys(r.extra).join(', ')}` : ''}
                               </p>
-                            )}
+                              <p className="font-sans text-[11px] text-ink-soft truncate">{r.before}</p>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent mb-0.5">after</p>
+                              <p className="font-sans text-[11px] text-ink font-medium truncate">{r.after}</p>
+                              {r.extra && (
+                                <p className="font-mono text-[9px] text-muted truncate mt-0.5">
+                                  {Object.entries(r.extra).map(([k, v]) =>
+                                    `${k}: ${Array.isArray(v) ? v.join(', ') : v}`
+                                  ).join(' · ')}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                       {res.length > 200 && (
                         <div className="px-4 py-2 font-mono text-[9.5px] text-muted">
                           …and {res.length - 200} more
