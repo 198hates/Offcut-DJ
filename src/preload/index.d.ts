@@ -21,6 +21,7 @@ declare global {
         renamePlaylist: (id: string, name: string) => Promise<void>
         updatePlaylistColor: (id: string, color: string) => Promise<void>
         recordPlay: (id: string) => Promise<Track>
+        getPlayHistory: (weeks?: number) => Promise<{ day: string; count: number }[]>
         deletePlaylist: (id: string) => Promise<void>
         reorderPlaylistTracks: (playlistId: string, orderedIds: string[]) => Promise<void>
         addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<void>

@@ -1,254 +1,233 @@
-# Djoid — Feature Audit & Implementation Notes
+# Djoid Feature Parity Plan
 
-**What it is:** Desktop DJ preparation / curation platform (macOS + Windows). Not a mixer or performance tool.  
-**Pricing:** €15/month Basic, €35/month Pro, or €99/year.  
-**Competitors:** Lexicon DJ, Mixed In Key, DJ.Studio.  
-**Relevant to Offcut as:** A benchmark for curation intelligence features — the kind of "preparation layer" Offcut could grow into.
+Reference: full audit of Djoid (docs.djoid.io, djoid.io/feature/*, user guide, comparison articles, set-prep blogs).
+Last updated: 2026-05-21
 
 ---
 
-## 01 · Chapter Builder
+## Already Implemented ✓
 
-**What it does:**  
-Structures a DJ set into 3–20 "energy blocks" called chapters. Each chapter groups tracks that share compatible energy, mood, and harmonic character. Tracks are ordered within a chapter using Djoid's compatibility engine. Chapters export directly to Rekordbox/Serato as crates.
-
-**Creation workflows:**
-- Start from a seed track, let the engine suggest compatible tracks to fill the chapter
-- Run AutoGroup on a subset, then treat suggested groups as chapter candidates
-- Filter library by attributes (BPM range, energy, key) and manually curate
-
-**How to implement in Offcut:**
-- Data model: a `chapters` table linked to a playlist, with an `order` column and an `energy_profile` JSON blob (`{ bpmMin, bpmMax, energyMin, energyMax, keyCluster }`)
-- UI: a new "Set Builder" page (nav section after Analysis). Chapters shown as swimlane columns or a timeline strip. Tracks drag between chapters.
-- Compatibility scoring: use existing BPM + key data. Camelot Wheel distance gives harmonic score (0–1). Energy diff gives energy score. Combine as weighted sum.
-- Export: each chapter → playlist in whichever target format. Already have Rekordbox/Serato export.
-
-**Status in Offcut:** Partial — playlists exist but no chapter/arc structure or compatibility ordering.
-
----
-
-## 02 · Graph Playlists
-
-**What it does:**  
-Displays tracks as nodes in a force-directed graph. Edges connect tracks with high compatibility. Hovering a node previews the track. Clicking expands to show its closest matches. Used to discover transition paths through a collection.
-
-**How to implement in Offcut:**
-- Graph data: for each track compute pairwise compatibility score against all other tracks. Store top-N (e.g. 10) edges per track in a `track_edges` table (`track_a`, `track_b`, `score REAL`).
-- Rendering: `d3-force` or `@react-spring/web` with a canvas-drawn graph. Nodes = circle sized by BPM or energy. Edges = lines weighted by score opacity.
-- Hover preview: play a 5-second excerpt via Web Audio API (same `readFile` → `decodeAudioData` pipeline we already have).
-- Build edges: O(N²) — for 10,000 tracks that's 100M comparisons, too slow on load. Instead compute lazily: when a track is focused, compute its top-N neighbours on demand in a worker.
-- Compatibility score formula:  
-  ```
-  score = 0.4 * harmonicScore(keyA, keyB)   // Camelot distance 0–1
-        + 0.3 * energyScore(energyA, energyB) // 1 - |a-b|/10
-        + 0.2 * bpmScore(bpmA, bpmB)           // 1 - |a-b|/30 clamped to 0
-        + 0.1 * genreScore(genreA, genreB)     // 1 if same, 0.5 if related, 0 otherwise
-  ```
-
-**Status in Offcut:** Not started. High effort — primarily the force-graph UI.
+| Feature | Status | Notes |
+|---------|--------|-------|
+| BPM + Key analysis | ✓ | analyzerWorker (JS) + Beat This! ONNX |
+| Energy (1–10) | ✓ | Schema, analysis, UI |
+| Danceability (0–1) | ✓ | Beat regularity + attack sharpness in analyzerWorker |
+| Genre field | ✓ | Text field + normalisation Smart Fix (manual, not audio-detected) |
+| Chapter / Set Builder | ✓ | Split / Swimlane / Timeline views + intelligence layer |
+| Magic Sort (per chapter) | ✓ | Greedy nearest-neighbour by compatibility score |
+| Seed suggestions | ✓ | Set Builder suggestion panel |
+| Arc health indicators | ✓ | Coloured dots between chapters |
+| Matching Tracks panel | ✓ | TrackDetail "04 mixable tracks" — missing Next Mode |
+| Auto-Group | ✓ | DBSCAN clustering in LibraryHealth |
+| Auto-Cue generation | ✓ | LibraryHealth batch + TrackDetail button (Mix In / Drop / Break / Outro) |
+| Beatgrid editor | ✓ | Inline GRID panel in player with TAP / SET BEAT HERE / AUTO (Beat This!) |
+| Smart Playlists | ✓ | 14-field rule builder |
+| Custom metadata fields | ✓ | Arbitrary key-value custom tags per track |
+| VirtualDJ export | ✓ | Writer + Sync page |
+| Duplicate detection | ✓ | LibraryHealth section 04 |
+| Missing file recovery | ✓ | LibraryHealth section 05 + Auto-Locate |
+| Write tags to file | ✓ | IPC handler + TrackDetail button |
+| M3U / CSV export | ✓ | Sidebar right-click on any playlist |
+| Watch folders | ✓ | Settings page |
+| Path mappings | ✓ | Settings page |
+| Play history + stats | ✓ | LibraryHealth section 07 |
 
 ---
 
-## 03 · Scatter Map
+## Phase 1 — Emotion / Mood Dimension  🔴 CURRENT
 
-**What it does:**  
-Plots every track in the library as a point in a 2D space. Tracks with similar musical characteristics cluster together ("vibe islands"). You can lasso-select a region and extract it as a playlist.
+**Djoid says:** *"Captures the mood a track evokes — whether euphoric, melancholic, or anything in between."*
+Mood is treated as a first-class axis alongside energy and danceability. It powers the graph edges, chapter arc health, and Next Mode weighting.
 
-**How to implement in Offcut:**
-- Dimensionality reduction: each track has a feature vector `[normBpm, normEnergy, harmonicGroup, normDanceability, normEmotion]`. Run UMAP or t-SNE to project to 2D. UMAP.js is a small JS library that runs in a worker.
-- Rendering: canvas scatter plot with zoom/pan. Each point sized ~4px, coloured by genre category colour from the existing `cat` palette.
-- Lasso select: track pointer drag to draw a polygon, then point-in-polygon check to extract track IDs.
-- On click: show a tooltip with title/artist. Double-click to load to deck.
-- Recalculate: run after each bulk import (deduplicate by hashing the input feature vectors).
+### What "fullest potential" means here
+- `mood` stored as a float (−1.0 → +1.0) in the DB: dark/tense on the left, bright/euphoric on the right
+- Auto-detected from audio in the existing analyzerWorker — no extra model needed
+- Categorical label derived from the numeric value (Dark / Melancholic / Neutral / Uplifting / Euphoric)
+- Visible everywhere: TrackDetail, Library column, TrackBrowserPanel in Set Builder, Mixable Tracks panel
+- Feeds into: compatibility score, auto-group weights, magic sort, arc health, suggestion scoring, Smart Playlist rules
+- FN-BUS filter chip for mood category
+- All integration readers initialise `mood: null`
 
-**Status in Offcut:** Not started. UMAP projection is the main new piece; the canvas infrastructure already exists in the waveform components.
+### Detection algorithm
+In `analyzerWorker.ts`, a new `detectMood()` function uses features already computed as by-products of BPM/key detection:
 
----
-
-## 04 · Auto Group (Auto Crates)
-
-**What it does:**  
-Analyses the full library and suggests groupings of compatible tracks without user input. Groups are non-destructive views (not permanent storage). Re-runs as the library grows.
-
-**How to implement in Offcut:**
-- Algorithm: k-means or DBSCAN clustering on the same feature vectors used for Scatter Map. DBSCAN is better here — no need to specify k, handles irregular cluster shapes, naturally produces "noise" tracks that don't fit any cluster.
-- Run in a Node.js worker (main process side) so it can access the full SQLite library without crossing IPC.
-- Results stored in a `generated_playlists` table with `type = 'autogroup'`. Shown in the sidebar under a "Generated" section.
-- Refresh trigger: manual button in the Analysis section or auto after import if track count changed by > 10%.
-- UI: show clusters ranked by size. Each cluster gets an auto-generated name from the most common genre + avg BPM, e.g. "Tech House · 130–135".
-
-**Status in Offcut:** Not started.
-
----
-
-## 05 · Magic Sort
-
-**What it does:**  
-Automatically reorders tracks within a playlist to create the most compatible playable sequence. Considers both harmonic key and energy flow simultaneously. Flags tracks that can't be placed without an incompatible jump.
-
-**How to implement in Offcut:**
-- This is a Hamiltonian path problem (NP-hard in general). Use a greedy nearest-neighbour heuristic: start from the highest-energy track, at each step pick the unvisited neighbour with the highest compatibility score.
-- Optionally run 2-opt improvement passes to un-cross obvious swap opportunities.
-- Works on the `compatibility score` defined above in §02.
-- Flagged tracks: those where the best available next-track score falls below a threshold (e.g. 0.35). Surface these in a separate "hard transitions" list the user can review.
-- Entry point: right-click a playlist → "Magic Sort" or a button in the playlist header.
-- Runs in a worker. For 100 tracks, nearest-neighbour + one 2-opt pass is < 100ms.
-
-**Status in Offcut:** Not started. Existing compatibility score building block needs to be added first.
-
----
-
-## 06 · Matching Tracks (Recommendations)
-
-**What it does:**  
-Two modes:  
-- **Matching mode:** Given a playlist, finds tracks from the full library that fit the playlist's overall vibe (thematic + energetic).  
-- **Next mode:** Finds the single best track to play after the last track in the playlist, weighting recent tracks more heavily.
-
-**How to implement in Offcut:**
-- Represent a playlist as a centroid: average of its tracks' feature vectors (BPM, energy, harmonic position, etc.).
-- For Matching mode: rank all non-playlist tracks by cosine similarity to the centroid. Return top 20.
-- For Next mode: weight the centroid computation heavily toward the last 3 tracks (e.g. weights `[1, 0.8, 0.6, 0.3, 0.3, …]` from the end). Return top 5 with a one-sentence "why" (e.g. "same key, +2 BPM, similar energy").
-- UI: a "Suggestions" panel that slides in from the right of the Library page when a playlist is active, or a context menu option "Find matching tracks".
-- Already have the library store and filtering infrastructure to show results in the existing track table.
-
-**Status in Offcut:** Not started.
-
----
-
-## 07 · Genre Detection
-
-**What it does:**  
-AI model classifies each track into a genre and subgenre. 87% accuracy claimed. Covers 30+ subgenres as of v1.2.4. Standardises naming so the library uses consistent conventions rather than whatever tags came with the files.
-
-**How to implement in Offcut:**
-- Best approach: use a pre-trained audio classification model. Options:
-  - **Essentia-TensorFlow** — open-source, includes genre models trained on Discogs taxonomy. Can run via `onnxruntime-node` after export.
-  - **Musicbrainz AcousticBrainz** — deprecated but its trained models are public.
-  - **Fallback:** tag normalisation without audio analysis — map free-text genre strings to a canonical taxonomy using a lookup table + fuzzy matching (fast, no model needed, lower accuracy).
-- Pipeline: decode audio → extract mel spectrogram (already implemented for beat analysis) → run genre model → write to `tracks.genre` + new `tracks.subgenre` column.
-- Run in batch via the Analysis section, or on import when genre tag is missing.
-
-**Status in Offcut:** Not started. Beat analysis ONNX pipeline (already built) provides the foundation.
-
----
-
-## 08 · AI Tagging — BPM, Key, Energy, Danceability, Emotion
-
-**What it does:**  
-Analyses each track and assigns six attributes: BPM, key, energy (kick strength + overall intensity), danceability (rhythmicality + syncopation), emotion/mood, genre. Displayed on track cards. Never modifies audio files.
-
-| Attribute    | Already in Offcut? |
-|--------------|--------------------|
-| BPM          | Yes — BPM worker   |
-| Key          | Yes — key worker   |
-| Energy       | Partial — `energy` column, set 1–10, not auto-detected |
-| Danceability | No                 |
-| Emotion/Mood | No                 |
-| Genre        | Partial — tag import only, no detection |
-
-**How to implement missing attributes:**
-
-**Energy (auto):** Compute RMS energy of the track. Optionally separate kick energy using the existing low-frequency band peaks. Normalise to 1–10 scale against the library distribution. Fast — O(N) over samples.
-
-**Danceability:** Measure onset regularity and syncopation from the beat grid (if available). Ratio of beats that align to a strict 4/4 grid vs. off-grid hits. Can also derive from low-frequency spectral flux. Range 0–1.
-
-**Emotion/Mood:** Requires a classification model. Valence (happy/sad) and arousal (energetic/calm) are the two standard axes (Russell circumplex model). Pre-trained models available via Essentia. Store as `mood_valence REAL, mood_arousal REAL` and map to human labels for display.
-
-**Status in Offcut:** BPM + key done. Energy field exists but manual. Danceability and mood not started.
-
----
-
-## 09 · Cue Points
-
-**What it does:**  
-Mark specific moments in tracks (verse starts, drops, mix-in/out points). Colour-coded, named. Sync to Rekordbox via its XML format.
-
-**Status in Offcut:** Fully implemented. Cue points stored in `cue_points` table. Colour-coded. Exported in Rekordbox XML. Shown on waveform.
-
-**Gaps vs Djoid:**  
-- Djoid has auto-generated cue points (e.g. detect first beat, chorus, drop via energy change detection). Offcut requires manual cue placement.
-- Auto-cue implementation: find the highest energy onset after the track's intro section (first 16–32 bars). Set the main cue there. Optionally set cue points at every significant energy change above a threshold.
-
----
-
-## 10 · Import
-
-**Supported sources:** Rekordbox, Traktor, Serato, Apple Music.
-
-**Status in Offcut:** Fully implemented for all four, plus Engine DJ and M3U.
-
----
-
-## 11 · Export
-
-**Supported destinations:** Rekordbox, Serato, VirtualDJ, Traktor.
-
-**Status in Offcut:** Rekordbox XML, Traktor NML, Serato, Engine DJ. No VirtualDJ yet.
-
-**VirtualDJ implementation:**  
-VirtualDJ stores its database in `VirtualDJ/database.xml`. Format is similar to Rekordbox XML — tracks have `<Song>` elements with `FilePath`, `Tags`, `Poi` (cue points). Implement as a new writer in `src/main/integrations/virtualdj/`.
-
----
-
-## 12 · Library Organisation & Search
-
-**Djoid capabilities:** Filter by genre, subgenre, BPM, energy, danceability, mood, release date, custom tags. Up to 10,000 tracks (limit being removed).
-
-**Status in Offcut:** Filtering by BPM, key, genre, artist, rating, title. Smart playlists with rules. No limit.
-
-**Gaps:**
-- No danceability / mood filter (needs those attributes first — see §08)
-- No subgenre column
-- Release date not stored (add `releaseYear INTEGER` column via migration)
-- Custom freeform tags exist (`tags TEXT[]` in schema) but no UI to filter by them in FilterBar
-
----
-
-## Priority Implementation Order
-
-Based on effort vs. value for an Offcut user:
-
-| Priority | Feature | Effort | Value |
-|----------|---------|--------|-------|
-| 1 | Auto Energy scoring on analysis | Low | High — fills gap in existing field |
-| 2 | Matching Tracks (recommendations) | Medium | High — surfaces compatible tracks in-session |
-| 3 | Magic Sort | Medium | High — one-click playlist sequencing |
-| 4 | Auto-cue points | Medium | High — removes manual cue work |
-| 5 | Danceability scoring | Medium | Medium |
-| 6 | Genre Detection (ONNX) | High | Medium |
-| 7 | Auto Group (clustering) | High | Medium |
-| 8 | Chapter Builder UI | High | High — major workflow feature |
-| 9 | Scatter Map | High | Medium |
-| 10 | Graph Playlists | Very High | Medium |
-| 11 | Mood/Valence detection | High | Low (niche) |
-| 12 | VirtualDJ export | Low | Low (small user base) |
-
----
-
-## Technical Building Blocks Summary
-
-Most intelligence features share three building blocks. Build these first and the rest follows:
-
-**1. Track Feature Vector**  
-`[normBpm, normEnergy, camelotPosition, normDanceability, moodValence, moodArousal]`  
-Stored as `tracks.feature_vector BLOB` (Float32Array, 6 floats, 24 bytes per track).  
-Recomputed after each analysis pass.
-
-**2. Compatibility Score**  
-```typescript
-function compatibility(a: Track, b: Track): number {
-  const harmonic = camelotDistance(a.key, b.key)        // 0–1
-  const energy   = 1 - Math.min(1, Math.abs((a.energy ?? 5) - (b.energy ?? 5)) / 5)
-  const bpm      = 1 - Math.min(1, Math.abs((a.bpm ?? 120) - (b.bpm ?? 120)) / 30)
-  return 0.45 * harmonic + 0.35 * energy + 0.20 * bpm
-}
 ```
-Already have `camelotDistance` implied by the `keyBlipColor` / `CamelotWheel` component.
+spectralBrightness = energy_above_2kHz / total_energy   (high = bright = positive)
+bassWeight        = energy_below_200Hz / total_energy   (high = heavy bass = negative)
+keyModeBonus      = major key → +0.20, minor → −0.15
+```
 
-**3. Batch Analysis Worker**  
-Extend the existing BPM/key worker to also emit energy, danceability, and (optionally) mood values in the same pass. Avoids re-decoding audio multiple times.
+`rawValence = spectralBrightness − (bassWeight × 0.6) + keyModeBonus`
+Normalise to [−1, 1] and clip.
+
+This is not perfect — heavy techno in a major key will score oddly — but it produces consistent relative rankings within a library. DJs can override manually.
+
+### Scale labels
+
+| Score | Label | Examples |
+|-------|-------|---------|
+| −1.0 → −0.6 | Dark | heavy techno, industrial, dark ambient |
+| −0.6 → −0.2 | Melancholic | minor-key house, late-night deep |
+| −0.2 → +0.2 | Neutral | functional peak-time, groove-focused |
+| +0.2 → +0.6 | Uplifting | melodic house, progressive, anthemic |
+| +0.6 → +1.0 | Euphoric | hands-in-the-air, major-key trance/house |
+
+### Files to change
+- `src/shared/types.ts` — `mood: number | null` on Track
+- `src/main/library/schema.ts` — migration: `ALTER TABLE tracks ADD COLUMN mood REAL`
+- `src/main/library/db.ts` — `rowToTrack`: `mood: row.mood ?? null`
+- `src/main/library/smart-playlist.ts` — `mood` field support
+- `src/main/ipc/library.ts` — `COL_MAP` + `'mood'` in `SmartRuleField`
+- `src/renderer/src/lib/analyzerWorker.ts` — `detectMood()` + include in result
+- `src/renderer/src/lib/analyzer.ts` — `mood` in `AnalyzerResult`
+- `src/renderer/src/lib/compatibility.ts` — weight mood in `compatibilityScore()`
+- `src/renderer/src/components/TrackDetail.tsx` — mood bar in inspector + edit tab
+- `src/renderer/src/pages/Library/index.tsx` — mood column
+- `src/renderer/src/pages/SetBuilder/index.tsx` — mood in `computeProfile()`, `fitScore()`, arc health
+- `src/renderer/src/components/FnBus.tsx` — mood filter chips
+- All 6 integration readers + watch-folder — `mood: null`
 
 ---
 
-*Last updated: 2026-05-20*
+## Phase 2 — Scatter Map (Library Compass page)  🔵 NEXT
+
+**Djoid says:** *"Plots every track in your library as a point in 2D space based on musical characteristics. Distance equals difference, proximity equals compatibility."*
+Djoid also has a visual "Record Grid" — a tile view of tracks by cover art. The Scatter Map is the spatial/analytical version.
+
+### What "fullest potential" means here
+- New nav section "Compass" (telescope or compass icon)
+- Canvas-based 2D scatter plot — the same canvas infrastructure already used in WaveformGL
+- Default axes: X = danceability, Y = energy. Switchable: X = mood, Y = energy; X = BPM, Y = energy
+- Dot colour: Camelot key colour (reuse existing colour map) OR genre colour. Switchable toggle.
+- Dot size: proportional to rating (1–5) or uniform
+- Dot opacity: full = fully analysed; semi-transparent = missing fields
+- Zoom: scroll wheel to zoom in/out (pivot on cursor); pan with drag
+- Hover tooltip: album art thumbnail + title, artist, BPM, key, energy, mood label
+- Click: opens TrackDetail side panel
+- Lasso select: drag to draw a freehand region → selected dots highlight → "Add N to Set Builder" or "Create Playlist" button appears
+- Filter sidebar: genre chips, key chips (Camelot), mood category buttons → non-matching dots dim to 10% opacity
+- "Cluster outlines": after Auto-Group is run, draw soft convex-hull shapes around each auto-group cluster
+- Empty / no-data dots: shown as small hollow circles with tooltip "Needs analysis"
+
+### Technical approach
+- No UMAP/t-SNE needed for default axes (they map directly to X/Y)
+- For a "similarity" scatter (like Djoid's true scatter map), optionally run UMAP in a Web Worker on the feature vector `[bpm_norm, energy_norm, camelot_pos, danceability, mood]` to get 2D coords. Store as `tracks.scatter_x`, `tracks.scatter_y`.
+- Canvas render: each dot is 6px at 1× zoom, scales with zoom. Use quadtree for efficient hit-testing on hover.
+
+---
+
+## Phase 3 — Graph View in Set Builder (4th view mode)  🟡 PLANNED
+
+**Djoid says:** *"Every 2 tracks you connect have a relationship. Once connected, they call tracks that share a similar nature."* The Graph Selector rings current selections with compatible candidates — hover to pre-listen, click to add.
+
+### What "fullest potential" means here
+- 4th view mode tab: Graph (alongside Split / Swimlane / Timeline)
+- Canvas force-directed layout:
+  - **Anchored nodes** (tracks in the active chapter): dark filled circles, labelled, fixed positions
+  - **Candidate ring** (compatible library tracks not yet added): lighter circles floating around anchors, distance from anchor = inverse compatibility score
+  - **Edges** between anchored nodes: coloured by match type (green = harmonic, orange = BPM-only, blue = mood/energy match); edge thickness = score
+- Hover candidate: expanded card showing BPM, key, energy, mood + 8-bar audio preview clip
+- Click candidate: add to chapter → becomes an anchor → graph re-runs layout → new candidates surface
+- Right-click: "Add to chapter" | "Open in detail" | "Dismiss" (hides from candidates permanently)
+- Chapter tab strip at top: switch between chapters; each chapter has its own graph
+- Empty chapter state: "Add 1–2 seed tracks to start exploring"
+- Physics: simple spring-repulsion (Coulomb + Hooke), settles in ~300ms, re-runs on each add
+- Candidate pool: top 30 tracks from library by compatibility to the chapter's centroid profile
+
+---
+
+## Phase 4 — Matching Tracks: Next Mode  🟡 PLANNED
+
+**Djoid says:** *"Next Mode — designed for flow. Finds the perfect track following the last one in your playlist. Weights recent tracks more heavily."*
+
+### What "fullest potential" means here
+- Toggle in the Mixable Tracks panel header: "MATCH" | "NEXT" buttons
+- **Next mode scoring:**
+  ```
+  score = camelotScore × 0.30
+        + bpmScore     × 0.25
+        + energyContinuity × 0.20   // reward ±1.5 energy of last track
+        + moodContinuity   × 0.15   // reward continuing the mood direction
+        + momentumScore    × 0.10   // small reward if slightly higher energy (building)
+  ```
+- Context source: last 3 tracks from active Set Builder chapter OR deck play history
+- Show which factors drove the score (e.g. "harmonic ✓  energy +1  mood →")
+- "Why" tooltip on each suggestion explaining the top scoring factors
+
+---
+
+## Phase 5 — Advanced Multi-Dimension Search  🟡 PLANNED
+
+**Djoid says:** *"Filter across all attributes simultaneously: genre, BPM range, energy levels, danceability, mood, release date."*
+
+### What "fullest potential" means here
+- Accessible from nav rail (magnifying glass / "Search" section)
+- Five range controls with live result updating:
+  - BPM: dual-handle range slider (40–200)
+  - Energy: dual-handle range slider (1–10)
+  - Danceability: dual-handle range slider (0–1)
+  - Mood: dual-handle range slider (−1 dark → +1 euphoric) + category chips
+  - Key: Camelot wheel multi-select
+- Filter chips: Genre (multi-select), Tags (multi-select), Has BPM / Has Cues / Has Beatgrid
+- Result count shown as slider moves (e.g. "312 tracks match")
+- Result list: same TrackRow as Library page with all columns
+- "Send N to Set Builder" → adds all matching to active chapter
+- "Save as Smart Playlist" → auto-generates rule set from current slider positions
+- ⌘F keyboard shortcut to focus
+
+---
+
+## Phase 6 — Genre Detection from Audio  🔵 STRETCH
+
+**Djoid says:** *"AI model classifies genre from audio characteristics — not metadata. 87% accuracy. 30+ subgenres."*
+
+### Approach options
+1. **Rule-based inference** (no model): combine BPM + energy + danceability + mood + key mode into genre heuristics — fast, no model needed, ~60–70% accuracy for common genres
+2. **ONNX genre classifier**: a small CNN trained on mel-spectrograms. Could run in the existing Beat This! child-process worker. Requires a trained model (open-source options: Essentia-TensorFlow, Discogs-trained models).
+
+Rule-based is the right first step; ONNX model is the stretch goal within this phase.
+
+---
+
+## Djoid Concepts Crate Already Does Better
+
+| Djoid capability | Crate advantage |
+|-----------------|----------------|
+| Cue points (basic) | Beat This! ONNX auto-cue (Mix In / Drop / Break / Outro) + beatgrid editor |
+| Export | Rekordbox, Serato, Traktor, Engine DJ, VirtualDJ — Djoid exports nothing |
+| Library health | Duplicate scan, missing files, auto-locate, Smart Fixes |
+| Custom metadata | Arbitrary key-value custom tags; Djoid has fixed fields only |
+| Smart playlists | 14-field rule builder; Djoid has no smart playlists |
+| Write tags to file | ID3/FLAC tag writer; Djoid does not touch files |
+| Beatgrid editing | Inline GRID editor in player with tap, set-beat-here, neural AUTO |
+
+---
+
+## Technical Building Blocks (shared across phases)
+
+### Track Feature Vector
+`[bpm_norm, energy_norm, camelot_pos, danceability, mood]` — 5 floats
+Used by: compatibility score, auto-group, magic sort, scatter map positioning, graph edge weights.
+
+### Compatibility Score (current)
+```typescript
+camelotScore × 0.45 + energyScore × 0.30 + bpmScore × 0.25
+```
+
+### Compatibility Score (after Phase 1 — with mood)
+```typescript
+camelotScore × 0.35 + energyScore × 0.25 + bpmScore × 0.20 + moodScore × 0.20
+```
+`moodScore = 1 − Math.min(1, Math.abs(a.mood − b.mood) / 1.5)`
+
+---
+
+## Sprint Order
+
+```
+Sprint 1:  Phase 1 — Emotion/Mood dimension ← BUILDING NOW
+Sprint 2:  Phase 2 — Scatter Map / Library Compass
+Sprint 3:  Phase 3 — Graph view in Set Builder
+Sprint 4:  Phase 4 — Next Mode + Phase 5 — Advanced search
+Sprint 5:  Phase 6 — Genre detection (rule-based first, ONNX stretch)
+```

@@ -40,29 +40,29 @@ uniform int   u_style;          // 0=gradient 1=three-band 2=rgb
 
 out vec4 outColor;
 
-// CDJ spectral gradient — matches the Canvas 2D colour stops exactly.
+// Earthen spectral gradient — cream peaks, terracotta mids, earth-dark edges.
 // In WebGL, gl_FragCoord.y = 0 at the bottom, so the gradient is mirrored.
+// t = 0 at edge (low amplitude), t → 1 at centre (high amplitude).
 vec4 cdj(float yFrac, bool past) {
-  float t = 1.0 - abs(yFrac - 0.5) * 2.0;  // 0 at edges, 1 at centre
-  // Initialise to avoid "use of uninitialized variable" on strict drivers
+  float t = 1.0 - abs(yFrac - 0.5) * 2.0;
   vec3 col = vec3(0.0);
   if (past) {
-    if      (t < 0.18) col = vec3(0.00, 0.35, 0.51);
-    else if (t < 0.36) col = vec3(0.08, 0.43, 0.63);
-    else if (t < 0.46) col = vec3(0.31, 0.39, 0.51);
-    else if (t < 0.54) col = vec3(0.47, 0.31, 0.16);
-    else if (t < 0.64) col = vec3(0.31, 0.39, 0.51);
-    else if (t < 0.82) col = vec3(0.08, 0.43, 0.63);
-    else               col = vec3(0.00, 0.35, 0.51);
-    return vec4(col * 0.55, 1.0);
+    if      (t < 0.18) col = vec3(0.15, 0.12, 0.08);
+    else if (t < 0.36) col = vec3(0.38, 0.34, 0.27);
+    else if (t < 0.46) col = vec3(0.30, 0.18, 0.10);
+    else if (t < 0.54) col = vec3(0.26, 0.14, 0.07);
+    else if (t < 0.64) col = vec3(0.30, 0.18, 0.10);
+    else if (t < 0.82) col = vec3(0.38, 0.34, 0.27);
+    else               col = vec3(0.15, 0.12, 0.08);
+    return vec4(col * 0.85, 1.0);
   } else {
-    if      (t < 0.18) col = vec3(0.08, 0.75, 1.00);
-    else if (t < 0.36) col = vec3(1.00, 1.00, 1.00);
-    else if (t < 0.46) col = vec3(1.00, 0.75, 0.08);
-    else if (t < 0.54) col = vec3(1.00, 0.29, 0.04);
-    else if (t < 0.64) col = vec3(1.00, 0.75, 0.08);
-    else if (t < 0.82) col = vec3(1.00, 1.00, 1.00);
-    else               col = vec3(0.08, 0.75, 1.00);
+    if      (t < 0.18) col = vec3(0.42, 0.35, 0.24);
+    else if (t < 0.36) col = vec3(0.925, 0.890, 0.800);
+    else if (t < 0.46) col = vec3(0.840, 0.500, 0.280);
+    else if (t < 0.54) col = vec3(0.761, 0.408, 0.243);
+    else if (t < 0.64) col = vec3(0.840, 0.500, 0.280);
+    else if (t < 0.82) col = vec3(0.925, 0.890, 0.800);
+    else               col = vec3(0.42, 0.35, 0.24);
     return vec4(col, 1.0);
   }
 }
@@ -88,18 +88,19 @@ void main() {
   const float SC = 0.92;
 
   if (u_style == 1) {
-    // Three-band: blue highs, orange mids, cream lows
+    // Earthen bands — drawn low→mid→high so high (cream) wins at peaks.
+    // low first = earth-brown background; mid overwrites; high (cream) is frontmost.
     vec4 col = vec4(0.0);
-    if (dist < high * SC) col = past ? vec4(0.06,0.27,0.57,0.38) : vec4(0.10,0.53,1.00,0.90);
-    if (dist < mid  * SC) col = past ? vec4(0.39,0.20,0.05,0.40) : vec4(0.84,0.46,0.11,0.94);
-    if (dist < low  * SC) col = past ? vec4(0.51,0.45,0.33,0.42) : vec4(0.97,0.91,0.76,0.98);
+    if (dist < low  * SC) col = past ? vec4(0.18,0.15,0.10,0.42) : vec4(0.420,0.353,0.243,0.98);
+    if (dist < mid  * SC) col = past ? vec4(0.32,0.17,0.10,0.40) : vec4(0.761,0.408,0.243,0.94);
+    if (dist < high * SC) col = past ? vec4(0.42,0.40,0.35,0.38) : vec4(0.925,0.890,0.800,0.90);
     if (col.a > 0.0) outColor = col;
   } else if (u_style == 2) {
-    // RGB: red bass, green mids, blue highs
+    // RGB: red bass (back), green mids, blue highs (front)
     vec4 col = vec4(0.0);
-    if (dist < high * SC) col = past ? vec4(0.07,0.07,0.59,0.38) : vec4(0.14,0.49,1.00,0.92);
-    if (dist < mid  * SC) col = past ? vec4(0.07,0.45,0.07,0.38) : vec4(0.14,0.84,0.22,0.92);
     if (dist < low  * SC) col = past ? vec4(0.59,0.07,0.07,0.38) : vec4(1.00,0.14,0.14,0.92);
+    if (dist < mid  * SC) col = past ? vec4(0.07,0.45,0.07,0.38) : vec4(0.14,0.84,0.22,0.92);
+    if (dist < high * SC) col = past ? vec4(0.07,0.07,0.59,0.38) : vec4(0.14,0.49,1.00,0.92);
     if (col.a > 0.0) outColor = col;
   } else {
     // CDJ spectral gradient
@@ -356,7 +357,7 @@ export function WaveformGL({
       for (const m of beatgrid) { if (m.isDownbeat) barNums.set(m.positionMs, barCount++) }
 
       const lw = Math.round(dpr)
-      ctx.fillStyle = 'rgba(255,255,255,0.14)'
+      ctx.fillStyle = 'rgba(110,101,83,0.28)'   // --deck-mute faint beat lines
       for (const m of beatgrid) {
         if (m.isDownbeat) continue
         const t = m.positionMs / 1000
@@ -370,10 +371,10 @@ export function WaveformGL({
         const t = m.positionMs / 1000
         if (t < startTime - 0.05 || t > startTime + visDur + 0.05) continue
         const x = Math.round(((t - startTime) / visDur) * cw)
-        ctx.fillStyle = 'rgba(255,255,255,0.52)'; ctx.fillRect(x, 0, lw, ch)
+        ctx.fillStyle = 'rgba(216,106,74,0.55)'; ctx.fillRect(x, 0, lw, ch)  // terracotta downbeat
         const bn = barNums.get(m.positionMs)
         if (bn !== undefined) {
-          ctx.fillStyle = 'rgba(255,255,255,0.60)'
+          ctx.fillStyle = 'rgba(235,229,211,0.55)'
           ctx.fillText(String(bn), x, Math.round(8.5 * dpr))
         }
       }
@@ -408,13 +409,13 @@ export function WaveformGL({
     }
 
     // Center baseline
-    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(0, mid - 0.5, cw, 1)
+    ctx.fillStyle = 'rgba(235,229,211,0.10)'; ctx.fillRect(0, mid - 0.5, cw, 1)
 
-    // Playhead
+    // Playhead — terracotta
     const cx = cw / 2
-    ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(cx - 6 * dpr, 0, 12 * dpr, ch)
-    ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(cx - 3 * dpr, 0,  6 * dpr, ch)
-    ctx.fillStyle = 'rgba(255,255,255,0.97)'; ctx.fillRect(cx - dpr,     0,  2 * dpr, ch)
+    ctx.fillStyle = 'rgba(216,106,74,0.06)';  ctx.fillRect(cx - 6 * dpr, 0, 12 * dpr, ch)
+    ctx.fillStyle = 'rgba(216,106,74,0.18)';  ctx.fillRect(cx - 3 * dpr, 0,  6 * dpr, ch)
+    ctx.fillStyle = '#D86A4A';                 ctx.fillRect(cx - dpr,     0,  2 * dpr, ch)
   }, [duration, cuePoints, mainCueTime, beatgrid, loopStart, loopEnd, isLooping, pps])
 
   // ── RAF loop ──────────────────────────────────────────────────────────────

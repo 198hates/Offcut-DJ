@@ -203,6 +203,7 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
         <Spec label="Energy" value={draft.energy ? `${draft.energy}/10` : '—'} />
         <Spec label="Danceability" value={draft.danceability != null ? `${Math.round(draft.danceability * 100)}%` : '—'} />
         <Spec label="Plays" value={draft.playCount > 0 ? String(draft.playCount) : '—'} />
+        <MoodBar mood={draft.mood} />
         <Spec label="Last played" value={draft.lastPlayedAt ? new Date(draft.lastPlayedAt).toLocaleDateString() : '—'} />
         <Spec label="Genre" value={draft.genre || '—'} />
         <Spec label="Rating" value={draft.rating ? '★'.repeat(draft.rating) + (draft.rating < 5 ? '☆'.repeat(5 - draft.rating) : '') : '—'} />
@@ -257,7 +258,7 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
               .sort((a, b) => a.positionMs - b.positionMs)
               .map((cue, i) => (
                 <div key={i} className="flex items-center gap-2 py-1.5 border-b border-border/20 last:border-b-0">
-                  <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: cue.color || '#FF4D14' }} />
+                  <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: cue.color || '#D86A4A' }} />
                   <span className="font-mono text-[9px] text-muted w-7 shrink-0">
                     {cue.type === 'hotcue' ? `H${(cue.index ?? 0) + 1}` : 'MEM'}
                   </span>
@@ -301,6 +302,49 @@ function Spec({ label, value, accent }: { label: string; value: string; accent?:
     <div className="flex justify-between items-baseline py-1.5 border-b border-border/20">
       <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted shrink-0">{label}</span>
       <span className={`font-mono text-[10px] font-bold ml-2 text-right truncate ${accent ? 'text-accent' : 'text-ink'}`}>{value}</span>
+    </div>
+  )
+}
+
+// ── Mood labels ───────────────────────────────────────────────────────────────
+const MOOD_LABEL = (v: number): string => {
+  if (v <= -0.6) return 'Dark'
+  if (v <= -0.2) return 'Melancholic'
+  if (v <   0.2) return 'Neutral'
+  if (v <   0.6) return 'Uplifting'
+  return 'Euphoric'
+}
+
+// ── Mood bar — horizontal slider from Dark to Euphoric ────────────────────────
+function MoodBar({ mood }: { mood: number | null }): JSX.Element {
+  return (
+    <div className="py-1.5 border-b border-border/20 col-span-2">
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">Mood</span>
+        {mood != null && (
+          <span className="font-mono text-[10px] font-bold text-ink">
+            {MOOD_LABEL(mood)}
+            <span className="text-muted font-normal ml-1.5">({mood > 0 ? '+' : ''}{mood.toFixed(2)})</span>
+          </span>
+        )}
+        {mood == null && <span className="font-mono text-[10px] text-muted">—</span>}
+      </div>
+      {/* Gradient track */}
+      <div className="relative h-2 rounded-full overflow-hidden"
+        style={{ background: 'linear-gradient(to right, #2a1f3d 0%, #4a3860 20%, #6e6553 45%, #c8904a 70%, #f5c842 100%)' }}>
+        {mood != null && (
+          <div
+            className="absolute top-0 bottom-0 w-2 -translate-x-1/2 rounded-full bg-white shadow"
+            style={{ left: `${((mood + 1) / 2) * 100}%`, boxShadow: '0 0 4px rgba(255,255,255,0.8)' }}
+          />
+        )}
+      </div>
+      {/* Scale labels */}
+      <div className="flex justify-between mt-0.5">
+        {['Dark', 'Melancholic', 'Neutral', 'Uplifting', 'Euphoric'].map((l) => (
+          <span key={l} className="font-mono text-[7px] text-muted/50">{l}</span>
+        ))}
+      </div>
     </div>
   )
 }
@@ -376,7 +420,7 @@ function EditTab({ draft, set }: { draft: Track; set: <K extends keyof Track>(ke
                 className="flex-1 h-5 rounded-sm transition-all"
                 style={{
                   background: draft.energy != null && n <= draft.energy
-                    ? `rgba(255,77,20,${0.4 + (n / 10) * 0.6})`
+                    ? `rgba(216,106,74,${0.4 + (n / 10) * 0.6})`
                     : 'rgb(var(--border-rgb) / 0.4)'
                 }}
                 title={`Energy ${n}`}
@@ -553,7 +597,7 @@ function CuePointList({ cuePoints, onChange }: { cuePoints: CuePoint[]; onChange
     <div className="space-y-1">
       {[...hotcues, ...memory].map((cue, i) => (
         <div key={i} className="flex items-center gap-2 text-xs">
-          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cue.color || '#FF4D14' }} />
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cue.color || '#D86A4A' }} />
           <span className="font-mono text-[9px] text-muted w-7 shrink-0">
             {cue.type === 'hotcue' ? `H${cue.index + 1}` : 'MEM'}
           </span>

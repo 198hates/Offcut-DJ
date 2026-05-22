@@ -16,6 +16,7 @@ export interface AnalyzerResult {
   key: string | null      // Camelot notation e.g. "8B"
   energy: number | null   // 1–10 perceived intensity score
   danceability: number | null  // 0–1
+  mood: number | null     // −1.0 (dark/tense) → +1.0 (bright/euphoric)
   offsetMs: number | null // first-beat offset from t=0 (ms) — null if BPM unavailable
   suggestedCues: SuggestedCue[]
 }
@@ -26,11 +27,12 @@ self.onmessage = (e: MessageEvent<AnalyzerInput>) => {
   const key          = detectKey(samples, sampleRate)
   const energy       = detectEnergy(samples, sampleRate)
   const danceability = detectDanceability(samples, sampleRate, bpm)
+  const mood         = detectMood(samples, sampleRate, key)
   const offsetMs     = bpm != null ? detectBeatPhase(samples, sampleRate, bpm) : null
   const suggestedCues = (bpm != null && offsetMs != null)
     ? detectStructuralCues(samples, sampleRate, bpm, offsetMs)
     : []
-  self.postMessage({ bpm, key, energy, danceability, offsetMs, suggestedCues } satisfies AnalyzerResult)
+  self.postMessage({ bpm, key, energy, danceability, mood, offsetMs, suggestedCues } satisfies AnalyzerResult)
 }
 
 // ── BPM via onset-strength autocorrelation ────────────────────────────────────
@@ -472,7 +474,7 @@ function detectStructuralCues(
   }
   if (dropBar >= 0) {
     dropBar = snap(dropBar, 4)
-    cues.push({ positionMs: bars[dropBar], label: 'Drop', color: '#FF4D14' })
+    cues.push({ positionMs: bars[dropBar], label: 'Drop', color: '#D86A4A' })
   }
 
   // ── Cue 3: breakdown ──────────────────────────────────────────────────────
@@ -504,6 +506,88 @@ function detectStructuralCues(
   }
 
   return cues
+}
+
+// ── Mood / Valence (−1 dark → +1 euphoric) ───────────────────────────────────
+// Three factors combine into a raw valence score, then normalised to [−1, 1]:
+//
+//   spectralBrightness = energy above 2 kHz / total energy
+//     → high treble content = bright, airy, positive
+//   bassWeight = energy below 200 Hz / total energy
+//     → heavy bass dominance = dark, tense, negative
+//   keyModeBonus = +0.20 for major keys (Camelot "B"), −0.15 for minor ("A")
+//
+// rawValence = spectralBrightness − bassWeight × 0.6 + keyModeBonus
+// Scaled to [−1, 1] using empirical bounds (−0.4 … +0.6 in practice).
+
+function detectMood(samples: Float32Array, sampleRate: number, key: string | null): number | null {
+  // Key mode bonus (Camelot: B suffix = major, A suffix = minor)
+  const isMajor = key ? key.toUpperCase().endsWith('B') : null
+  const keyModeBonus = isMajor === null ? 0 : isMajor ? 0.20 : -0.15
+
+  // Work at ~11 kHz — captures up to 5.5 kHz which covers the "brightness" band
+  const TARGET  = 11025
+  const factor  = Math.max(1, Math.floor(sampleRate / TARGET))
+  const actual  = sampleRate / factor
+  const maxSrc  = Math.min(samples.length, sampleRate * 60)   // first 60 s is enough
+  const len     = Math.floor(maxSrc / factor)
+
+  if (len < 1024) {
+    // Too short — rely only on key mode
+    return Math.max(-1, Math.min(1, Math.round(keyModeBonus * 100) / 100))
+  }
+
+  // Downsample
+  const down = new Float32Array(len)
+  for (let i = 0; i < len; i++) {
+    let s = 0
+    const base = i * factor
+    const end  = Math.min(base + factor, maxSrc)
+    for (let j = base; j < end; j++) s += samples[j]
+    down[i] = s / (end - base)
+  }
+
+  // Hann window + FFT over 1024-sample frames, 512-sample hop
+  const FFT_SIZE = 1024
+  const HOP      = 512
+  const nFrames  = Math.floor((len - FFT_SIZE) / HOP)
+
+  const hann = new Float32Array(FFT_SIZE)
+  for (let i = 0; i < FFT_SIZE; i++) hann[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (FFT_SIZE - 1))
+
+  let totalPow = 0, bassPow = 0, highPow = 0
+
+  for (let frame = 0; frame < nFrames; frame++) {
+    const start = frame * HOP
+    const re    = new Float64Array(FFT_SIZE)
+    const im    = new Float64Array(FFT_SIZE)
+    for (let i = 0; i < FFT_SIZE; i++) re[i] = (down[start + i] ?? 0) * hann[i]
+
+    fft(re, im)
+
+    for (let bin = 1; bin < FFT_SIZE / 2; bin++) {
+      const freq  = bin * actual / FFT_SIZE
+      const power = re[bin] * re[bin] + im[bin] * im[bin]
+      totalPow += power
+      if (freq < 200)  bassPow  += power
+      if (freq > 2000) highPow  += power
+    }
+  }
+
+  if (totalPow === 0) {
+    return Math.max(-1, Math.min(1, Math.round(keyModeBonus * 100) / 100))
+  }
+
+  const spectralBrightness = highPow / totalPow
+  const bassWeight         = bassPow / totalPow
+
+  // Combine: brightness pulls positive, bass pulls negative, mode adjusts
+  const rawValence = spectralBrightness - bassWeight * 0.6 + keyModeBonus
+
+  // Empirical bounds: rawValence typically sits in [−0.4, +0.6].
+  // Map that range linearly to [−1, +1].
+  const normalised = (rawValence - 0.1) / 0.5   // centre ~0.1, scale ÷0.5
+  return Math.max(-1, Math.min(1, Math.round(normalised * 100) / 100))
 }
 
 // ── Cooley-Tukey radix-2 in-place FFT ────────────────────────────────────────

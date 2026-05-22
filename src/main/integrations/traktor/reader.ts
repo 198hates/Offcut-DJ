@@ -69,6 +69,8 @@ export function importFromIntegration(db: Database.Database, nmlPath: string): I
         beatgrid: [],
           energy: null,
           danceability: null,
+          mood: null,
+          analysedBeatgrid: null,
           color: '',
           playCount: 0,
           lastPlayedAt: null,

@@ -16,9 +16,18 @@ class AudioEngine {
   private source: AudioBufferSourceNode | null = null
   private gainNode: GainNode | null = null
 
+  // 3-band EQ (insert before gain)
+  private eqLow:  BiquadFilterNode | null = null   // low shelf  ~200 Hz
+  private eqMid:  BiquadFilterNode | null = null   // peaking    ~1 kHz
+  private eqHigh: BiquadFilterNode | null = null   // high shelf ~8 kHz
+
+  // Post-fader analyser for VU metering
+  private analyser:     AnalyserNode | null = null
+  private analyserBuf:  Float32Array        = new Float32Array(256)
+
   // Playback tracking
-  private startPos = 0            // buffer position when source last started
-  private startedAt = 0           // ctx.currentTime when source last started
+  private startPos = 0
+  private startedAt = 0
   private _playing = false
 
   // Settings that persist across play() calls
@@ -27,6 +36,9 @@ class AudioEngine {
   private _looping = false
   private _loopStart = 0
   private _loopEnd = 0
+  private _eqLow  = 0   // dB
+  private _eqMid  = 0
+  private _eqHigh = 0
 
   // Paused position
   private pausedAt = 0
@@ -40,9 +52,40 @@ class AudioEngine {
   private getCtx(): AudioContext {
     if (!this.ctx) {
       this.ctx = new AudioContext()
+
+      // EQ filters
+      this.eqLow = this.ctx.createBiquadFilter()
+      this.eqLow.type = 'lowshelf'
+      this.eqLow.frequency.value = 200
+      this.eqLow.gain.value = this._eqLow
+
+      this.eqMid = this.ctx.createBiquadFilter()
+      this.eqMid.type = 'peaking'
+      this.eqMid.frequency.value = 1000
+      this.eqMid.Q.value = 0.8
+      this.eqMid.gain.value = this._eqMid
+
+      this.eqHigh = this.ctx.createBiquadFilter()
+      this.eqHigh.type = 'highshelf'
+      this.eqHigh.frequency.value = 8000
+      this.eqHigh.gain.value = this._eqHigh
+
+      // Gain (channel fader × crossfader)
       this.gainNode = this.ctx.createGain()
       this.gainNode.gain.value = this._volume
-      this.gainNode.connect(this.ctx.destination)
+
+      // Post-fader analyser for VU meter
+      this.analyser = this.ctx.createAnalyser()
+      this.analyser.fftSize = 256
+      this.analyser.smoothingTimeConstant = 0.65
+      this.analyserBuf = new Float32Array(this.analyser.fftSize)
+
+      // Chain: EQ → gain → analyser → speakers
+      this.eqLow.connect(this.eqMid)
+      this.eqMid.connect(this.eqHigh)
+      this.eqHigh.connect(this.gainNode)
+      this.gainNode.connect(this.analyser)
+      this.analyser.connect(this.ctx.destination)
     }
     if (this.ctx.state === 'suspended') this.ctx.resume()
     return this.ctx
@@ -90,7 +133,8 @@ class AudioEngine {
       this.source.loopEnd = this._loopEnd
     }
 
-    this.source.connect(this.gainNode)
+    // Route through EQ chain (eqLow is guaranteed to exist after getCtx())
+    this.source.connect(this.eqLow!)
     this.source.onended = () => {
       if (this._playing) {
         this._playing = false
@@ -164,6 +208,40 @@ class AudioEngine {
     }
   }
   get playbackRate(): number { return this._rate }
+
+  // ── EQ ────────────────────────────────────────────────────────────────────
+  // Range: −18 dB (kill) to +6 dB (boost). Clamped here; BiquadFilterNode
+  // can handle values outside this but extremes sound bad.
+
+  setEqGain(band: 'high' | 'mid' | 'low', db: number): void {
+    const clamped = Math.max(-24, Math.min(6, db))
+    if (band === 'high') {
+      this._eqHigh = clamped
+      if (this.eqHigh) this.eqHigh.gain.value = clamped
+    } else if (band === 'mid') {
+      this._eqMid = clamped
+      if (this.eqMid) this.eqMid.gain.value = clamped
+    } else {
+      this._eqLow = clamped
+      if (this.eqLow) this.eqLow.gain.value = clamped
+    }
+  }
+
+  get eqHighGain(): number { return this._eqHigh }
+  get eqMidGain():  number { return this._eqMid  }
+  get eqLowGain():  number { return this._eqLow  }
+
+  // ── VU level (post-fader RMS, 0–1 linear) ────────────────────────────────
+
+  getLevel(): number {
+    if (!this.analyser) return 0
+    this.analyser.getFloatTimeDomainData(this.analyserBuf)
+    let sum = 0
+    for (let i = 0; i < this.analyserBuf.length; i++) {
+      sum += this.analyserBuf[i] * this.analyserBuf[i]
+    }
+    return Math.sqrt(sum / this.analyserBuf.length)
+  }
 
   // ── Volume ────────────────────────────────────────────────────────────────
 

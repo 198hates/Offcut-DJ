@@ -130,7 +130,7 @@ function drawEditor(
   const anchorX = Math.round(((offsetMs - view.startMs) / visMs) * W)
   if (anchorX >= -4 && anchorX <= W + 4) {
     // Full-height line
-    ctx.fillStyle = 'rgba(255,96,51,0.9)'
+    ctx.fillStyle = 'rgba(216,106,74,0.9)'
     ctx.fillRect(anchorX, 0, 2, H)
     // Triangle cap at top
     ctx.beginPath()
@@ -138,14 +138,14 @@ function drawEditor(
     ctx.lineTo(anchorX + 7, 0)
     ctx.lineTo(anchorX + 1, 10)
     ctx.closePath()
-    ctx.fillStyle = 'rgba(255,96,51,0.95)'
+    ctx.fillStyle = 'rgba(216,106,74,0.95)'
     ctx.fill()
   }
 
   // ── Hover ghost position ──────────────────────────────────────────────────
   if (hoveredMs !== null) {
     const hx = Math.round(((hoveredMs - view.startMs) / visMs) * W)
-    ctx.fillStyle = 'rgba(255,96,51,0.25)'
+    ctx.fillStyle = 'rgba(216,106,74,0.25)'
     ctx.fillRect(hx, 0, 1, H)
   }
 
@@ -461,7 +461,7 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
           {markers.length} beats · {Math.round(markers.length / 4)} bars · {duration > 0 ? `${Math.floor(duration / 60)}:${Math.floor(duration % 60).toString().padStart(2,'0')}` : '—'}
         </span>
         <span className="text-[8px] text-muted/40 ml-auto">
-          <span className="inline-block w-2 h-2 mr-1 rounded-sm" style={{ background: 'rgba(255,96,51,0.8)' }} />
+          <span className="inline-block w-2 h-2 mr-1 rounded-sm" style={{ background: 'rgba(216,106,74,0.8)' }} />
           anchor · <span style={{ color: 'rgba(255,255,255,0.5)' }}>▏</span> downbeat · <span style={{ color: 'rgba(255,255,255,0.25)' }}>▏</span> beat
         </span>
       </div>

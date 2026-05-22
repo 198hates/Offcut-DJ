@@ -122,6 +122,8 @@ const COL_MAP: Partial<Record<string, string>> = {
   key: 'key',
   comment: 'comment',
   energy: 'energy',
+  danceability: 'danceability',
+  mood: 'mood',
 }
 
 function fieldToColumn(field: string): string | null {

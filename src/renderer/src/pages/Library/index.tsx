@@ -667,14 +667,29 @@ function TrackRow({ track, isSelected, onClick, onDoubleClick, onContextMenu, on
         </div>
       </td>
 
-      {/* Title + album */}
+      {/* Title + album — H5: Fraunces italic title, uppercase mono album */}
       <td className="px-2 max-w-0 overflow-hidden">
-        <div className="truncate">
-          <span className={`font-sans text-[12px] font-medium ${isSelected ? 'text-ink' : 'text-ink-soft'} ${!track.title ? 'text-muted italic font-normal text-xs' : ''}`}>
+        <div className="truncate flex items-baseline gap-1.5 overflow-hidden">
+          <span
+            className={`italic shrink-0 truncate ${!track.title ? 'not-italic' : ''}`}
+            style={{
+              fontFamily: "'Fraunces', serif",
+              fontSize: 13.5,
+              fontWeight: 400,
+              color: isSelected ? 'rgb(var(--ink-rgb))' : 'rgb(var(--ink-soft-rgb))',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '60%',
+            }}
+          >
             {track.title || 'Unknown Title'}
           </span>
           {track.album && (
-            <span className="ml-1.5 font-mono text-[9px] text-muted truncate">{track.album}</span>
+            <span
+              className="font-mono text-muted shrink overflow-hidden"
+              style={{ fontSize: 8.5, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >{track.album}</span>
           )}
         </div>
       </td>
@@ -723,12 +738,12 @@ function EnergyBar({ energy }: { energy: number | null }): JSX.Element {
       {Array.from({ length: 10 }, (_, i) => (
         <div
           key={i}
-          className="flex-1 rounded-sm"
+          className="flex-1"
           style={{
-            height: energy != null && i < energy ? `${55 + (i / 9) * 45}%` : '55%',
+            height: energy != null && i < energy ? `${55 + (i / 9) * 45}%` : '45%',
             background: energy != null && i < energy
-              ? `rgba(255,77,20,${0.45 + (i / 9) * 0.55})`
-              : 'rgb(var(--ink-rgb) / 0.12)'
+              ? `rgba(216,106,74,${0.45 + (i / 9) * 0.55})`
+              : 'rgb(var(--border-rgb))'  /* H4 — use --rule so full width reads */
           }}
         />
       ))}

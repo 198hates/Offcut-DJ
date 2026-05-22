@@ -1,0 +1,519 @@
+/**
+ * Analyse — automated batch processing tools.
+ * 01 · BPM + Key + Energy analysis
+ * 02 · Beat grid analysis (Beat This! ONNX)
+ * 03 · Auto-cue generation
+ */
+import { useState, useCallback, useRef, useEffect } from 'react'
+import { useLibraryStore } from '../../store/libraryStore'
+import { analyzeAudio, generateCuesForFile } from '../../lib/analyzer'
+import { generateBeatgrid } from '../../lib/compatibility'
+import { getQuantiser, initQuantiser } from '../../lib/quantiser'
+import type { Track } from '@shared/types'
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+function StatCard({ label, value, sub, accent }: {
+  label: string; value: string; sub?: string; accent?: boolean
+}): JSX.Element {
+  return (
+    <div className="bg-ink/[0.03] border border-border/25 rounded p-3 space-y-0.5">
+      <p className="font-mono text-[9px] uppercase tracking-[0.15em] text-muted">{label}</p>
+      <p className={`font-mono text-lg font-bold tabular-nums ${accent ? 'text-accent' : 'text-ink'}`}>{value}</p>
+      {sub && <p className="font-mono text-[9px] text-muted/70">{sub}</p>}
+    </div>
+  )
+}
+
+function ProgressBar({ current, total, label, title }: {
+  current: number; total: number; label: string; title: string
+}): JSX.Element {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <span className="font-mono text-[10px] text-accent uppercase tracking-[0.1em]">{label}</span>
+        <span className="font-mono text-[10px] text-muted tabular-nums">{current} / {total}</span>
+      </div>
+      <div className="h-1 bg-border/30 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-accent rounded-full transition-all"
+          style={{ width: `${total ? (current / total) * 100 : 0}%` }}
+        />
+      </div>
+      <p className="font-mono text-[9px] text-muted truncate">{title}</p>
+    </div>
+  )
+}
+
+function FailedList({ tracks: failed }: { tracks: Track[] }): JSX.Element {
+  return (
+    <div className="space-y-px max-h-48 overflow-y-auto">
+      {failed.map((t) => (
+        <div key={t.id} className="flex items-center gap-3 px-3 py-1.5 bg-red-500/5 border border-red-500/15 rounded">
+          <div className="flex-1 min-w-0">
+            <p className="font-mono text-[10px] text-ink truncate">{t.title || t.filePath.split('/').pop() || t.id}</p>
+            <p className="font-mono text-[8.5px] text-muted truncate">{t.artist || t.filePath}</p>
+          </div>
+          <button
+            onClick={() => window.api.settings.openInFinder(t.filePath)}
+            className="shrink-0 font-mono text-[9px] text-muted/60 hover:text-accent transition-colors"
+            title="Reveal in Finder"
+          >↗</button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── BPM + Key Analysis ────────────────────────────────────────────────────────
+
+type AnalysisPhase = 'idle' | 'tags' | 'audio' | 'done'
+
+function BpmKeySection(): JSX.Element {
+  const { tracks, updateTrack } = useLibraryStore()
+  const [phase, setPhase]   = useState<AnalysisPhase>('idle')
+  const [progress, setProgress] = useState({ current: 0, total: 0 })
+  const [currentTitle, setCurrentTitle] = useState('')
+  const [result, setResult] = useState<{ updated: number; skipped: number; failed: Track[] } | null>(null)
+  const cancelRef = useRef(false)
+
+  const needingAnalysis    = tracks.filter((t) => !t.bpm || !t.key || t.energy == null || t.danceability == null)
+  const needingBpm         = tracks.filter((t) => !t.bpm).length
+  const needingKey         = tracks.filter((t) => !t.key).length
+  const needingEnergy      = tracks.filter((t) => t.energy == null).length
+  const needingDanceability = tracks.filter((t) => t.danceability == null).length
+
+  const start = useCallback(async () => {
+    if (!needingAnalysis.length) return
+    cancelRef.current = false
+    setResult(null)
+    setProgress({ current: 0, total: needingAnalysis.length })
+    let updated = 0, skipped = 0
+    const failed: Track[] = []
+
+    // Phase 1: read embedded tags (fast)
+    setPhase('tags')
+    for (let i = 0; i < needingAnalysis.length; i++) {
+      if (cancelRef.current) { setPhase('idle'); return }
+      const track = needingAnalysis[i]
+      setProgress({ current: i + 1, total: needingAnalysis.length })
+      setCurrentTitle(track.title || track.filePath.split('/').pop() || '')
+      try {
+        const tags = await window.api.audio.readTags(track.filePath)
+        if (tags) {
+          const newBpm = (!track.bpm && tags.bpm) ? tags.bpm : track.bpm
+          const newKey = (!track.key && tags.key) ? tags.key : track.key
+          if (newBpm !== track.bpm || newKey !== track.key) {
+            await updateTrack({ id: track.id, bpm: newBpm, key: newKey })
+            updated++
+          }
+        }
+      } catch { /* fall through to Phase 2 */ }
+    }
+
+    // Re-check which tracks still need analysis
+    const stillNeeding = needingAnalysis.filter((t) => {
+      const current = tracks.find((x) => x.id === t.id) ?? t
+      return !current.bpm || !current.key || current.energy == null || current.danceability == null
+    })
+    if (!stillNeeding.length) {
+      setPhase('done')
+      setResult({ updated, skipped, failed })
+      return
+    }
+
+    // Phase 2: audio decode + analysis (slow)
+    setPhase('audio')
+    setProgress({ current: 0, total: stillNeeding.length })
+    const ctx = new AudioContext()
+    for (let i = 0; i < stillNeeding.length; i++) {
+      if (cancelRef.current) break
+      const track = stillNeeding[i]
+      setProgress({ current: i + 1, total: stillNeeding.length })
+      setCurrentTitle(track.title || track.filePath.split('/').pop() || '')
+      try {
+        const ab = await window.api.audio.readFile(track.filePath)
+        const buf = await ctx.decodeAudioData(ab)
+        const r   = await analyzeAudio(buf)
+        const newBpm  = (!track.bpm && r.bpm) ? r.bpm : track.bpm
+        const newKey  = (!track.key && r.key) ? r.key : track.key
+        const newNrg  = (track.energy == null && r.energy != null) ? r.energy : track.energy
+        const newDnce = (track.danceability == null && r.danceability != null) ? r.danceability : track.danceability
+        const newMood = (track.mood == null && r.mood != null) ? r.mood : track.mood
+        const newGrid = (track.beatgrid.length === 0 && newBpm && r.offsetMs != null)
+          ? generateBeatgrid(newBpm, r.offsetMs, buf.duration * 1000) : track.beatgrid
+        const newCues = (track.cuePoints.length === 0 && r.suggestedCues.length > 0)
+          ? r.suggestedCues.map((c, idx) => ({ index: idx, type: 'hotcue' as const, positionMs: c.positionMs, color: c.color, label: c.label }))
+          : track.cuePoints
+        if (newBpm !== track.bpm || newKey !== track.key || newNrg !== track.energy || newDnce !== track.danceability || newMood !== track.mood || newGrid !== track.beatgrid || newCues !== track.cuePoints) {
+          await updateTrack({ id: track.id, bpm: newBpm, key: newKey, energy: newNrg, danceability: newDnce, mood: newMood, beatgrid: newGrid, cuePoints: newCues })
+          updated++
+        } else skipped++
+      } catch { failed.push(track) }
+    }
+    await ctx.close()
+    setPhase('done')
+    setResult({ updated, skipped, failed })
+  }, [needingAnalysis, tracks, updateTrack])
+
+  const running = phase === 'tags' || phase === 'audio'
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
+            <span className="text-accent mr-1.5">01</span>bpm + key + energy
+          </h2>
+          <p className="font-mono text-[10px] text-muted mt-0.5">reads embedded tags first · falls back to audio analysis</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {running && (
+            <button onClick={() => { cancelRef.current = true }}
+              className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
+              cancel
+            </button>
+          )}
+          <button onClick={start}
+            disabled={running || needingAnalysis.length === 0}
+            className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors">
+            {phase === 'tags' ? 'reading tags…' : phase === 'audio' ? 'analysing audio…' : phase === 'done' ? 're-analyse' : 'analyse library'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="need analysis"       value={needingAnalysis.length.toLocaleString()} sub={`of ${tracks.length.toLocaleString()} tracks`} accent={needingAnalysis.length > 0} />
+        <StatCard label="missing bpm"         value={needingBpm.toLocaleString()} />
+        <StatCard label="missing key"         value={needingKey.toLocaleString()} />
+        <StatCard label="missing energy"      value={needingEnergy.toLocaleString()} />
+        <StatCard label="missing danceability" value={needingDanceability.toLocaleString()} />
+      </div>
+
+      {running && <ProgressBar current={progress.current} total={progress.total}
+        label={phase === 'tags' ? 'phase 1 · reading tags' : 'phase 2 · audio analysis'}
+        title={currentTitle} />}
+
+      {phase === 'done' && result && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-4 font-mono text-[10px]">
+            <span className="text-green-600 dark:text-green-400">✓ {result.updated} updated</span>
+            {result.skipped > 0 && <span className="text-muted">{result.skipped} unchanged</span>}
+            {result.failed.length > 0 && <span className="text-red-500">{result.failed.length} failed</span>}
+          </div>
+          {result.failed.length > 0 && <FailedList tracks={result.failed} />}
+        </div>
+      )}
+
+      {needingAnalysis.length === 0 && phase === 'idle' && tracks.length > 0 && (
+        <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+          <span>✓</span> all {tracks.length.toLocaleString()} tracks have bpm and key data
+        </p>
+      )}
+    </section>
+  )
+}
+
+// ── Beat Grid Analysis ────────────────────────────────────────────────────────
+
+type BeatPhase = 'idle' | 'running' | 'done'
+
+function BeatGridSection(): JSX.Element {
+  const { tracks } = useLibraryStore()
+  const [modelStatus, setModelStatus] = useState<{ available: boolean; path: string } | null>(null)
+  const [phase, setPhase]             = useState<BeatPhase>('idle')
+  const [progress, setProgress]       = useState({ current: 0, total: 0, trackPct: 0 })
+  const [currentTitle, setCurrentTitle] = useState('')
+  const [result, setResult]           = useState<{ updated: number; failed: Track[] } | null>(null)
+  const cancelRef = useRef(false)
+
+  useEffect(() => {
+    window.api.library.beatModelStatus().then((s) => {
+      setModelStatus(s)
+      // Initialise the singleton so `getQuantiser()` returns BeatThisQuantiser if available
+      initQuantiser()
+    })
+  }, [])
+
+  // Needs beat grid = no legacy markers at all, OR has markers but no v2 grid yet
+  const needingGrid    = tracks.filter((t) => !t.beatgrid || t.beatgrid.length === 0)
+  const needingUpgrade = tracks.filter((t) => t.beatgrid?.length > 0 && !t.analysedBeatgrid)
+
+  const start = useCallback(async () => {
+    const targets = needingGrid
+    if (!targets.length || !modelStatus?.available) return
+    cancelRef.current = false
+    setResult(null)
+    setPhase('running')
+    setProgress({ current: 0, total: targets.length, trackPct: 0 })
+    let updated = 0
+    const failed: Track[] = []
+    const q = getQuantiser()
+
+    for (let i = 0; i < targets.length; i++) {
+      if (cancelRef.current) break
+      const track = targets[i]
+      setProgress({ current: i, total: targets.length, trackPct: 0 })
+      setCurrentTitle(track.title || track.filePath.split('/').pop() || '')
+      try {
+        await q.analyse(track, undefined, (p) =>
+          setProgress({ current: i, total: targets.length, trackPct: p })
+        )
+        updated++
+      } catch { failed.push(track) }
+    }
+    setProgress((prev) => ({ ...prev, current: targets.length, trackPct: 1 }))
+    setPhase('done')
+    setResult({ updated, failed })
+    if (updated > 0) await useLibraryStore.getState().loadLibrary()
+  }, [needingGrid, modelStatus])
+
+  /** Upgrade tracks that have legacy markers but no v2 beatgrid — no model needed */
+  const upgrade = useCallback(async () => {
+    if (!needingUpgrade.length) return
+    setPhase('running')
+    setProgress({ current: 0, total: needingUpgrade.length, trackPct: 0 })
+    let updated = 0
+    const { fromBeatgridMarkers: conv } = await import('../../lib/quantiser')
+    for (let i = 0; i < needingUpgrade.length; i++) {
+      if (cancelRef.current) break
+      const track = needingUpgrade[i]
+      setProgress({ current: i + 1, total: needingUpgrade.length, trackPct: 1 })
+      setCurrentTitle(track.title || track.filePath.split('/').pop() || '')
+      try {
+        const sorted = [...track.beatgrid].sort((a, b) => a.positionMs - b.positionMs)
+        const v2 = conv(sorted, 'tags')
+        await window.api.library.updateTrack({ id: track.id, analysedBeatgrid: v2 })
+        updated++
+      } catch { /* non-fatal */ }
+    }
+    setPhase('done')
+    setResult({ updated, failed: [] })
+    if (updated > 0) await useLibraryStore.getState().loadLibrary()
+  }, [needingUpgrade])
+
+  // Combined progress: (completed tracks + current track %) / total
+  const overallPct = progress.total
+    ? (progress.current + progress.trackPct) / progress.total
+    : 0
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
+            <span className="text-accent mr-1.5">02</span>beat grid analysis
+          </h2>
+          <p className="font-mono text-[10px] text-muted mt-0.5">onnx · beat this! · per-bar tempo, downbeats, confidence</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {phase === 'running' && (
+            <button onClick={() => { cancelRef.current = true }}
+              className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">cancel</button>
+          )}
+          <button onClick={start}
+            disabled={phase === 'running' || !modelStatus?.available || needingGrid.length === 0}
+            className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors">
+            {phase === 'running' ? 'analysing…' : phase === 'done' ? 're-analyse' : 'analyse beats'}
+          </button>
+        </div>
+      </div>
+
+      {modelStatus && !modelStatus.available && (
+        <div className="bg-ink/[0.03] border border-border/30 rounded px-4 py-3 space-y-1.5">
+          <p className="font-mono text-[10px] text-muted font-bold uppercase tracking-[0.1em]">model not installed</p>
+          <p className="font-mono text-[9.5px] text-muted leading-relaxed">
+            Run <span className="text-ink bg-ink/10 px-1 rounded font-bold">python scripts/export-beat-this.py</span> to export the model, then place <span className="text-ink">beat_this.onnx</span> at:
+          </p>
+          <p className="font-mono text-[9px] text-ink-soft break-all">{modelStatus.path}</p>
+        </div>
+      )}
+
+      {modelStatus?.available && (
+        <div className="grid grid-cols-4 gap-3">
+          <StatCard label="need beat grid"    value={needingGrid.length.toLocaleString()} sub={`of ${tracks.length.toLocaleString()} tracks`} accent={needingGrid.length > 0} />
+          <StatCard label="with beat grid"    value={(tracks.length - needingGrid.length).toLocaleString()} />
+          <StatCard label="need v2 upgrade"   value={needingUpgrade.length.toLocaleString()} sub="legacy → beatgrid v2" accent={needingUpgrade.length > 0} />
+          <StatCard label="model"             value="beat this!" sub="onnxruntime · cpu" />
+        </div>
+      )}
+
+      {/* Upgrade card: shown when legacy grids exist without v2 */}
+      {needingUpgrade.length > 0 && phase === 'idle' && (
+        <div className="flex items-center justify-between bg-accent/5 border border-accent/20 rounded px-4 py-2.5">
+          <div>
+            <p className="font-mono text-[10px] text-ink font-bold">
+              {needingUpgrade.length.toLocaleString()} track{needingUpgrade.length !== 1 ? 's' : ''} need beatgrid v2 upgrade
+            </p>
+            <p className="font-mono text-[9px] text-muted mt-0.5">converts legacy markers to beat/bar/downbeat structure · no model needed</p>
+          </div>
+          <button onClick={upgrade}
+            className="shrink-0 ml-4 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-accent border border-accent/40 hover:bg-accent/10 rounded transition-colors">
+            upgrade
+          </button>
+        </div>
+      )}
+
+      {phase === 'running' && (
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between">
+            <span className="font-mono text-[10px] text-accent uppercase tracking-[0.1em]">analysing beats</span>
+            <span className="font-mono text-[10px] text-muted tabular-nums">
+              {progress.current + 1} / {progress.total}
+            </span>
+          </div>
+          <div className="h-1 bg-border/30 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-accent rounded-full transition-all"
+              style={{ width: `${overallPct * 100}%` }}
+            />
+          </div>
+          <p className="font-mono text-[9px] text-muted truncate">{currentTitle}</p>
+        </div>
+      )}
+
+      {phase === 'done' && result && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-4 font-mono text-[10px]">
+            <span className="text-green-600 dark:text-green-400">✓ {result.updated} analysed</span>
+            {result.failed.length > 0 && <span className="text-red-500">{result.failed.length} failed</span>}
+            {cancelRef.current && <span className="text-muted">· cancelled</span>}
+          </div>
+          {result.failed.length > 0 && <FailedList tracks={result.failed} />}
+        </div>
+      )}
+    </section>
+  )
+}
+
+// ── Auto-Cue Generation ───────────────────────────────────────────────────────
+
+type CuePhase = 'idle' | 'running' | 'done'
+
+function AutoCueSection(): JSX.Element {
+  const { tracks, updateTrack } = useLibraryStore()
+  const [phase, setPhase]       = useState<CuePhase>('idle')
+  const [progress, setProgress] = useState({ current: 0, total: 0 })
+  const [currentTitle, setCurrentTitle] = useState('')
+  const [result, setResult]     = useState<{ generated: number; failed: Track[] } | null>(null)
+  const cancelRef = useRef(false)
+
+  const needingCues = tracks.filter((t) => t.cuePoints.length === 0 && t.bpm != null)
+
+  const start = useCallback(async () => {
+    if (!needingCues.length) return
+    cancelRef.current = false
+    setResult(null)
+    setPhase('running')
+    setProgress({ current: 0, total: needingCues.length })
+    let generated = 0
+    const failed: Track[] = []
+    for (let i = 0; i < needingCues.length; i++) {
+      if (cancelRef.current) break
+      const track = needingCues[i]
+      setProgress({ current: i + 1, total: needingCues.length })
+      setCurrentTitle(track.title || track.filePath.split('/').pop() || '')
+      try {
+        const cues = await generateCuesForFile(track.filePath)
+        if (cues.length > 0) { await updateTrack({ id: track.id, cuePoints: cues }); generated++ }
+      } catch { failed.push(track) }
+    }
+    setPhase('done')
+    setResult({ generated, failed })
+    if (generated > 0) await useLibraryStore.getState().loadLibrary()
+  }, [needingCues, updateTrack])
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
+            <span className="text-accent mr-1.5">03</span>auto-cue generation
+          </h2>
+          <p className="font-mono text-[10px] text-muted mt-0.5">analyses energy curve to place mix-in, drop, breakdown and outro markers</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {phase === 'running' && (
+            <button onClick={() => { cancelRef.current = true }}
+              className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">cancel</button>
+          )}
+          <button onClick={start}
+            disabled={phase === 'running' || needingCues.length === 0}
+            className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors">
+            {phase === 'running' ? 'generating…' : phase === 'done' ? 're-run' : 'generate cues'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="need cue points" value={needingCues.length.toLocaleString()} sub={`of ${tracks.length.toLocaleString()} tracks`} accent={needingCues.length > 0} />
+        <StatCard label="have cue points" value={tracks.filter((t) => t.cuePoints.length > 0).length.toLocaleString()} />
+        <StatCard label="avg cues/track"
+          value={(tracks.length > 0
+            ? (tracks.reduce((s, t) => s + t.cuePoints.length, 0) /
+               Math.max(1, tracks.filter((t) => t.cuePoints.length > 0).length)).toFixed(1)
+            : '—')}
+          sub="tracks with cues" />
+      </div>
+
+      {/* Cue type legend */}
+      <div className="bg-ink/[0.03] border border-border/20 rounded px-4 py-3 space-y-1">
+        <p className="font-mono text-[9px] uppercase tracking-[0.15em] text-muted">what gets placed</p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
+          {[
+            { color: '#3CA86A', label: 'Mix In', desc: 'first energy rise above intro' },
+            { color: '#D86A4A', label: 'Drop',   desc: 'global energy peak'            },
+            { color: '#3CA8C0', label: 'Break',  desc: 'post-drop energy dip'          },
+            { color: '#A855C8', label: 'Outro',  desc: 'energy falls and stays low'    },
+          ].map(({ color, label, desc }) => (
+            <div key={label} className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+              <span className="font-mono text-[9px] font-bold text-ink w-12 shrink-0">{label}</span>
+              <span className="font-mono text-[9px] text-muted">{desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {phase === 'running' && <ProgressBar current={progress.current} total={progress.total} label="analysing tracks" title={currentTitle} />}
+
+      {phase === 'done' && result && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-4 font-mono text-[10px]">
+            <span className="text-green-600 dark:text-green-400">✓ {result.generated} track{result.generated !== 1 ? 's' : ''} got cues</span>
+            {result.failed.length > 0 && <span className="text-red-500">{result.failed.length} failed</span>}
+            {cancelRef.current && <span className="text-muted">· cancelled</span>}
+          </div>
+          {result.failed.length > 0 && <FailedList tracks={result.failed} />}
+        </div>
+      )}
+
+      {needingCues.length === 0 && phase === 'idle' && tracks.length > 0 && (
+        <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+          <span>✓</span> all analysed tracks have cue points
+        </p>
+      )}
+    </section>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export function AnalysePage(): JSX.Element {
+  return (
+    <div className="h-full overflow-y-auto p-6 space-y-8 max-w-3xl">
+      <div>
+        <h1 className="text-base font-mono font-bold uppercase tracking-[0.12em] text-ink mb-0.5">
+          <span className="text-accent mr-2">→</span>analyse
+        </h1>
+        <p className="font-mono text-xs text-muted">automated batch processing — bpm, keys, beat grids, cue points</p>
+      </div>
+
+      <BpmKeySection />
+      <div className="border-t border-border/20" />
+      <BeatGridSection />
+      <div className="border-t border-border/20" />
+      <AutoCueSection />
+    </div>
+  )
+}

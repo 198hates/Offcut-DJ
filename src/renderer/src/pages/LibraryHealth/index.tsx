@@ -898,7 +898,7 @@ function HealthTab(): JSX.Element {
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
             {[
               { color: '#3CA86A', label: 'Mix In', desc: 'first energy rise above intro' },
-              { color: '#FF4D14', label: 'Drop',   desc: 'global energy peak' },
+              { color: '#D86A4A', label: 'Drop',   desc: 'global energy peak' },
               { color: '#3CA8C0', label: 'Break',  desc: 'post-drop energy dip' },
               { color: '#A855C8', label: 'Outro',  desc: 'energy falls and stays low' },
             ].map(({ color, label, desc }) => (

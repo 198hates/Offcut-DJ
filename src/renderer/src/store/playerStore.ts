@@ -28,6 +28,10 @@ export interface DeckStore {
   isLooping: boolean
   // Pitch
   playbackRate: number
+  // EQ (dB, -24 to +6)
+  eqHigh: number
+  eqMid:  number
+  eqLow:  number
   // Analysis
   analysisState: AnalysisState
   analyzeCurrentTrack: () => Promise<void>
@@ -35,6 +39,7 @@ export interface DeckStore {
   togglePlay: () => void
   seek: (time: number) => void
   setVolume: (v: number) => void
+  setEq: (band: 'high' | 'mid' | 'low', db: number) => void
   pressCue: () => void
   setCue: (index: number) => Promise<void>
   clearCue: (index: number) => Promise<void>
@@ -48,6 +53,8 @@ export interface DeckStore {
   clearLoop: () => void
   // Pitch action
   setPlaybackRate: (rate: number) => void
+  // Quantiser
+  quantiseCurrentTrack: () => Promise<void>
   _engine: AudioEngine
 }
 
@@ -89,11 +96,14 @@ function createDeckStore(deckId: 'A' | 'B') {
       loopEnd: null,
       isLooping: false,
       playbackRate: 1.0,
+      eqHigh: 0,
+      eqMid:  0,
+      eqLow:  0,
       analysisState: 'idle' as AnalysisState,
       _engine: engine,
 
       loadTrack: async (track) => {
-        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, analysisState: 'idle' })
+        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, eqHigh: 0, eqMid: 0, eqLow: 0, analysisState: 'idle' })
         try {
           const ab = await window.api.audio.readFile(track.filePath)
           const { peaks, detailPeaks, lowPeaks, midPeaks, highPeaks, duration } = await engine.load(ab)
@@ -115,6 +125,8 @@ function createDeckStore(deckId: 'A' | 'B') {
           if (!track.bpm || !track.key) {
             get().analyzeCurrentTrack()
           }
+          // Silently upgrade legacy beatgrid to v2 on first play
+          get().quantiseCurrentTrack()
         } catch (err) {
           console.error(`Deck ${deckId}: failed to load`, err)
           set({ isLoading: false })
@@ -138,6 +150,11 @@ function createDeckStore(deckId: 'A' | 'B') {
       },
 
       setVolume: (v) => { engine.volume = v },
+
+      setEq: (band, db) => {
+        engine.setEqGain(band, db)
+        set(band === 'high' ? { eqHigh: db } : band === 'mid' ? { eqMid: db } : { eqLow: db })
+      },
 
       pressCue: () => {
         const { isPlaying, currentTime, mainCueTime } = get()
@@ -277,6 +294,7 @@ function createDeckStore(deckId: 'A' | 'B') {
           const patch: Partial<Track> = {}
           if (!latest.bpm && result.bpm) patch.bpm = result.bpm
           if (!latest.key && result.key) patch.key = result.key
+          if (latest.mood == null && result.mood != null) patch.mood = result.mood
 
           if (Object.keys(patch).length > 0) {
             const updated = await window.api.library.updateTrack({ id: latest.id, ...patch })
@@ -312,6 +330,31 @@ function createDeckStore(deckId: 'A' | 'B') {
           [...currentTrack.cuePoints, newCue].sort((a, b) => a.positionMs - b.positionMs),
           get, set
         )
+      },
+
+      // ── Quantiser ─────────────────────────────────────────────────────────
+      quantiseCurrentTrack: async () => {
+        const { currentTrack } = get()
+        if (!currentTrack) return
+        // Already has v2 grid — nothing to do
+        if (currentTrack.analysedBeatgrid) return
+        // No legacy markers either — quantiser will run via analyzeBeats if model available
+        if (!currentTrack.beatgrid?.length) return
+
+        try {
+          const { fromBeatgridMarkers } = await import('../lib/quantiser')
+          const sorted = [...currentTrack.beatgrid].sort((a, b) => a.positionMs - b.positionMs)
+          const v2 = fromBeatgridMarkers(sorted, currentTrack.bpm ? 'tags' : 'mock')
+          const updated = await window.api.library.updateTrack({
+            id: currentTrack.id,
+            analysedBeatgrid: v2
+          })
+          set({ currentTrack: updated })
+          const { useLibraryStore } = await import('./libraryStore')
+          useLibraryStore.setState((s) => ({
+            tracks: s.tracks.map((t) => (t.id === updated.id ? updated : t))
+          }))
+        } catch { /* non-fatal — legacy grid still works */ }
       }
     }
   })

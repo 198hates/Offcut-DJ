@@ -56,7 +56,8 @@ const COL_MAP: Record<string, string> = {
   dateAdded: 'date_added',
   sourceIds: 'source_ids',
   cuePoints: 'cue_points',
-  customTags: 'custom_tags'
+  customTags: 'custom_tags',
+  analysedBeatgrid: 'analysed_beatgrid'
 }
 
 export function registerLibraryHandlers(): void {
@@ -155,7 +156,18 @@ export function registerLibraryHandlers(): void {
     db.prepare(
       "UPDATE tracks SET play_count = play_count + 1, last_played_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
     ).run(id)
+    // Record timestamped event for calendar heatmap
+    const { v4: uuid } = require('uuid')
+    db.prepare("INSERT INTO play_history (id, track_id, played_at) VALUES (?, ?, datetime('now'))").run(uuid(), id)
     return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown>)
+  })
+
+  /** Returns play counts per calendar day for the last N weeks (default 52) */
+  ipcMain.handle('library:getPlayHistory', (_e, weeks = 52): { day: string; count: number }[] => {
+    const since = new Date(Date.now() - weeks * 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    return db.prepare(
+      "SELECT date(played_at) as day, COUNT(*) as count FROM play_history WHERE date(played_at) >= ? GROUP BY day ORDER BY day"
+    ).all(since) as { day: string; count: number }[]
   })
 
   ipcMain.handle('library:deletePlaylist', (_e, id: string): void => {

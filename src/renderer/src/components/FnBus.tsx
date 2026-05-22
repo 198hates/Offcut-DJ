@@ -64,17 +64,15 @@ const ICONS: Record<string, JSX.Element> = {
 const CELLS: { key: string; label: string; needsContext?: 'harmonic' | 'range' }[] = [
   { key: 'harmonic', label: 'harmonic',  needsContext: 'harmonic' },
   { key: 'range',    label: 'bpm ±4%',   needsContext: 'range'    },
-  { key: 'rating',   label: '★ ★ ★ ★+'                           },
+  { key: 'rating',   label: '★★★+'                               },
   { key: 'unplayed', label: 'unplayed'                            },
   { key: 'new',      label: 'new · 7d'                            },
   { key: 'energy',   label: 'energy 7+'                           },
   { key: 'analysed', label: 'analysed'                            },
-  { key: 'cued',     label: 'hot cued'                            },
 ]
 
 export function FnBus(): JSX.Element {
   const { fnBus, fnBusContext, toggleFnBus, resetFnBus, filteredTracks } = useLibraryStore()
-  const deckATrack   = useDeckAStore((s) => s.currentTrack)
   const deckABpm     = useDeckAStore((s) => s.currentTrack?.bpm ?? null)
   const deckAKey     = useDeckAStore((s) => s.currentTrack?.key ?? null)
 
@@ -92,7 +90,7 @@ export function FnBus(): JSX.Element {
   }
 
   return (
-    <div className="shrink-0 flex items-stretch bg-chassis-soft border-b border-border/30" style={{ height: 44 }}>
+    <div className="shrink-0 flex items-stretch bg-chassis-soft border-b border-border/30" style={{ height: 52 }}>
       {/* Bus label */}
       <div className="flex items-center px-3 border-r border-border/30">
         <span className="font-mono text-[8px] font-bold uppercase tracking-[0.22em] text-muted"
@@ -126,7 +124,7 @@ export function FnBus(): JSX.Element {
                     : 'load a track on deck A first'
                   : label
               }
-              className={`flex flex-col items-center justify-center flex-1 border-r border-border/25 relative transition-colors select-none
+              className={`flex flex-col items-center justify-center flex-1 border-r border-border/25 relative transition-colors select-none min-w-0
                 ${on        ? 'bg-accent/[0.07]' : 'hover:bg-ink/[0.03]'}
                 ${disabled  ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}
               `}
@@ -155,9 +153,10 @@ export function FnBus(): JSX.Element {
               <span
                 className="font-mono leading-none"
                 style={{
-                  fontSize: 7.5,
+                  fontSize: 8,
                   letterSpacing: '0.10em',
                   textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
                   color: on ? 'rgb(var(--ink-rgb))' : 'rgb(var(--muted-rgb))',
                 }}
               >
@@ -168,41 +167,42 @@ export function FnBus(): JSX.Element {
         })}
       </div>
 
-      {/* LED display — track count + deck A context */}
+      {/* LED display — BPM · KEY using proven led-readout CSS */}
       <div
-        className="shrink-0 flex flex-col justify-center px-3 border-l border-border/30 text-right"
-        style={{ background: '#0d0d14', minWidth: 120 }}
+        className="shrink-0 flex flex-col justify-center gap-1.5 px-3 border-l border-border/30 overflow-hidden"
+        style={{ background: '#0d0d14', minWidth: 148 }}
       >
-        {/* Ghost + active value */}
-        <div className="relative">
-          <span
-            className="absolute inset-0 flex items-center justify-end font-mono font-bold tabular-nums"
-            style={{ color: 'rgba(255,96,51,0.12)', fontSize: 18, letterSpacing: '0.05em' }}
-          >
-            0000
-          </span>
-          <span
-            className="relative font-mono font-bold tabular-nums"
-            style={{ color: '#FF6033', fontSize: 18, letterSpacing: '0.05em', textShadow: '0 0 6px rgba(255,96,51,0.4)' }}
-          >
-            {filteredCount.toString().padStart(4, ' ')}
-          </span>
+        {/* Two side-by-side led-readout boxes */}
+        <div className="flex gap-2 justify-end">
+          <div className="led-readout">
+            <div className="led-readout-ghost" style={{ fontSize: 15 }}>888.8</div>
+            <div className="led-readout-val" style={{ fontSize: 15 }}>
+              {deckABpm ? deckABpm.toFixed(1) : '—.—'}
+            </div>
+            <span className="led-readout-label">bpm</span>
+          </div>
+          <div className="led-readout">
+            <div className="led-readout-ghost" style={{ fontSize: 15 }}>88</div>
+            <div className="led-readout-val" style={{ fontSize: 15 }}>
+              {deckAKey ?? '—'}
+            </div>
+            <span className="led-readout-label">key</span>
+          </div>
         </div>
-        <div className="flex items-center justify-between mt-0.5">
-          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)' }}>
+        {/* Track count */}
+        <div className="flex items-center justify-between">
+          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 7.5, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)' }}>
             {anyActive ? 'filtered' : 'trks'}
           </span>
-          {deckATrack && (
-            <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.25)' }}>
-              a: {deckABpm ? deckABpm.toFixed(1) : '—'} · {deckAKey ?? '—'}
-            </span>
-          )}
+          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, letterSpacing: '0.05em', color: 'var(--led-text)', textShadow: '0 0 4px var(--led-glow)' }}>
+            {filteredCount}
+          </span>
         </div>
         {anyActive && (
           <button
             onClick={resetFnBus}
-            style={{ fontFamily: "'JetBrains Mono'", fontSize: 7.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,96,51,0.6)', marginTop: 2, textAlign: 'right' }}
-            className="hover:opacity-100 transition-opacity"
+            style={{ fontFamily: "'JetBrains Mono'", fontSize: 7.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(216,106,74,0.6)', textAlign: 'right' }}
+            className="hover:opacity-100 transition-opacity w-full"
           >
             clear
           </button>

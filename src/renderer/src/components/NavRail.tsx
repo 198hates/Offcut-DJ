@@ -1,4 +1,4 @@
-export type Section = 'library' | 'sync' | 'analysis' | 'builder' | 'settings'
+export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'settings'
 
 interface Props {
   active: Section
@@ -26,12 +26,36 @@ function SyncIcon() {
   )
 }
 
-function AnalysisIcon() {
+/** Analyse — lightning bolt: automated processing */
+function AnalyseIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-      <rect x="1.5" y="9.5"  width="3" height="5"  rx="0.5"/>
-      <rect x="6.5" y="5.5"  width="3" height="9"  rx="0.5"/>
-      <rect x="11.5" y="1.5" width="3" height="13" rx="0.5"/>
+      <path d="M9.5 1.5 L4.5 8.5 H8.5 L6.5 14.5 L11.5 7.5 H7.5 Z"/>
+    </svg>
+  )
+}
+
+/** Health — pulse line: library scan / maintenance */
+function HealthIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="0.5,8 3.5,8 5,4.5 7,11.5 9,5.5 10.5,8 15.5,8"/>
+    </svg>
+  )
+}
+
+/** Fixes — wand with sparkle: metadata correction */
+function FixesIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {/* Wand stem */}
+      <line x1="9" y1="7" x2="2.5" y2="13.5"/>
+      {/* Wand tip block */}
+      <rect x="9" y="3.5" width="5" height="4" rx="0.5" fill="currentColor" stroke="none"/>
+      {/* Sparkle lines */}
+      <line x1="11.5" y1="1" x2="11.5" y2="2.5"/>
+      <line x1="14.5" y1="3" x2="13.3" y2="3.7"/>
+      <line x1="15" y1="6" x2="13.5" y2="6"/>
     </svg>
   )
 }
@@ -39,7 +63,6 @@ function AnalysisIcon() {
 function BuilderIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-      {/* Three chapter blocks on a baseline — energy arc silhouette */}
       <rect x="1"   y="8"   width="3.5" height="5"   rx="0.5"/>
       <rect x="5.5" y="5"   width="5"   height="8"   rx="0.5"/>
       <rect x="11.5" y="7"  width="3.5" height="6"   rx="0.5"/>
@@ -58,10 +81,12 @@ function GearIcon() {
 }
 
 const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; label: string }[] = [
-  { id: 'library',  Icon: LibIcon,      label: 'Library'      },
-  { id: 'sync',     Icon: SyncIcon,     label: 'Sync'         },
-  { id: 'analysis', Icon: AnalysisIcon, label: 'Analysis & Fixes' },
-  { id: 'builder',  Icon: BuilderIcon,  label: 'Set Builder'  },
+  { id: 'library', Icon: LibIcon,     label: 'Library'         },
+  { id: 'sync',    Icon: SyncIcon,    label: 'Sync'            },
+  { id: 'analyse', Icon: AnalyseIcon, label: 'Analyse'         },
+  { id: 'health',  Icon: HealthIcon,  label: 'Library Health'  },
+  { id: 'fixes',   Icon: FixesIcon,   label: 'Smart Fixes'     },
+  { id: 'builder', Icon: BuilderIcon, label: 'Set Builder'     },
 ]
 
 export function NavRail({ active, onNavigate }: Props): JSX.Element {

@@ -28,6 +28,8 @@ const api = {
       ipcRenderer.invoke('library:updatePlaylistColor', id, color),
     recordPlay: (id: string) =>
       ipcRenderer.invoke('library:recordPlay', id),
+    getPlayHistory: (weeks?: number) =>
+      ipcRenderer.invoke('library:getPlayHistory', weeks) as Promise<{ day: string; count: number }[]>,
     deletePlaylist: (id: string) => ipcRenderer.invoke('library:deletePlaylist', id),
     reorderPlaylistTracks: (playlistId: string, orderedIds: string[]) =>
       ipcRenderer.invoke('library:reorderPlaylistTracks', playlistId, orderedIds),

@@ -35,6 +35,8 @@ async function importFile(filePath: string): Promise<void> {
       color: '',
       energy: null,
       danceability: null,
+          mood: null,
+          analysedBeatgrid: null,
       playCount: 0,
       lastPlayedAt: null,
       dateAdded: new Date().toISOString(),

@@ -72,13 +72,15 @@ export function OverviewWaveform({ peaks, lowPeaks, midPeaks, highPeaks, wavefor
         const bhH = (highPeaks[bi0] + a * (highPeaks[bi1] - highPeaks[bi0])) * mid * SCALE
 
         if (waveformStyle === 'three-band') {
-          ctx.fillStyle = past ? 'rgba(15,70,145,0.35)' : 'rgba(25,135,255,0.88)'
-          ctx.fillRect(x, mid - bhH, 2, bhH * 2)
-          ctx.fillStyle = past ? 'rgba(100,52,12,0.38)' : 'rgba(215,118,28,0.92)'
-          ctx.fillRect(x, mid - bhM, 2, bhM * 2)
-          ctx.fillStyle = past ? 'rgba(130,115,85,0.40)' : 'rgba(248,232,195,0.96)'
+          // Earthen palette — draw low first (back), high last (front/cream peaks)
+          ctx.fillStyle = past ? 'rgba(46,38,26,0.42)' : 'rgba(107,90,62,0.98)'   // low: earth-brown
           ctx.fillRect(x, mid - bhL, 2, bhL * 2)
+          ctx.fillStyle = past ? 'rgba(82,43,26,0.40)' : 'rgba(194,104,62,0.94)'  // mid: terracotta
+          ctx.fillRect(x, mid - bhM, 2, bhM * 2)
+          ctx.fillStyle = past ? 'rgba(108,102,90,0.38)' : 'rgba(236,227,204,0.90)' // high: cream peaks
+          ctx.fillRect(x, mid - bhH, 2, bhH * 2)
         } else {
+          // RGB — low (red) back, mid (green) mid, high (blue) front
           ctx.fillStyle = past ? 'rgba(150,18,18,0.35)' : 'rgba(255,35,35,0.90)'
           ctx.fillRect(x, mid - bhL, 2, bhL * 2)
           ctx.fillStyle = past ? 'rgba(18,115,18,0.35)' : 'rgba(35,215,55,0.90)'
@@ -90,18 +92,19 @@ export function OverviewWaveform({ peaks, lowPeaks, midPeaks, highPeaks, wavefor
     } else if (peaks) {
       // CDJ gradient fallback
       const barW = cw / peaks.length
+      // Earthen CDJ gradient: cream edges → terracotta center (no blue)
       const uGrad = ctx.createLinearGradient(0, 0, 0, ch)
-      uGrad.addColorStop(0,    'rgba(20,190,255,0.70)')
-      uGrad.addColorStop(0.25, 'rgba(40,215,255,0.95)')
-      uGrad.addColorStop(0.44, 'rgba(255,230,80,1.0)')
-      uGrad.addColorStop(0.50, 'rgba(255,75,10,1.0)')
-      uGrad.addColorStop(0.56, 'rgba(255,230,80,1.0)')
-      uGrad.addColorStop(0.75, 'rgba(40,215,255,0.95)')
-      uGrad.addColorStop(1,    'rgba(20,190,255,0.70)')
+      uGrad.addColorStop(0,    'rgba(107,90,62,0.70)')   // earth-brown edge
+      uGrad.addColorStop(0.25, 'rgba(236,227,204,0.90)') // cream outer
+      uGrad.addColorStop(0.44, 'rgba(214,127,71,1.0)')   // terracotta light
+      uGrad.addColorStop(0.50, 'rgba(194,104,62,1.0)')   // terracotta center
+      uGrad.addColorStop(0.56, 'rgba(214,127,71,1.0)')
+      uGrad.addColorStop(0.75, 'rgba(236,227,204,0.90)')
+      uGrad.addColorStop(1,    'rgba(107,90,62,0.70)')
       const pGrad = ctx.createLinearGradient(0, 0, 0, ch)
-      pGrad.addColorStop(0,   'rgba(0,70,110,0.40)')
-      pGrad.addColorStop(0.5, 'rgba(50,70,60,0.55)')
-      pGrad.addColorStop(1,   'rgba(0,70,110,0.40)')
+      pGrad.addColorStop(0,   'rgba(46,38,26,0.40)')
+      pGrad.addColorStop(0.5, 'rgba(82,58,30,0.55)')
+      pGrad.addColorStop(1,   'rgba(46,38,26,0.40)')
       for (let i = 0; i < peaks.length; i++) {
         const x = i * barW
         const bh = peaks[i] * mid * SCALE

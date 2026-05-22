@@ -31,8 +31,14 @@ export function harmonicScore(a: string | null, b: string | null): number {
 }
 
 // ── Compatibility score ───────────────────────────────────────────────────────
-// Weighted combination of harmonic, energy, and BPM compatibility.
+// Weighted combination of harmonic, energy, BPM, and mood compatibility.
 // Returns 0–1 (1 = perfectly compatible).
+//
+// Weights (after Phase 1 — mood dimension added):
+//   camelot  0.35   harmonic fit is the most musical constraint
+//   energy   0.25   track intensity match
+//   bpm      0.20   tempo proximity
+//   mood     0.20   valence/atmosphere continuity
 
 export function compatibilityScore(a: Track, b: Track): number {
   const harmonic = harmonicScore(a.key, b.key)
@@ -47,7 +53,13 @@ export function compatibilityScore(a: Track, b: Track): number {
       ? 1 - Math.min(1, Math.abs(a.bpm - b.bpm) / 30)
       : 0.5
 
-  return 0.45 * harmonic + 0.35 * energy + 0.20 * bpm
+  // Mood: 1 − |Δmood| / 1.5  (tracks 1.5 apart on −1…+1 scale score 0)
+  const mood =
+    a.mood != null && b.mood != null
+      ? Math.max(0, 1 - Math.abs(a.mood - b.mood) / 1.5)
+      : 0.5
+
+  return 0.35 * harmonic + 0.25 * energy + 0.20 * bpm + 0.20 * mood
 }
 
 // ── Magic Sort ────────────────────────────────────────────────────────────────

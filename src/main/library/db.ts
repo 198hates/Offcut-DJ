@@ -33,6 +33,7 @@ export function rowToTrack(row: Record<string, unknown>): Track {
     color: (row.color as string) || '',
     energy: (row.energy as number | null) ?? null,
     danceability: (row.danceability as number | null) ?? null,
+    mood: (row.mood as number | null) ?? null,
     playCount: (row.play_count as number) ?? 0,
     lastPlayedAt: (row.last_played_at as string | null) ?? null,
     dateAdded: row.date_added as string,
@@ -41,6 +42,9 @@ export function rowToTrack(row: Record<string, unknown>): Track {
     customTags: JSON.parse((row.custom_tags as string) || '{}'),
     cuePoints: JSON.parse(row.cue_points as string),
     beatgrid: JSON.parse(row.beatgrid as string),
+    analysedBeatgrid: row.analysed_beatgrid
+      ? JSON.parse(row.analysed_beatgrid as string)
+      : null,
     sourceIds: JSON.parse(row.source_ids as string)
   }
 }

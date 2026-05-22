@@ -110,7 +110,17 @@ export function applySchema(db: import('better-sqlite3').Database): void {
     "ALTER TABLE tracks ADD COLUMN last_played_at TEXT",
     "ALTER TABLE playlists ADD COLUMN is_auto_group INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE tracks ADD COLUMN danceability REAL",
-    "ALTER TABLE tracks ADD COLUMN custom_tags TEXT NOT NULL DEFAULT '{}'"
+    "ALTER TABLE tracks ADD COLUMN custom_tags TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE tracks ADD COLUMN mood REAL",
+    `CREATE TABLE IF NOT EXISTS play_history (
+       id      TEXT PRIMARY KEY,
+       track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+       played_at TEXT NOT NULL DEFAULT (datetime('now'))
+     )`,
+    "CREATE INDEX IF NOT EXISTS idx_play_history_played_at ON play_history(played_at)",
+    "CREATE INDEX IF NOT EXISTS idx_play_history_track_id  ON play_history(track_id)",
+    // Beatgrid v2 — rich analysed grid stored alongside legacy beatgrid array
+    "ALTER TABLE tracks ADD COLUMN analysed_beatgrid TEXT"
   ]) {
     try { db.exec(stmt) } catch { /* column already exists */ }
   }
