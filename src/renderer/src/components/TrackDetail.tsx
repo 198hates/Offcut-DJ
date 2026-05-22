@@ -140,7 +140,25 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
             </button>
           ))}
         </div>
-        <button onClick={onClose} className="text-muted hover:text-ink transition-colors text-base leading-none px-1">×</button>
+        <div className="flex items-center gap-1">
+          {/* Copy info */}
+          <button
+            title="Copy track info to clipboard"
+            onClick={async () => {
+              const info = [
+                `${draft.title} — ${draft.artist}`,
+                [draft.bpm ? `${draft.bpm.toFixed(1)} bpm` : null, draft.key, draft.energy != null ? `nrg ${draft.energy}` : null].filter(Boolean).join(' · '),
+                draft.genre || null,
+              ].filter(Boolean).join('\n')
+              await navigator.clipboard.writeText(info)
+              showToast('Copied to clipboard', 'success')
+            }}
+            className="font-mono text-[8px] text-muted/40 hover:text-muted transition-colors px-1"
+          >
+            ⎘
+          </button>
+          <button onClick={onClose} className="text-muted hover:text-ink transition-colors text-base leading-none px-1">×</button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
