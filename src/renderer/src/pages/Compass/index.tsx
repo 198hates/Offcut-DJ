@@ -699,6 +699,18 @@ export function CompassPage(): JSX.Element {
                   </div>
                 )}
               </div>
+              <button
+                onClick={async () => {
+                  const name = window.prompt('New playlist name:', 'Compass selection')
+                  if (!name?.trim()) return
+                  const { createPlaylist, addTracksToPlaylist } = useLibraryStore.getState()
+                  const pl = await createPlaylist(name.trim())
+                  await addTracksToPlaylist(pl.id, lassoTrackList.map((t) => t.id))
+                  setLassoIds(new Set())
+                }}
+                className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-white/20 hover:bg-white/[0.06] px-3 py-1 rounded transition-colors">
+                + playlist
+              </button>
               <button onClick={() => setLassoIds(new Set())}
                 className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink transition-colors">
                 clear
