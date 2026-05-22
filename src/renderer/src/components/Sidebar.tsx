@@ -24,7 +24,34 @@ export function Sidebar(): JSX.Element {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [smartEditorPlaylist, setSmartEditorPlaylist] = useState<Playlist | null | undefined>(undefined)
+  const [showTemplates, setShowTemplates] = useState(false)
   const newPlaylistInputRef = useRef<HTMLInputElement>(null)
+
+  // ── Smart playlist templates ────────────────────────────────────────────────
+
+  const TEMPLATES: { name: string; icon: string; rules: SmartRule[] }[] = [
+    { name: 'New additions', icon: '✦',
+      rules: [{ field: 'dateAdded', op: 'in_last_days', value: 30 }] },
+    { name: 'High energy', icon: '⚡',
+      rules: [{ field: 'energy', op: 'greater_than', value: 7 }] },
+    { name: 'Unrated', icon: '☆',
+      rules: [{ field: 'rating', op: 'is', value: 0 }] },
+    { name: 'Never played', icon: '⬚',
+      rules: [{ field: 'playCount', op: 'is', value: 0 }] },
+    { name: 'Recently played', icon: '◉',
+      rules: [{ field: 'lastPlayedAt', op: 'in_last_days', value: 7 }] },
+    { name: 'Highly rated', icon: '★',
+      rules: [{ field: 'rating', op: 'greater_than', value: 3 }] },
+    { name: '5-star', icon: '★★',
+      rules: [{ field: 'rating', op: 'is', value: 5 }] },
+    { name: 'Long tracks', icon: '⏱',
+      rules: [{ field: 'durationSeconds', op: 'greater_than', value: 480 }] },
+  ]
+
+  const createFromTemplate = useCallback(async (t: typeof TEMPLATES[number]) => {
+    setShowTemplates(false)
+    await createSmartPlaylist(t.name, t.rules)
+  }, [createSmartPlaylist])
 
   const handleCreatePlaylist = async (): Promise<void> => {
     const name = newPlaylistName.trim()
@@ -95,7 +122,29 @@ export function Sidebar(): JSX.Element {
                 <span className="text-accent mr-1">01</span>playlists
                 <span className="ml-1 text-muted/60">· {regular.length}</span>
               </p>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 relative">
+                {/* Template picker */}
+                <button
+                  onClick={() => setShowTemplates((v) => !v)}
+                  className="text-muted/50 hover:text-accent text-[11px] leading-none transition-colors"
+                  title="Create from template"
+                >☰</button>
+                {showTemplates && (
+                  <div className="absolute top-full right-0 z-30 mt-1 w-44 bg-chassis border border-border/40 rounded shadow-xl">
+                    <div className="flex items-center justify-between px-2 py-1 border-b border-border/30">
+                      <span className="font-mono text-[7.5px] uppercase tracking-[0.12em] text-muted/50">smart templates</span>
+                      <button onClick={() => setShowTemplates(false)} className="text-muted/30 hover:text-muted text-xs">✕</button>
+                    </div>
+                    {TEMPLATES.map((t) => (
+                      <button key={t.name}
+                        onClick={() => createFromTemplate(t)}
+                        className="w-full text-left flex items-center gap-2 px-2 py-1 hover:bg-accent/[0.06] border-b border-border/10 transition-colors">
+                        <span className="text-[10px] text-muted/60 shrink-0 w-4">{t.icon}</span>
+                        <span className="font-mono text-[8.5px] text-ink truncate">{t.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <button
                   onClick={() => setSmartEditorPlaylist(null)}
                   className="text-muted hover:text-accent text-xs leading-none transition-colors"
