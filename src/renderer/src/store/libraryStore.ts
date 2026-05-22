@@ -35,6 +35,7 @@ const DEFAULT_FILTERS: Filters = {
 export interface FnBusContext {
   harmonicKey: string | null   // stored when harmonic filter was activated
   bpmRef: number | null        // stored when range filter was activated
+  moodRef: number | null       // stored when mood filter was activated (−1 to +1)
 }
 
 interface LibraryState {
@@ -95,7 +96,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   searchQuery: '',
   filters: DEFAULT_FILTERS,
   fnBus: new Set<string>(),
-  fnBusContext: { harmonicKey: null, bpmRef: null },
+  fnBusContext: { harmonicKey: null, bpmRef: null, moodRef: null },
   isLoading: false,
   isImporting: false,
   isExporting: false,
@@ -300,7 +301,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       fnBusContext: context ? { ...s.fnBusContext, ...context } : s.fnBusContext
     }
   }),
-  resetFnBus: () => set({ fnBus: new Set(), fnBusContext: { harmonicKey: null, bpmRef: null } }),
+  resetFnBus: () => set({ fnBus: new Set(), fnBusContext: { harmonicKey: null, bpmRef: null, moodRef: null } }),
 
   filteredTracks: () => {
     const { tracks, activePlaylistId, playlists, searchQuery, filters, fnBus, fnBusContext } = get()
@@ -350,6 +351,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (fnBus.has('energy'))   result = result.filter((t) => t.energy != null && t.energy >= 7)
     if (fnBus.has('analysed')) result = result.filter((t) => t.bpm != null && !!t.key)
     if (fnBus.has('cued'))     result = result.filter((t) => t.cuePoints.some((c) => c.type === 'hotcue'))
+    if (fnBus.has('mood') && fnBusContext.moodRef != null) {
+      const ref = fnBusContext.moodRef
+      // ±0.4 window: same mood zone (1.5 span covers one full category boundary either side)
+      result = result.filter((t) => t.mood != null && Math.abs(t.mood - ref) <= 0.4)
+    }
 
     return result
   },

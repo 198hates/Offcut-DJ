@@ -1,5 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useCallback } from 'react'
-import type { CuePoint, BeatgridMarker } from '@shared/types'
+import type { CuePoint, BeatgridMarker, Beatgrid } from '@shared/types'
 import type { WaveformStyle } from '../store/waveformStore'
 
 interface Props {
@@ -13,10 +13,11 @@ interface Props {
   cuePoints: CuePoint[]
   mainCueTime: number | null
   beatgrid?: BeatgridMarker[]
+  analysedBeatgrid?: Beatgrid | null
   onSeek: (time: number) => void
 }
 
-export function OverviewWaveform({ peaks, lowPeaks, midPeaks, highPeaks, waveformStyle, duration, currentTime, cuePoints, mainCueTime, beatgrid, onSeek }: Props): JSX.Element {
+export function OverviewWaveform({ peaks, lowPeaks, midPeaks, highPeaks, waveformStyle, duration, currentTime, cuePoints, mainCueTime, beatgrid, analysedBeatgrid, onSeek }: Props): JSX.Element {
   const canvasRef      = useRef<HTMLCanvasElement>(null)
   const sizeRef        = useRef({ w: 0, h: 0, dpr: 1 })
   const currentTimeRef = useRef(currentTime)
@@ -114,8 +115,37 @@ export function OverviewWaveform({ peaks, lowPeaks, midPeaks, highPeaks, wavefor
       }
     }
 
-    // Beat grid — downbeats only in overview (beat density too high to show all)
-    if (beatgrid && beatgrid.length > 0 && duration > 0) {
+    // ── Beat grid + confidence strip ─────────────────────────────────────
+    const STRIP_H = Math.round(2 * dpr)
+
+    if (analysedBeatgrid && analysedBeatgrid.beats.length > 0 && duration > 0) {
+      // Confidence strip — 2px at top
+      const SEG_PX = Math.round(16 * dpr)
+      const nSegs  = Math.ceil(cw / SEG_PX)
+      for (let si = 0; si < nSegs; si++) {
+        const tStart = (si * SEG_PX / cw) * duration
+        const tEnd   = ((si + 1) * SEG_PX / cw) * duration
+        const segBeats = analysedBeatgrid.beats.filter((b) => {
+          const t = b.positionMs / 1000; return t >= tStart && t < tEnd
+        })
+        const conf = segBeats.length > 0
+          ? segBeats.reduce((s, b) => s + b.confidence, 0) / segBeats.length
+          : 1.0
+        ctx.fillStyle = conf > 0.65
+          ? `rgba(216,106,74,${0.20 + conf * 0.55})`
+          : `rgba(110,101,83,${0.15 + conf * 0.30})`
+        ctx.fillRect(si * SEG_PX, 0, SEG_PX + 1, STRIP_H)
+      }
+      // Downbeat markers — opacity ∝ confidence
+      for (const beat of analysedBeatgrid.beats) {
+        if (beat.beatInBar !== 0) continue
+        const x = Math.round((beat.positionMs / 1000 / duration) * cw)
+        ctx.fillStyle = `rgba(216,106,74,${0.25 + beat.confidence * 0.55})`
+        ctx.fillRect(x, STRIP_H, 1, ch - STRIP_H)
+      }
+
+    } else if (beatgrid && beatgrid.length > 0 && duration > 0) {
+      // Legacy — downbeats only, no confidence data
       ctx.fillStyle = 'rgba(255,255,255,0.45)'
       for (const marker of beatgrid) {
         if (!marker.isDownbeat) continue
@@ -145,7 +175,7 @@ export function OverviewWaveform({ peaks, lowPeaks, midPeaks, highPeaks, wavefor
 
     // Viewport indicator: show visible window
     // (We don't have zoom info here, just show a subtle region marker)
-  }, [peaks, lowPeaks, midPeaks, highPeaks, waveformStyle, duration, cuePoints, mainCueTime, beatgrid])
+  }, [peaks, lowPeaks, midPeaks, highPeaks, waveformStyle, duration, cuePoints, mainCueTime, beatgrid, analysedBeatgrid])
 
   useEffect(() => {
     const canvas = canvasRef.current

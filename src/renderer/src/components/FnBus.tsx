@@ -1,5 +1,6 @@
 import { useLibraryStore } from '../store/libraryStore'
 import { useDeckAStore } from '../store/playerStore'
+import type { FnBusContext } from '../store/libraryStore'
 
 // ── Icon SVGs (1.8px stroke, 24×24 viewBox) ─────────────────────────────────
 
@@ -59,11 +60,21 @@ const ICONS: Record<string, JSX.Element> = {
       <line x1="19" y1="12" x2="22" y2="12"/>
     </svg>
   ),
+  mood: (
+    // Gradient arc — left = dark, right = bright/euphoric
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <path d="M4 17 C 6 12, 8 8, 12 8 S 18 12, 20 17"/>
+      <circle cx="4"  cy="17" r="1.5" fill="currentColor" opacity="0.4"/>
+      <circle cx="12" cy="8"  r="1.5" fill="currentColor" opacity="0.7"/>
+      <circle cx="20" cy="17" r="1.5" fill="currentColor"/>
+    </svg>
+  ),
 }
 
-const CELLS: { key: string; label: string; needsContext?: 'harmonic' | 'range' }[] = [
+const CELLS: { key: string; label: string; needsContext?: 'harmonic' | 'range' | 'mood' }[] = [
   { key: 'harmonic', label: 'harmonic',  needsContext: 'harmonic' },
   { key: 'range',    label: 'bpm ±4%',   needsContext: 'range'    },
+  { key: 'mood',     label: 'mood ±',    needsContext: 'mood'     },
   { key: 'rating',   label: '★★★+'                               },
   { key: 'unplayed', label: 'unplayed'                            },
   { key: 'new',      label: 'new · 7d'                            },
@@ -73,17 +84,28 @@ const CELLS: { key: string; label: string; needsContext?: 'harmonic' | 'range' }
 
 export function FnBus(): JSX.Element {
   const { fnBus, fnBusContext, toggleFnBus, resetFnBus, filteredTracks } = useLibraryStore()
-  const deckABpm     = useDeckAStore((s) => s.currentTrack?.bpm ?? null)
-  const deckAKey     = useDeckAStore((s) => s.currentTrack?.key ?? null)
+  const deckABpm  = useDeckAStore((s) => s.currentTrack?.bpm  ?? null)
+  const deckAKey  = useDeckAStore((s) => s.currentTrack?.key  ?? null)
+  const deckAMood = useDeckAStore((s) => s.currentTrack?.mood ?? null)
 
   const filteredCount = filteredTracks().length
   const anyActive = fnBus.size > 0
 
-  const handleToggle = (key: string, needsContext?: 'harmonic' | 'range') => {
+  const MOOD_LABEL = (m: number): string => {
+    if (m < -0.6) return 'Dark'
+    if (m < -0.2) return 'Melancholic'
+    if (m <  0.2) return 'Neutral'
+    if (m <  0.6) return 'Uplifting'
+    return 'Euphoric'
+  }
+
+  const handleToggle = (key: string, needsContext?: 'harmonic' | 'range' | 'mood') => {
     if (!fnBus.has(key) && needsContext === 'harmonic' && deckAKey) {
-      toggleFnBus(key, { harmonicKey: deckAKey })
+      toggleFnBus(key, { harmonicKey: deckAKey } as Partial<FnBusContext>)
     } else if (!fnBus.has(key) && needsContext === 'range' && deckABpm) {
-      toggleFnBus(key, { bpmRef: deckABpm })
+      toggleFnBus(key, { bpmRef: deckABpm } as Partial<FnBusContext>)
+    } else if (!fnBus.has(key) && needsContext === 'mood' && deckAMood != null) {
+      toggleFnBus(key, { moodRef: deckAMood } as Partial<FnBusContext>)
     } else {
       toggleFnBus(key)
     }
@@ -103,8 +125,9 @@ export function FnBus(): JSX.Element {
       <div className="flex flex-1">
         {CELLS.map(({ key, label, needsContext }) => {
           const on = fnBus.has(key)
-          const disabled = (needsContext === 'harmonic' && !deckAKey && !on) ||
-                           (needsContext === 'range'    && !deckABpm  && !on)
+          const disabled = (needsContext === 'harmonic' && !deckAKey      && !on) ||
+                           (needsContext === 'range'    && !deckABpm       && !on) ||
+                           (needsContext === 'mood'     && deckAMood == null && !on)
           return (
             <button
               key={key}
@@ -121,6 +144,12 @@ export function FnBus(): JSX.Element {
                     ? `bpm range: within ±4% of ${fnBusContext.bpmRef?.toFixed(1)} bpm`
                     : deckABpm
                     ? `filter tracks within ±4% of deck A bpm (${deckABpm.toFixed(1)})`
+                    : 'load a track on deck A first'
+                  : needsContext === 'mood'
+                  ? on
+                    ? `mood: showing tracks within ±0.4 of ${fnBusContext.moodRef != null ? MOOD_LABEL(fnBusContext.moodRef) : ''}`
+                    : deckAMood != null
+                    ? `filter to tracks with similar mood to deck A (${MOOD_LABEL(deckAMood)})`
                     : 'load a track on deck A first'
                   : label
               }

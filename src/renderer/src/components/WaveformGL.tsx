@@ -7,7 +7,7 @@
 // The fragment shader processes every pixel in parallel on the GPU.
 
 import { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react'
-import type { CuePoint, BeatgridMarker } from '@shared/types'
+import type { CuePoint, BeatgridMarker, Beatgrid } from '@shared/types'
 import type { WaveformStyle } from '../store/waveformStore'
 
 // ── GLSL shaders ──────────────────────────────────────────────────────────────
@@ -169,6 +169,7 @@ interface Props {
   cuePoints: CuePoint[]
   mainCueTime: number | null
   beatgrid?: BeatgridMarker[]
+  analysedBeatgrid?: Beatgrid | null
   loopStart?: number | null
   loopEnd?: number | null
   isLooping?: boolean
@@ -182,7 +183,7 @@ const STYLE_MAP: Record<WaveformStyle, number> = { gradient: 0, 'three-band': 1,
 export function WaveformGL({
   peaks, lowPeaks, midPeaks, highPeaks, waveformStyle,
   duration, currentTime, isPlaying = false, playbackRate: pbRate = 1,
-  cuePoints, mainCueTime, beatgrid,
+  cuePoints, mainCueTime, beatgrid, analysedBeatgrid,
   loopStart, loopEnd, isLooping,
   onSeek, isLoading,
 }: Props): JSX.Element {
@@ -350,14 +351,86 @@ export function WaveformGL({
       ctx.fillRect(lx2 - 8, 0, 8, 2);    ctx.fillRect(lx2 - 8, ch - 2, 8, 2)
     }
 
-    // Beat grid — bar numbers + hairlines (same as Canvas 2D Waveform)
-    if (beatgrid && beatgrid.length > 0) {
+    // ── Beat grid — confidence-aware when v2 data is available ──────────────
+    const STRIP_H = Math.round(3 * dpr)   // confidence strip height at top of canvas
+    const lw = Math.round(dpr)
+
+    if (analysedBeatgrid && analysedBeatgrid.beats.length > 0) {
+      const beats = analysedBeatgrid.beats
+
+      // 1. Confidence strip — thin band at very top, color = terracotta↔muted by confidence
+      const SEG_PX = Math.round(20 * dpr)  // one segment per 20 CSS px
+      const nSegs  = Math.ceil(cw / SEG_PX)
+      for (let si = 0; si < nSegs; si++) {
+        const tStart = startTime + (si * SEG_PX / cw) * visDur
+        const tEnd   = startTime + ((si + 1) * SEG_PX / cw) * visDur
+        const segBeats = beats.filter((b) => {
+          const t = b.positionMs / 1000; return t >= tStart && t < tEnd
+        })
+        const conf = segBeats.length > 0
+          ? segBeats.reduce((s, b) => s + b.confidence, 0) / segBeats.length
+          : 1.0
+        // Blend: low conf → muted olive, high conf → terracotta
+        const alpha = 0.25 + conf * 0.65
+        ctx.fillStyle = conf > 0.65
+          ? `rgba(216,106,74,${alpha})`
+          : `rgba(110,101,83,${0.2 + conf * 0.4})`
+        ctx.fillRect(si * SEG_PX, 0, SEG_PX + 1, STRIP_H)
+      }
+
+      // 2. Low-confidence region wash (very faint amber over uncertain stretches)
+      for (let si = 0; si < nSegs; si++) {
+        const tStart = startTime + (si * SEG_PX / cw) * visDur
+        const tEnd   = startTime + ((si + 1) * SEG_PX / cw) * visDur
+        const segBeats = beats.filter((b) => {
+          const t = b.positionMs / 1000; return t >= tStart && t < tEnd
+        })
+        if (!segBeats.length) continue
+        const conf = segBeats.reduce((s, b) => s + b.confidence, 0) / segBeats.length
+        if (conf < 0.60) {
+          const strength = (0.60 - conf) / 0.60
+          ctx.fillStyle = `rgba(216,106,74,${strength * 0.08})`
+          ctx.fillRect(si * SEG_PX, STRIP_H, SEG_PX + 1, ch - STRIP_H)
+        }
+      }
+
+      // 3. Beat ticks — opacity scaled by confidence
+      let barIdx = 0
+      for (const beat of beats) {
+        const t = beat.positionMs / 1000
+        if (t < startTime - 0.05 || t > startTime + visDur + 0.05) {
+          if (beat.beatInBar === 0 && t < startTime) barIdx++
+          continue
+        }
+        const x   = Math.round(((t - startTime) / visDur) * cw)
+        const conf = beat.confidence
+        const isDown = beat.beatInBar === 0
+
+        if (isDown) {
+          barIdx++
+          // Downbeat — full height terracotta, opacity ∝ confidence (min 25%)
+          ctx.fillStyle = `rgba(216,106,74,${0.25 + conf * 0.50})`
+          ctx.fillRect(x, STRIP_H, lw, ch - STRIP_H)
+          // Bar number
+          ctx.font = `${Math.round(7.5 * dpr)}px 'JetBrains Mono', monospace`
+          ctx.textAlign = 'center'
+          ctx.fillStyle = `rgba(235,229,211,${0.25 + conf * 0.40})`
+          ctx.fillText(String(barIdx), x, Math.round(STRIP_H + 8.5 * dpr))
+        } else {
+          // Beat — bottom-40% tick, opacity = confidence (disappears for uncertain beats)
+          const tickH = (ch - STRIP_H) * 0.38
+          ctx.fillStyle = `rgba(110,101,83,${conf * 0.28})`
+          ctx.fillRect(x, ch - tickH, lw, tickH)
+        }
+      }
+
+    } else if (beatgrid && beatgrid.length > 0) {
+      // Legacy fallback — no confidence data, render at full opacity
       let barCount = 1
       const barNums = new Map<number, number>()
       for (const m of beatgrid) { if (m.isDownbeat) barNums.set(m.positionMs, barCount++) }
 
-      const lw = Math.round(dpr)
-      ctx.fillStyle = 'rgba(110,101,83,0.28)'   // --deck-mute faint beat lines
+      ctx.fillStyle = 'rgba(110,101,83,0.28)'
       for (const m of beatgrid) {
         if (m.isDownbeat) continue
         const t = m.positionMs / 1000
@@ -371,7 +444,7 @@ export function WaveformGL({
         const t = m.positionMs / 1000
         if (t < startTime - 0.05 || t > startTime + visDur + 0.05) continue
         const x = Math.round(((t - startTime) / visDur) * cw)
-        ctx.fillStyle = 'rgba(216,106,74,0.55)'; ctx.fillRect(x, 0, lw, ch)  // terracotta downbeat
+        ctx.fillStyle = 'rgba(216,106,74,0.55)'; ctx.fillRect(x, 0, lw, ch)
         const bn = barNums.get(m.positionMs)
         if (bn !== undefined) {
           ctx.fillStyle = 'rgba(235,229,211,0.55)'
@@ -416,7 +489,7 @@ export function WaveformGL({
     ctx.fillStyle = 'rgba(216,106,74,0.06)';  ctx.fillRect(cx - 6 * dpr, 0, 12 * dpr, ch)
     ctx.fillStyle = 'rgba(216,106,74,0.18)';  ctx.fillRect(cx - 3 * dpr, 0,  6 * dpr, ch)
     ctx.fillStyle = '#D86A4A';                 ctx.fillRect(cx - dpr,     0,  2 * dpr, ch)
-  }, [duration, cuePoints, mainCueTime, beatgrid, loopStart, loopEnd, isLooping, pps])
+  }, [duration, cuePoints, mainCueTime, beatgrid, analysedBeatgrid, loopStart, loopEnd, isLooping, pps])
 
   // ── RAF loop ──────────────────────────────────────────────────────────────
   useEffect(() => {

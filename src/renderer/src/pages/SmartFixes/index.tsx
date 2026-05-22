@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
+import { inferGenre } from '../../lib/genreInference'
 import type { Track } from '@shared/types'
 
 // ── Fix algorithms ────────────────────────────────────────────────────────────
@@ -335,6 +336,33 @@ const FIXES: Fix[] = [
         const canon = canonical.get(t.artist.toLowerCase().trim())
         if (canon && t.artist !== canon)
           results.push({ trackId: t.id, display: t.title || t.filePath, field: 'artist', before: t.artist, after: canon })
+      }
+      return results
+    }
+  },
+  {
+    id: 'suggest-genres',
+    label: 'suggest genres',
+    description: 'infer a genre from BPM, energy, mood and key for tracks with no genre tag — uses rule-based scoring, always previewed before applying',
+    icon: '♬',
+    scan: (tracks) => {
+      const results: FixResult[] = []
+      for (const t of tracks) {
+        if (t.genre) continue          // already has a genre — skip
+        if (!t.bpm)  continue          // need at least BPM to infer
+        const result = inferGenre(t)
+        if (!result || result.confidence < 0.55) continue
+        const label = result.confidence >= 0.75
+          ? result.genre
+          : `${result.genre} (${Math.round(result.confidence * 100)}% — runner-up: ${result.runnerUp ?? '—'})`
+        results.push({
+          trackId: t.id,
+          display: t.title || t.filePath,
+          field: 'genre',
+          before: '—',
+          after: label,
+          extra: { genre: result.genre },
+        })
       }
       return results
     }

@@ -1,5 +1,66 @@
 export type IntegrationId = 'rekordbox' | 'serato' | 'traktor' | 'apple-music' | 'engine-dj' | 'm3u' | 'virtualdj'
 
+// ── Running Order ─────────────────────────────────────────────────────────────
+
+export type TransitionKind = 'blend' | 'cut' | 'echo-out' | 'loop-roll'
+
+export interface PlannedTransition {
+  kind: TransitionKind
+  bars?: number   // length of the blend in bars
+}
+
+export interface OrderEntry {
+  id: string              // stable UUID for drag-and-drop identity
+  trackId: string
+  plannedTransition: PlannedTransition | null   // transition INTO the next entry
+  note: string | null     // "drop this if the room is slow"
+  flexible: boolean       // swap-in candidate — not yet committed
+}
+
+export interface Annotation {
+  id: string
+  atEntryId: string       // the entry this annotation follows
+  text: string
+}
+
+export interface RunningOrder {
+  id: string
+  catalogNum: number      // N° 001, N° 002 …
+  title: string           // "Basement · Saturday, 28 June"
+  entries: OrderEntry[]
+  annotations: Annotation[]
+  createdAt: string
+  updatedAt: string
+}
+
+// ── Cut history / provenance ──────────────────────────────────────────────────
+
+/** One timestamped play — recorded automatically each time a track is loaded */
+export interface PlayEvent {
+  id: string
+  at: string                // ISO 8601 timestamp
+  mixedFrom: string | null  // track ID of what played before on that deck
+  mixedInto: string | null  // track ID of what played after (filled retrospectively)
+  deckId: 'A' | 'B' | null
+}
+
+/** Whether this file is an edit of another recording */
+export interface EditLineage {
+  isEdit: boolean
+  originalId: string | null   // track ID of the source recording
+  versionLabel: string | null // "extended intro", "vox dub", etc.
+}
+
+/** Full cut history for one track — returned by library:getCutHistory */
+export interface CutHistory {
+  trackId: string
+  plays: PlayEvent[]          // most-recent-first, capped at 50
+  editLineage: EditLineage
+  playCount: number
+  firstPlayedAt: string | null
+  lastPlayedAt: string | null
+}
+
 export interface CuePoint {
   index: number
   type: 'hotcue' | 'memory' | 'loop'
@@ -112,6 +173,8 @@ export interface Track {
   beatgrid: BeatgridMarker[]
   /** v2 beatgrid — produced by Quantiser pipeline; null until analysed */
   analysedBeatgrid: Beatgrid | null
+  /** provenance: is this an edit of another track? */
+  editLineage: EditLineage | null
   sourceIds: Partial<Record<IntegrationId, string>>
 }
 

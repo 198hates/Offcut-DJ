@@ -3,10 +3,11 @@ import { useLibraryStore } from '../store/libraryStore'
 import { useToastStore } from '../store/toastStore'
 import { CamelotWheel } from './CamelotWheel'
 import { BeatgridEditor } from './BeatgridEditor'
-import { compatibilityScore } from '../lib/compatibility'
+import { compatibilityScore, harmonicScore } from '../lib/compatibility'
 import { generateCuesForFile } from '../lib/analyzer'
-import { useDeckAStore } from '../store/playerStore'
-import type { Track, CuePoint, BeatgridMarker } from '@shared/types'
+import { useDeckAStore, useDeckBStore } from '../store/playerStore'
+import type { Track, CuePoint, BeatgridMarker, CutHistory, EditLineage } from '@shared/types'
+import { useArtwork } from '../hooks/useArtwork'
 
 const TRACK_COLORS = [
   '#6E8059', '#4E7090', '#B07A4E', '#C9A02C',
@@ -183,16 +184,44 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
 // ── Inspector tab ─────────────────────────────────────────────────────────────
 
 function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur: (s: number | null) => string; onEditBeatgrid: () => void }): JSX.Element {
+  const artworkUrl = useArtwork(draft.filePath)
+
   return (
     <div className="space-y-0">
-      {/* Track header banner */}
-      <div className="px-3 py-3 border-b border-border/30 space-y-0.5">
-        <p className="font-sans font-semibold text-[13px] text-ink leading-tight truncate">
-          {draft.title || 'Unknown Title'}
-        </p>
-        <p className="font-mono text-[9.5px] text-muted truncate">
-          {[draft.artist, draft.album].filter(Boolean).join(' · ') || '—'}
-        </p>
+      {/* Track header banner — artwork + title/artist */}
+      <div className="border-b border-border/30">
+        {artworkUrl ? (
+          <div className="relative">
+            {/* Full-width artwork image */}
+            <img
+              src={artworkUrl}
+              alt="Album art"
+              className="w-full object-cover"
+              style={{ maxHeight: 200, display: 'block' }}
+            />
+            {/* Title overlay on artwork */}
+            <div
+              className="absolute bottom-0 left-0 right-0 px-3 py-2 space-y-0.5"
+              style={{ background: 'linear-gradient(to top, rgba(13,11,8,0.92) 0%, rgba(13,11,8,0.60) 70%, transparent 100%)' }}
+            >
+              <p className="font-sans font-semibold text-[13px] text-white leading-tight truncate drop-shadow">
+                {draft.title || 'Unknown Title'}
+              </p>
+              <p className="font-mono text-[9.5px] text-white/70 truncate drop-shadow">
+                {[draft.artist, draft.album].filter(Boolean).join(' · ') || '—'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="px-3 py-3 space-y-0.5">
+            <p className="font-sans font-semibold text-[13px] text-ink leading-tight truncate">
+              {draft.title || 'Unknown Title'}
+            </p>
+            <p className="font-mono text-[9.5px] text-muted truncate">
+              {[draft.artist, draft.album].filter(Boolean).join(' · ') || '—'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Specs grid */}
@@ -239,9 +268,86 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
           </button>
         </div>
         {draft.beatgrid.length > 0 ? (
-          <p className="font-mono text-[9px] text-muted mt-1.5">
-            {draft.beatgrid.length} markers · {draft.bpm?.toFixed(2) ?? '—'} bpm
-          </p>
+          <div className="mt-1.5 space-y-1">
+            {/* v2 confidence data */}
+            {draft.analysedBeatgrid ? (() => {
+              const bg = draft.analysedBeatgrid!
+              const meanConf = bg.beats.length > 0
+                ? bg.beats.reduce((s, b) => s + b.confidence, 0) / bg.beats.length
+                : 0
+              const confPct = Math.round(meanConf * 100)
+
+              // Trust verdict
+              let verdict = 'steady'
+              let verdictColor = 'text-green-600 dark:text-green-400'
+              if (meanConf < 0.45) {
+                verdict = 'low confidence — check manually'
+                verdictColor = 'text-red-500'
+              } else if (!bg.isConstantTempo) {
+                // Find first low-confidence stretch
+                const WIN = 8, THRESH = 0.55
+                let driftMs: number | null = null
+                for (let i = 0; i + WIN <= bg.beats.length; i++) {
+                  const wm = bg.beats.slice(i, i + WIN).reduce((s, b) => s + b.confidence, 0) / WIN
+                  if (wm < THRESH) { driftMs = bg.beats[i].positionMs; break }
+                }
+                if (driftMs !== null) {
+                  const m = Math.floor(driftMs / 60000), s = Math.floor((driftMs % 60000) / 1000)
+                  verdict = `drifts after ${m}:${String(s).padStart(2,'0')}`
+                  verdictColor = 'text-amber-500'
+                } else {
+                  verdict = 'variable tempo'
+                  verdictColor = 'text-amber-500'
+                }
+              }
+
+              const SOURCE_LABELS: Record<string, string> = {
+                'beat-this': 'beat this!', essentia: 'essentia js', manual: 'manual', tags: 'tags', mock: 'mock'
+              }
+
+              const isKept = bg.source === 'manual'
+
+              return (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent/80 bg-accent/8 px-1.5 py-0.5 rounded">
+                      {SOURCE_LABELS[bg.source] ?? bg.source}
+                    </span>
+                    {isKept && (
+                      <span
+                        className="font-mono text-[8px] uppercase tracking-[0.18em] px-1.5 py-0.5 rounded border"
+                        style={{ color: '#C9A02C', borderColor: 'rgba(201,160,44,0.45)', background: 'rgba(201,160,44,0.08)' }}
+                        title="Human-verified beatgrid — confidence is definitive"
+                      >
+                        kept
+                      </span>
+                    )}
+                    <span className="font-mono text-[9px] text-muted">
+                      {bg.beats.length} beats · {bg.medianBpm.toFixed(2)} bpm
+                    </span>
+                  </div>
+                  {/* Confidence bar */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1 bg-border/30 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${confPct}%`,
+                          background: meanConf > 0.75 ? '#4A9B6F' : meanConf > 0.5 ? '#C9A02C' : '#B86E72'
+                        }}
+                      />
+                    </div>
+                    <span className="font-mono text-[9px] text-muted tabular-nums shrink-0">{confPct}%</span>
+                  </div>
+                  {/* Trust verdict */}
+                  <p className={`font-mono text-[8.5px] ${verdictColor}`}>{verdict}</p>
+                </div>
+              )
+            })() : (
+              <p className="font-mono text-[9px] text-muted">
+                {draft.beatgrid.length} markers · {draft.bpm?.toFixed(2) ?? '—'} bpm
+              </p>
+            )}
+          </div>
         ) : (
           <p className="font-mono text-[9px] text-muted/50 mt-1.5 italic">no beatgrid</p>
         )}
@@ -272,11 +378,14 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
         </div>
       )}
 
+      {/* Provenance */}
+      <ProvenanceSection trackId={draft.id} track={draft} />
+
       {/* Custom fields */}
       {Object.keys(draft.customTags).length > 0 && (
         <div className="px-3 py-3 border-t border-border/20">
           <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted mb-2">
-            <span className="text-accent mr-1">08</span>custom fields
+            <span className="text-accent mr-1">09</span>custom fields
           </p>
           <div className="space-y-1">
             {Object.entries(draft.customTags).map(([k, v]) => (
@@ -293,6 +402,206 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
           <Spec label="Source" value={Object.keys(draft.sourceIds).join(', ')} />
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Provenance section ────────────────────────────────────────────────────────
+
+function relativeDate(isoDate: string): string {
+  const diff = Date.now() - new Date(isoDate).getTime()
+  const days = Math.floor(diff / 86400000)
+  if (days === 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 7) return `${days}d ago`
+  if (days < 30) return `${Math.floor(days / 7)}w ago`
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`
+  return `${Math.floor(days / 365)}y ago`
+}
+
+function freshnessColor(lastPlayedAt: string | null, playCount: number): string | null {
+  if (!lastPlayedAt || playCount === 0) return null
+  const days = (Date.now() - new Date(lastPlayedAt).getTime()) / 86400000
+  if (days > 180) return '#C9A02C'   // amber — rediscovery candidate
+  if (days < 7)   return '#4A9B6F'   // green — played this week
+  return null
+}
+
+function ProvenanceSection({ trackId, track }: { trackId: string; track: Track }): JSX.Element {
+  const { tracks } = useLibraryStore()
+  const [history, setHistory] = useState<CutHistory | null>(null)
+  const [showEditForm, setShowEditForm] = useState(false)
+  const [editSearch, setEditSearch] = useState('')
+  const [trackOrders, setTrackOrders] = useState<{ id: string; catalogNum: number; title: string }[]>([])
+
+  useEffect(() => {
+    window.api.library.getCutHistory(trackId).then((h) => setHistory(h ?? null))
+    // Find running orders that include this track
+    window.api.library.getRunningOrders().then((orders) => {
+      setTrackOrders(
+        orders
+          .filter((o) => o.entries.some((e) => e.trackId === trackId))
+          .map((o) => ({ id: o.id, catalogNum: o.catalogNum, title: o.title }))
+      )
+    })
+  }, [trackId])
+
+  const freshColor = freshnessColor(track.lastPlayedAt, track.playCount)
+  const lineage = track.editLineage
+
+  // Resolve track ID → title for mixedFrom display
+  const resolveTitle = (id: string | null): string | null => {
+    if (!id) return null
+    const t = tracks.find((x) => x.id === id)
+    return t ? (t.title || t.filePath.split('/').pop() || id) : null
+  }
+
+  const handleMarkAsEdit = async (originalTrack: Track) => {
+    const newLineage: EditLineage = {
+      isEdit: true,
+      originalId: originalTrack.id,
+      versionLabel: null,
+    }
+    await window.api.library.updateEditLineage(trackId, newLineage)
+    // Patch local store
+    const { updateTrack } = useLibraryStore.getState()
+    await updateTrack({ id: trackId, editLineage: newLineage })
+    setShowEditForm(false)
+  }
+
+  const handleClearEdit = async () => {
+    const cleared: EditLineage = { isEdit: false, originalId: null, versionLabel: null }
+    await window.api.library.updateEditLineage(trackId, cleared)
+    const { updateTrack } = useLibraryStore.getState()
+    await updateTrack({ id: trackId, editLineage: cleared })
+  }
+
+  const searchResults = editSearch.length > 1
+    ? tracks
+        .filter((t) => t.id !== trackId && (
+          t.title.toLowerCase().includes(editSearch.toLowerCase()) ||
+          t.artist.toLowerCase().includes(editSearch.toLowerCase())
+        ))
+        .slice(0, 5)
+    : []
+
+  const originalTrack = lineage?.isEdit && lineage.originalId
+    ? tracks.find((t) => t.id === lineage.originalId)
+    : null
+
+  return (
+    <div className="px-3 py-3 border-t border-border/20">
+      <div className="flex items-center justify-between mb-2">
+        <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
+          <span className="text-accent mr-1">08</span>provenance
+        </p>
+        {freshColor && (
+          <span
+            className="font-mono text-[8px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded"
+            style={{ color: freshColor, background: freshColor + '18' }}
+          >
+            {freshColor === '#C9A02C' ? 'rediscovery' : 'recent'}
+          </span>
+        )}
+      </div>
+
+      {/* Play history */}
+      <div className="space-y-1 mb-2">
+        {track.playCount === 0 ? (
+          <p className="font-mono text-[9px] text-muted/50 italic">never played</p>
+        ) : (
+          <>
+            <div className="flex items-baseline gap-2">
+              <span className="font-mono text-[10px] font-bold text-ink tabular-nums">{track.playCount}</span>
+              <span className="font-mono text-[9px] text-muted">
+                play{track.playCount !== 1 ? 's' : ''}
+                {track.lastPlayedAt ? ` · last ${relativeDate(track.lastPlayedAt)}` : ''}
+              </span>
+            </div>
+            {/* Last 3 events with mixedFrom */}
+            {history && history.plays.slice(0, 3).map((ev) => {
+              const from = resolveTitle(ev.mixedFrom)
+              return (
+                <div key={ev.id} className="flex items-baseline gap-2 pl-1 border-l-2 border-border/30">
+                  <span className="font-mono text-[8px] text-muted/60 shrink-0">
+                    {relativeDate(ev.at)}
+                    {ev.deckId ? ` · deck ${ev.deckId}` : ''}
+                  </span>
+                  {from && (
+                    <span className="font-mono text-[8px] text-muted/50 truncate">
+                      ← {from}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </>
+        )}
+      </div>
+
+      {/* Running orders that include this track */}
+      {trackOrders.length > 0 && (
+        <div className="space-y-0.5 mb-2">
+          {trackOrders.map((o) => (
+            <div key={o.id} className="flex items-center gap-1.5">
+              <span className="font-mono text-[7.5px] uppercase tracking-[0.1em] text-accent/50">N° {String(o.catalogNum).padStart(3,'0')}</span>
+              <span className="font-mono text-[8.5px] text-muted/60 truncate">{o.title}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Edit lineage */}
+      {lineage?.isEdit ? (
+        <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t border-border/15">
+          <span className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent/70 bg-accent/8 px-1.5 py-0.5 rounded shrink-0">
+            edit
+          </span>
+          <span className="font-mono text-[9px] text-muted truncate">
+            of {originalTrack
+              ? (originalTrack.title || originalTrack.artist || 'unknown')
+              : lineage.originalId?.slice(0, 8) + '…'}
+          </span>
+          <button onClick={handleClearEdit}
+            className="ml-auto font-mono text-[8px] text-muted/50 hover:text-accent transition-colors shrink-0">
+            clear
+          </button>
+        </div>
+      ) : (
+        <div className="mt-1.5 pt-1.5 border-t border-border/15">
+          {showEditForm ? (
+            <div className="space-y-1">
+              <input
+                autoFocus
+                value={editSearch}
+                onChange={(e) => setEditSearch(e.target.value)}
+                placeholder="search for original track…"
+                className="w-full bg-transparent border border-border/40 rounded px-2 py-1 font-mono text-[9px] text-ink placeholder:text-muted/40 focus:outline-none focus:border-accent/50"
+              />
+              {searchResults.length > 0 && (
+                <div className="bg-chassis border border-border/30 rounded overflow-hidden">
+                  {searchResults.map((t) => (
+                    <button key={t.id} onClick={() => handleMarkAsEdit(t)}
+                      className="w-full text-left px-2 py-1.5 hover:bg-accent/5 border-b border-border/20 last:border-b-0 space-y-0">
+                      <p className="font-mono text-[9px] text-ink truncate">{t.title}</p>
+                      <p className="font-mono text-[8px] text-muted truncate">{t.artist}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button onClick={() => { setShowEditForm(false); setEditSearch('') }}
+                className="font-mono text-[8px] uppercase tracking-[0.1em] text-muted hover:text-ink transition-colors">
+                cancel
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setShowEditForm(true)}
+              className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted/60 hover:text-accent transition-colors">
+              + mark as edit of…
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -653,49 +962,225 @@ function formatMs(ms: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+// ── Next Mode scoring ─────────────────────────────────────────────────────────
+
+interface ScoreFactor {
+  name: string
+  value: number   // 0–1
+  label: string   // e.g. "♦ harmonic" "→ energy" "+1 nrg" "↗ build"
+  color: string
+}
+
+interface NextResult {
+  score: number
+  factors: ScoreFactor[]
+}
+
+function nextModeScore(last: Track, candidate: Track): NextResult {
+  const factors: ScoreFactor[] = []
+
+  // 1. Harmonic — 0.30
+  const harm = harmonicScore(last.key, candidate.key)
+  factors.push({
+    name: 'harmonic', value: harm,
+    label: harm > 0.8 ? '♦ harmonic' : harm > 0.5 ? '~ key' : '✗ key',
+    color: harm > 0.8 ? '#4A9B6F' : harm > 0.5 ? '#8A8474' : '#B86E72',
+  })
+
+  // 2. BPM — 0.25 (rewards mixable range, ±8%)
+  let bpmVal = 0.5
+  let bpmLabel = '— bpm'
+  if (last.bpm != null && candidate.bpm != null) {
+    const diff = Math.abs(candidate.bpm - last.bpm)
+    const pct  = diff / last.bpm
+    bpmVal  = pct < 0.03 ? 1.0 : pct < 0.06 ? 0.80 : pct < 0.10 ? 0.55 : Math.max(0, 1 - diff / 30)
+    const sign = candidate.bpm > last.bpm ? '+' : candidate.bpm < last.bpm ? '-' : '='
+    bpmLabel = `${sign}${diff.toFixed(0)} bpm`
+  }
+  factors.push({ name: 'bpm', value: bpmVal, label: bpmLabel, color: bpmVal > 0.7 ? '#C9A02C' : '#8A8474' })
+
+  // 3. Energy continuity — 0.20 (±1.5 energy units = ideal)
+  let nrgVal = 0.5
+  let nrgLabel = '— nrg'
+  if (last.energy != null && candidate.energy != null) {
+    const diff = candidate.energy - last.energy
+    nrgVal   = Math.abs(diff) <= 1.5 ? 1.0 : Math.abs(diff) <= 3 ? 0.60 : Math.max(0, 1 - Math.abs(diff) / 5)
+    nrgLabel = diff === 0 ? '= nrg' : diff > 0 ? `+${diff.toFixed(0)} nrg` : `${diff.toFixed(0)} nrg`
+  }
+  factors.push({ name: 'energy', value: nrgVal, label: nrgLabel, color: nrgVal > 0.7 ? '#4E7090' : '#8A8474' })
+
+  // 4. Mood continuity — 0.15
+  let moodVal = 0.5
+  let moodLabel = '— mood'
+  if (last.mood != null && candidate.mood != null) {
+    const diff = candidate.mood - last.mood
+    moodVal   = Math.max(0, 1 - Math.abs(diff) / 1.5)
+    moodLabel = Math.abs(diff) < 0.1 ? '→ mood' : diff > 0 ? '↑ mood' : '↓ mood'
+  }
+  factors.push({ name: 'mood', value: moodVal, label: moodLabel, color: moodVal > 0.7 ? '#9c27b0' : '#8A8474' })
+
+  // 5. Momentum — 0.10 (slight build is good, big jump or drop = penalty)
+  let momVal = 0.5
+  let momLabel = '→'
+  if (last.energy != null && candidate.energy != null) {
+    const diff = candidate.energy - last.energy
+    if (diff > 0 && diff <= 2)       { momVal = 1.0; momLabel = '↗ build' }
+    else if (diff > 2)               { momVal = 0.5; momLabel = '↑↑ jump' }
+    else if (diff >= -1 && diff <= 0){ momVal = 0.7; momLabel = '→ hold'  }
+    else                             { momVal = 0.3; momLabel = '↘ drop'  }
+  }
+  factors.push({ name: 'momentum', value: momVal, label: momLabel, color: momVal > 0.7 ? '#D86A4A' : '#8A8474' })
+
+  const score =
+    harm   * 0.30 +
+    bpmVal * 0.25 +
+    nrgVal * 0.20 +
+    moodVal * 0.15 +
+    momVal  * 0.10
+
+  return { score, factors }
+}
+
+// ── MixablePanel ──────────────────────────────────────────────────────────────
+
 function MixablePanel({ track }: { track: Track }): JSX.Element | null {
   const allTracks = useLibraryStore((s) => s.tracks)
   const loadTrackA = useDeckAStore((s) => s.loadTrack)
+  const loadTrackB = useDeckBStore((s) => s.loadTrack)
+  const deckATrack = useDeckAStore((s) => s.currentTrack)
+  const [mode, setMode] = useState<'match' | 'next'>('match')
+  const [showFactors, setShowFactors] = useState<string | null>(null)
 
   if (!track.bpm && !track.key) return null
 
-  const candidates = allTracks
+  // MATCH mode — standard compatibility scoring
+  const matchCandidates = allTracks
     .filter((t) => t.id !== track.id)
-    .map((t) => ({ track: t, score: compatibilityScore(track, t) }))
+    .map((t) => ({ track: t, score: compatibilityScore(track, t), next: null as NextResult | null }))
     .sort((a, b) => b.score - a.score)
     .slice(0, 8)
 
+  // NEXT mode — directional scoring from `track` as the last played
+  // Context: use deckA's current track (if different) as additional signal
+  const nextCandidates = allTracks
+    .filter((t) => t.id !== track.id && t.id !== deckATrack?.id)
+    .map((t) => {
+      const result = nextModeScore(track, t)
+      return { track: t, score: result.score, next: result }
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+
+  const candidates = mode === 'match' ? matchCandidates : nextCandidates
   if (!candidates.length) return null
 
   return (
     <div className="px-3 py-3 border-b border-border/30">
-      <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted mb-2">
-        <span className="text-accent mr-1">04</span>mixable tracks
-      </p>
-      <div className="space-y-1">
-        {candidates.map(({ track: t, score }) => (
-          <div
-            key={t.id}
-            className="flex items-center gap-2 py-1 px-2 rounded hover:bg-ink/[0.05] group transition-colors"
-          >
-            <div className="flex-1 min-w-0">
-              <p className="font-mono text-[10px] text-ink truncate">{t.title || '—'}</p>
-              <p className="font-mono text-[9px] text-muted truncate">{t.artist}</p>
-            </div>
-            <span className="font-mono text-[9px] text-muted tabular-nums shrink-0">{t.key ?? '—'}</span>
-            <span className="font-mono text-[9px] text-muted tabular-nums shrink-0">{t.bpm?.toFixed(0) ?? '—'}</span>
-            <div
-              className="w-8 h-1 rounded-full shrink-0"
-              title={`compatibility: ${Math.round(score * 100)}%`}
-              style={{ background: `rgba(var(--accent-rgb), ${0.2 + score * 0.8})` }}
-            />
+      {/* Header with MATCH / NEXT toggle */}
+      <div className="flex items-center justify-between mb-2">
+        <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
+          <span className="text-accent mr-1">04</span>mixable tracks
+        </p>
+        <div className="flex items-center border border-border/35 rounded overflow-hidden">
+          {(['match', 'next'] as const).map((m) => (
             <button
-              onClick={() => loadTrackA(t)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity font-mono text-[8px] uppercase tracking-[0.1em] text-accent shrink-0"
-              title="Load to deck A"
+              key={m}
+              onClick={() => setMode(m)}
+              className={`px-2 py-0.5 font-mono text-[8px] uppercase tracking-[0.1em] transition-colors ${
+                mode === m ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink'
+              }`}
             >
-              A
+              {m}
             </button>
+          ))}
+        </div>
+      </div>
+
+      {mode === 'next' && (
+        <p className="font-mono text-[8px] text-muted/50 mb-1.5">
+          what plays well <em>after</em> this track
+        </p>
+      )}
+
+      <div className="space-y-0.5">
+        {candidates.map(({ track: t, score, next }) => (
+          <div key={t.id} className="group">
+            <div className="flex items-center gap-2 py-1 px-2 rounded hover:bg-ink/[0.05] transition-colors cursor-default">
+              <div className="flex-1 min-w-0">
+                <p className="font-mono text-[10px] text-ink truncate">{t.title || '—'}</p>
+                {/* Factor pills — Next Mode only */}
+                {mode === 'next' && next && (
+                  <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                    {next.factors
+                      .sort((a, b) => b.value - a.value)
+                      .slice(0, 3)
+                      .map((f) => (
+                        <span
+                          key={f.name}
+                          className="font-mono text-[7px] uppercase tracking-[0.06em] px-1 py-px rounded"
+                          style={{ color: f.color, background: f.color + '18' }}
+                        >
+                          {f.label}
+                        </span>
+                      ))
+                    }
+                  </div>
+                )}
+                {mode === 'match' && (
+                  <p className="font-mono text-[9px] text-muted truncate">{t.artist}</p>
+                )}
+              </div>
+              <span className="font-mono text-[9px] text-muted tabular-nums shrink-0">{t.key ?? '—'}</span>
+              <span className="font-mono text-[9px] text-muted tabular-nums shrink-0">{t.bpm?.toFixed(0) ?? '—'}</span>
+              {/* Score bar */}
+              <div
+                className="w-8 h-1 rounded-full shrink-0"
+                title={`${mode === 'next' ? 'next' : 'match'}: ${Math.round(score * 100)}%`}
+                style={{ background: `rgba(var(--accent-rgb), ${0.15 + score * 0.85})` }}
+              />
+              {/* Load buttons */}
+              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => loadTrackA(t)}
+                  className="font-mono text-[8px] uppercase tracking-[0.1em] text-accent shrink-0"
+                  title="Load to deck A"
+                >A</button>
+                <button
+                  onClick={() => loadTrackB(t)}
+                  className="font-mono text-[8px] uppercase tracking-[0.1em] text-muted hover:text-ink shrink-0"
+                  title="Load to deck B"
+                >B</button>
+              </div>
+            </div>
+
+            {/* Expandable full factor breakdown */}
+            {mode === 'next' && next && showFactors === t.id && (
+              <div className="mx-2 mb-1 px-2 py-1.5 bg-ink/[0.03] rounded border border-border/20 space-y-1">
+                {next.factors.map((f) => (
+                  <div key={f.name} className="flex items-center gap-2">
+                    <span className="font-mono text-[7.5px] uppercase tracking-[0.1em] text-muted/50 w-14 shrink-0">{f.name}</span>
+                    <div className="flex-1 h-0.5 bg-border/20 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${f.value * 100}%`, background: f.color }} />
+                    </div>
+                    <span className="font-mono text-[7.5px] shrink-0" style={{ color: f.color }}>{f.label}</span>
+                    <span className="font-mono text-[7px] text-muted/40 tabular-nums shrink-0">{Math.round(f.value * 100)}%</span>
+                  </div>
+                ))}
+                <p className="font-mono text-[7.5px] font-bold text-muted/60 pt-0.5">
+                  total · {Math.round(next.score * 100)}%
+                </p>
+              </div>
+            )}
+
+            {/* Toggle breakdown on click in Next Mode */}
+            {mode === 'next' && next && (
+              <button
+                onClick={() => setShowFactors(showFactors === t.id ? null : t.id)}
+                className="w-full text-left px-4 font-mono text-[7px] text-muted/30 hover:text-muted/60 transition-colors"
+              >
+                {showFactors === t.id ? '▲ less' : '▼ why?'}
+              </button>
+            )}
           </div>
         ))}
       </div>

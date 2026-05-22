@@ -128,6 +128,7 @@ export function importFromRekordboxDb(
           danceability: null,
           mood: null,
           analysedBeatgrid: null,
+          editLineage: null,
           color: '',
           playCount: 0,
           lastPlayedAt: null,

@@ -1,4 +1,4 @@
-export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'settings'
+export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'compass' | 'orders' | 'search' | 'settings'
 
 interface Props {
   active: Section
@@ -71,6 +71,51 @@ function BuilderIcon() {
   )
 }
 
+/** Search — magnifier: advanced multi-dimension search */
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+      <circle cx="6.5" cy="6.5" r="4.5"/>
+      <line x1="10" y1="10" x2="14" y2="14"/>
+    </svg>
+  )
+}
+
+/** Orders — numbered document list: running orders */
+function OrdersIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+      {/* Numbered list lines */}
+      <line x1="5.5" y1="3.5"  x2="14"  y2="3.5"/>
+      <line x1="5.5" y1="8"    x2="14"  y2="8"/>
+      <line x1="5.5" y1="12.5" x2="14"  y2="12.5"/>
+      {/* Number markers */}
+      <text x="1.5" y="5"    fontFamily="monospace" fontSize="4" fill="currentColor" stroke="none">1</text>
+      <text x="1.5" y="9.5"  fontFamily="monospace" fontSize="4" fill="currentColor" stroke="none">2</text>
+      <text x="1.5" y="14"   fontFamily="monospace" fontSize="4" fill="currentColor" stroke="none">3</text>
+    </svg>
+  )
+}
+
+/** Compass — scatter dot: library spatial map */
+function CompassIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+      {/* Crosshair circle */}
+      <circle cx="8" cy="8" r="5.5"/>
+      <line x1="8" y1="2" x2="8" y2="4.5"/>
+      <line x1="8" y1="11.5" x2="8" y2="14"/>
+      <line x1="2" y1="8" x2="4.5" y2="8"/>
+      <line x1="11.5" y1="8" x2="14" y2="8"/>
+      {/* Scatter dots */}
+      <circle cx="6"  cy="6.5" r="1" fill="currentColor" stroke="none"/>
+      <circle cx="10" cy="5.5" r="1" fill="currentColor" stroke="none"/>
+      <circle cx="7"  cy="10" r="1" fill="currentColor" stroke="none"/>
+      <circle cx="11" cy="9.5" r="1" fill="currentColor" stroke="none"/>
+    </svg>
+  )
+}
+
 function GearIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -87,6 +132,9 @@ const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; l
   { id: 'health',  Icon: HealthIcon,  label: 'Library Health'  },
   { id: 'fixes',   Icon: FixesIcon,   label: 'Smart Fixes'     },
   { id: 'builder', Icon: BuilderIcon, label: 'Set Builder'     },
+  { id: 'search',  Icon: SearchIcon,  label: 'Advanced Search' },
+  { id: 'orders',  Icon: OrdersIcon,  label: 'Running Orders'  },
+  { id: 'compass', Icon: CompassIcon, label: 'Library Compass' },
 ]
 
 export function NavRail({ active, onNavigate }: Props): JSX.Element {

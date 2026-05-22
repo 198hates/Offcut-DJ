@@ -38,6 +38,7 @@ const COLUMNS: { key: keyof Track; label: string; width: string }[] = [
   { key: 'bpm',             label: 'BPM',    width: '52px' },
   { key: 'key',             label: 'Key',    width: '40px' },
   { key: 'energy',          label: 'Nrg',    width: '56px' },
+  { key: 'mood',            label: 'Mood',   width: '52px' },
   { key: 'rating',          label: '★',      width: '52px' },
   { key: 'durationSeconds', label: 'Time',   width: '54px' }
 ]
@@ -640,9 +641,24 @@ function TrackRow({ track, isSelected, onClick, onDoubleClick, onContextMenu, on
         <span className="block w-1.5 h-1.5 rounded-sm mx-auto" style={{ background: blipColor }} />
       </td>
 
-      {/* Analysis status icons */}
+      {/* Analysis status icons + freshness */}
       <td className="w-4">
         <div className="flex flex-col items-center gap-px">
+          {/* Freshness dot */}
+          {track.playCount > 0 && track.lastPlayedAt && (() => {
+            const days = (Date.now() - new Date(track.lastPlayedAt).getTime()) / 86400000
+            if (days > 180) return (
+              <span title={`Not played in ${Math.floor(days / 30)} months — rediscovery candidate`} style={{ lineHeight: 0 }}>
+                <svg width="5" height="5" viewBox="0 0 5 5"><circle cx="2.5" cy="2.5" r="2.5" fill="rgba(201,160,44,0.70)"/></svg>
+              </span>
+            )
+            if (days < 7) return (
+              <span title="Played this week" style={{ lineHeight: 0 }}>
+                <svg width="5" height="5" viewBox="0 0 5 5"><circle cx="2.5" cy="2.5" r="2.5" fill="rgba(74,155,111,0.70)"/></svg>
+              </span>
+            )
+            return null
+          })()}
           {track.bpm != null && (
             <span title="BPM analysed" style={{ lineHeight: 0 }}>
               <svg width="9" height="7" viewBox="0 0 9 7" fill="currentColor"
@@ -653,17 +669,53 @@ function TrackRow({ track, isSelected, onClick, onDoubleClick, onContextMenu, on
               </svg>
             </span>
           )}
-          {track.beatgrid.length > 0 && (
-            <span title="Beat grid" style={{ lineHeight: 0 }}>
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"
-                style={{ color: 'rgba(60,168,161,0.72)' }}>
-                <rect x="0" y="0" width="3" height="3" rx="0.5"/>
-                <rect x="5" y="0" width="3" height="3" rx="0.5"/>
-                <rect x="0" y="5" width="3" height="3" rx="0.5"/>
-                <rect x="5" y="5" width="3" height="3" rx="0.5"/>
-              </svg>
-            </span>
-          )}
+          {track.beatgrid.length > 0 && (() => {
+            const bg = track.analysedBeatgrid
+            const isKept = bg?.source === 'manual'
+            const meanConf = bg && bg.beats.length > 0
+              ? bg.beats.reduce((s, b) => s + b.confidence, 0) / bg.beats.length
+              : null
+            const needsEye = !isKept && meanConf !== null && meanConf < 0.60
+
+            return (
+              <span
+                title={isKept
+                  ? 'Beat grid · KEPT — human-verified, confidence definitive'
+                  : needsEye
+                  ? `Beat grid — low confidence (${Math.round(meanConf! * 100)}%) · check manually`
+                  : meanConf !== null
+                  ? `Beat grid · ${Math.round(meanConf * 100)}% confidence`
+                  : 'Beat grid'
+                }
+                style={{ lineHeight: 0 }}
+              >
+                {isKept ? (
+                  // KEPT — gold diamond
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"
+                    style={{ color: 'rgba(201,160,44,0.92)' }}>
+                    <path d="M4 0.5 L7.5 4 L4 7.5 L0.5 4 Z"/>
+                  </svg>
+                ) : needsEye ? (
+                  // ⚠ needs-an-eye
+                  <svg width="9" height="8" viewBox="0 0 9 8" fill="currentColor"
+                    style={{ color: 'rgba(201,160,44,0.85)' }}>
+                    <path d="M4.5 0.5 L8.5 7.5 H0.5 Z" strokeWidth="0" fillOpacity="0.85"/>
+                    <rect x="4" y="3.2" width="1" height="2.2" rx="0.3" fill="#0d0b08"/>
+                    <rect x="4" y="6" width="1" height="1" rx="0.3" fill="#0d0b08"/>
+                  </svg>
+                ) : (
+                  // Teal grid
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"
+                    style={{ color: 'rgba(60,168,161,0.72)' }}>
+                    <rect x="0" y="0" width="3" height="3" rx="0.5"/>
+                    <rect x="5" y="0" width="3" height="3" rx="0.5"/>
+                    <rect x="0" y="5" width="3" height="3" rx="0.5"/>
+                    <rect x="5" y="5" width="3" height="3" rx="0.5"/>
+                  </svg>
+                )}
+              </span>
+            )
+          })()}
         </div>
       </td>
 
@@ -719,6 +771,11 @@ function TrackRow({ track, isSelected, onClick, onDoubleClick, onContextMenu, on
         <EnergyBar energy={track.energy} />
       </td>
 
+      {/* Mood pip */}
+      <td className="px-2">
+        <MoodPip mood={track.mood} />
+      </td>
+
       {/* Rating */}
       <td className="px-2">
         <StarRating rating={track.rating} />
@@ -729,6 +786,41 @@ function TrackRow({ track, isSelected, onClick, onDoubleClick, onContextMenu, on
         {formatDuration(track.durationSeconds)}
       </td>
     </tr>
+  )
+}
+
+// Mood labels matching the scale in DJOID_FEATURES.md
+const MOOD_LABELS = [
+  { min: -1.0, max: -0.6, label: 'Dark',       color: '#4a3860' },
+  { min: -0.6, max: -0.2, label: 'Melancholic', color: '#6e5f8a' },
+  { min: -0.2, max:  0.2, label: 'Neutral',     color: '#6e6553' },
+  { min:  0.2, max:  0.6, label: 'Uplifting',   color: '#c8904a' },
+  { min:  0.6, max:  1.0, label: 'Euphoric',    color: '#f5c842' },
+]
+
+function getMoodLabel(mood: number): { label: string; color: string } {
+  return MOOD_LABELS.find((m) => mood >= m.min && mood <= m.max) ?? MOOD_LABELS[2]
+}
+
+/** Compact mood indicator for the Library table row */
+function MoodPip({ mood }: { mood: number | null }): JSX.Element {
+  if (mood == null) {
+    return <div className="w-full h-1.5 rounded-full" style={{ background: 'rgb(var(--border-rgb))', opacity: 0.3 }} />
+  }
+  const { label, color } = getMoodLabel(mood)
+  // Map mood [-1, 1] → left position [0%, 100%]
+  const pct = ((mood + 1) / 2) * 100
+  return (
+    <div
+      className="relative w-full rounded-full overflow-hidden"
+      style={{ height: 6, background: 'linear-gradient(to right, #2a1f3d 0%, #6e6553 50%, #f5c842 100%)' }}
+      title={`${label} (${mood > 0 ? '+' : ''}${mood.toFixed(2)})`}
+    >
+      <div
+        className="absolute top-0 bottom-0 w-1 -translate-x-1/2 rounded-full bg-white"
+        style={{ left: `${pct}%`, boxShadow: `0 0 3px ${color}` }}
+      />
+    </div>
   )
 }
 

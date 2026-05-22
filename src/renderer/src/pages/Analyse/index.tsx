@@ -9,6 +9,7 @@ import { useLibraryStore } from '../../store/libraryStore'
 import { analyzeAudio, generateCuesForFile } from '../../lib/analyzer'
 import { generateBeatgrid } from '../../lib/compatibility'
 import { getQuantiser, initQuantiser } from '../../lib/quantiser'
+import { batchInferGenres } from '../../lib/genreInference'
 import type { Track } from '@shared/types'
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -304,7 +305,11 @@ function BeatGridSection(): JSX.Element {
           <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
             <span className="text-accent mr-1.5">02</span>beat grid analysis
           </h2>
-          <p className="font-mono text-[10px] text-muted mt-0.5">onnx · beat this! · per-bar tempo, downbeats, confidence</p>
+          <p className="font-mono text-[10px] text-muted mt-0.5">
+            {modelStatus?.available
+              ? 'beat this! onnx · per-bar tempo, downbeats, confidence'
+              : 'essentia js fallback · spectral flux + dp beat tracker'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {phase === 'running' && (
@@ -312,7 +317,7 @@ function BeatGridSection(): JSX.Element {
               className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">cancel</button>
           )}
           <button onClick={start}
-            disabled={phase === 'running' || !modelStatus?.available || needingGrid.length === 0}
+            disabled={phase === 'running' || modelStatus === null || needingGrid.length === 0}
             className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors">
             {phase === 'running' ? 'analysing…' : phase === 'done' ? 're-analyse' : 'analyse beats'}
           </button>
@@ -320,21 +325,25 @@ function BeatGridSection(): JSX.Element {
       </div>
 
       {modelStatus && !modelStatus.available && (
-        <div className="bg-ink/[0.03] border border-border/30 rounded px-4 py-3 space-y-1.5">
-          <p className="font-mono text-[10px] text-muted font-bold uppercase tracking-[0.1em]">model not installed</p>
+        <div className="bg-ink/[0.03] border border-accent/20 rounded px-4 py-3 space-y-1.5">
+          <p className="font-mono text-[10px] text-ink font-bold uppercase tracking-[0.1em]">using essentia js fallback</p>
           <p className="font-mono text-[9.5px] text-muted leading-relaxed">
-            Run <span className="text-ink bg-ink/10 px-1 rounded font-bold">python scripts/export-beat-this.py</span> to export the model, then place <span className="text-ink">beat_this.onnx</span> at:
+            Spectral flux + DP beat tracker runs in-browser — no model needed. For higher accuracy, install the Beat This! ONNX model:
           </p>
-          <p className="font-mono text-[9px] text-ink-soft break-all">{modelStatus.path}</p>
+          <p className="font-mono text-[8.5px] text-muted/70">
+            Run <span className="text-ink bg-ink/10 px-1 rounded">python scripts/export-beat-this.py</span> then place <span className="text-ink">beat_this.onnx</span> at: <span className="break-all">{modelStatus.path}</span>
+          </p>
         </div>
       )}
 
-      {modelStatus?.available && (
+      {modelStatus !== null && (
         <div className="grid grid-cols-4 gap-3">
           <StatCard label="need beat grid"    value={needingGrid.length.toLocaleString()} sub={`of ${tracks.length.toLocaleString()} tracks`} accent={needingGrid.length > 0} />
           <StatCard label="with beat grid"    value={(tracks.length - needingGrid.length).toLocaleString()} />
           <StatCard label="need v2 upgrade"   value={needingUpgrade.length.toLocaleString()} sub="legacy → beatgrid v2" accent={needingUpgrade.length > 0} />
-          <StatCard label="model"             value="beat this!" sub="onnxruntime · cpu" />
+          <StatCard label="model"
+            value={modelStatus?.available ? 'beat this!' : 'essentia js'}
+            sub={modelStatus?.available ? 'onnxruntime · cpu' : 'web worker · dp tracker'} />
         </div>
       )}
 
@@ -497,6 +506,147 @@ function AutoCueSection(): JSX.Element {
   )
 }
 
+// ── Genre Suggestion ─────────────────────────────────────────────────────────
+
+type GenrePhase = 'idle' | 'scanning' | 'review' | 'applying' | 'done'
+
+function GenreSection(): JSX.Element {
+  const { tracks, updateTrack } = useLibraryStore()
+  const [phase, setPhase]   = useState<GenrePhase>('idle')
+  const [suggestions, setSuggestions] = useState<
+    { trackId: string; genre: string; confidence: number; reasoning: string; accepted: boolean }[]
+  >([])
+  const cancelRef = useRef(false)
+
+  const noGenre = tracks.filter((t) => !t.genre)
+
+  const scan = useCallback(() => {
+    cancelRef.current = false
+    setPhase('scanning')
+    const raw = batchInferGenres(noGenre, 0.50)
+    setSuggestions(raw.map((r) => ({ ...r, accepted: r.confidence >= 0.65 })))
+    setPhase('review')
+  }, [noGenre])
+
+  const apply = useCallback(async () => {
+    const toApply = suggestions.filter((s) => s.accepted)
+    if (!toApply.length) { setPhase('done'); return }
+    setPhase('applying')
+    for (const s of toApply) {
+      if (cancelRef.current) break
+      await updateTrack({ id: s.trackId, genre: s.genre })
+    }
+    setPhase('done')
+  }, [suggestions, updateTrack])
+
+  const toggleAccept = (trackId: string) =>
+    setSuggestions((prev) => prev.map((s) => s.trackId === trackId ? { ...s, accepted: !s.accepted } : s))
+
+  const acceptedCount = suggestions.filter((s) => s.accepted).length
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
+            <span className="text-accent mr-1.5">04</span>genre inference
+          </h2>
+          <p className="font-mono text-[10px] text-muted mt-0.5">
+            rule-based · bpm + energy + mood + key → genre suggestion
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {phase === 'review' && suggestions.length > 0 && (
+            <button onClick={() => { setSuggestions([]); setPhase('idle') }}
+              className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
+              cancel
+            </button>
+          )}
+          {phase === 'review' && (
+            <button onClick={apply} disabled={acceptedCount === 0}
+              className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors">
+              apply {acceptedCount} suggestion{acceptedCount !== 1 ? 's' : ''}
+            </button>
+          )}
+          {phase !== 'review' && phase !== 'applying' && (
+            <button onClick={scan}
+              disabled={phase === 'scanning' || noGenre.length === 0}
+              className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors">
+              {phase === 'scanning' ? 'scanning…' : phase === 'done' ? 're-scan' : 'infer genres'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="no genre" value={noGenre.length.toLocaleString()} sub={`of ${tracks.length.toLocaleString()} tracks`} accent={noGenre.length > 0} />
+        {phase !== 'idle' && <StatCard label="suggestions" value={suggestions.length.toLocaleString()} />}
+        {phase !== 'idle' && <StatCard label="accepted" value={acceptedCount.toLocaleString()} accent={acceptedCount > 0} />}
+      </div>
+
+      {/* Review list */}
+      {phase === 'review' && suggestions.length > 0 && (
+        <div className="space-y-px max-h-72 overflow-y-auto border border-border/20 rounded">
+          {/* Header */}
+          <div className="flex items-center gap-3 px-3 py-1.5 bg-ink/[0.03] border-b border-border/20">
+            <button onClick={() => setSuggestions((p) => p.map((s) => ({ ...s, accepted: true })))}
+              className="font-mono text-[8px] text-accent hover:text-ink transition-colors">all</button>
+            <button onClick={() => setSuggestions((p) => p.map((s) => ({ ...s, accepted: false })))}
+              className="font-mono text-[8px] text-muted hover:text-ink transition-colors">none</button>
+            <span className="flex-1" />
+            <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-muted/50">genre</span>
+            <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-muted/50 w-8 text-right">conf</span>
+          </div>
+          {suggestions.map((s) => {
+            const track = tracks.find((t) => t.id === s.trackId)
+            return (
+              <div key={s.trackId}
+                className={`flex items-center gap-3 px-3 py-1.5 border-b border-border/10 last:border-b-0 cursor-pointer transition-colors
+                  ${s.accepted ? 'bg-accent/[0.04]' : 'bg-transparent hover:bg-ink/[0.02]'}`}
+                onClick={() => toggleAccept(s.trackId)}
+              >
+                <div className={`w-3 h-3 rounded border shrink-0 flex items-center justify-center transition-colors
+                  ${s.accepted ? 'bg-accent border-accent' : 'border-border/40'}`}>
+                  {s.accepted && <span className="text-paper text-[8px]">✓</span>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-mono text-[9.5px] text-ink truncate">{track?.title || s.trackId}</p>
+                  <p className="font-mono text-[8px] text-muted/50 truncate">{s.reasoning}</p>
+                </div>
+                <span className="font-mono text-[9.5px] text-ink shrink-0">{s.genre}</span>
+                <div className="w-8 shrink-0">
+                  <div className="h-1 bg-border/20 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full"
+                      style={{ width: `${s.confidence * 100}%`, background: s.confidence > 0.75 ? '#4A9B6F' : '#C9A02C' }} />
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {phase === 'review' && suggestions.length === 0 && (
+        <p className="font-mono text-[10px] text-muted">
+          no confident inferences found — tracks may need BPM/energy analysis first
+        </p>
+      )}
+
+      {phase === 'done' && (
+        <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+          <span>✓</span> genres applied
+        </p>
+      )}
+
+      {noGenre.length === 0 && phase === 'idle' && tracks.length > 0 && (
+        <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+          <span>✓</span> all tracks have a genre
+        </p>
+      )}
+    </section>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function AnalysePage(): JSX.Element {
@@ -514,6 +664,8 @@ export function AnalysePage(): JSX.Element {
       <BeatGridSection />
       <div className="border-t border-border/20" />
       <AutoCueSection />
+      <div className="border-t border-border/20" />
+      <GenreSection />
     </div>
   )
 }

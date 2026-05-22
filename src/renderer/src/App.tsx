@@ -6,6 +6,9 @@ import { SmartFixesPage } from './pages/SmartFixes'
 import { SettingsPage } from './pages/Settings'
 import { SyncPage } from './pages/Sync'
 import { SetBuilderPage } from './pages/SetBuilder'
+import { CompassPage } from './pages/Compass'
+import { OrdersPage } from './pages/Orders'
+import { SearchPage } from './pages/Search'
 import { Sidebar } from './components/Sidebar'
 import { NavRail } from './components/NavRail'
 import type { Section } from './components/NavRail'
@@ -27,6 +30,18 @@ export default function App(): JSX.Element {
   const [showOnboarding, setShowOnboarding] = useState(false)
 
   useEffect(() => { loadLibrary() }, [loadLibrary])
+
+  // ⌘F / Ctrl+F → jump to Advanced Search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f' && !(e.target as HTMLElement).matches('input, textarea')) {
+        e.preventDefault()
+        setActivePage('search')
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   useEffect(() => {
     const off = window.electron.ipcRenderer.on('library:watchFolderAdded', () => loadLibrary())
@@ -60,6 +75,9 @@ export default function App(): JSX.Element {
             {activePage === 'health'  && <HealthPage />}
             {activePage === 'fixes'   && <SmartFixesPage />}
             {activePage === 'builder' && <SetBuilderPage />}
+            {activePage === 'search'  && <SearchPage />}
+            {activePage === 'orders'  && <OrdersPage />}
+            {activePage === 'compass' && <CompassPage />}
             {activePage === 'settings'&& <SettingsPage />}
           </div>
           {activePage === 'library' && detailTrackId && (

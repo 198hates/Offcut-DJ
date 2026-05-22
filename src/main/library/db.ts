@@ -45,6 +45,9 @@ export function rowToTrack(row: Record<string, unknown>): Track {
     analysedBeatgrid: row.analysed_beatgrid
       ? JSON.parse(row.analysed_beatgrid as string)
       : null,
+    editLineage: row.edit_lineage
+      ? JSON.parse(row.edit_lineage as string)
+      : null,
     sourceIds: JSON.parse(row.source_ids as string)
   }
 }

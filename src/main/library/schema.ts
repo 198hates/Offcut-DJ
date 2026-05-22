@@ -120,7 +120,24 @@ export function applySchema(db: import('better-sqlite3').Database): void {
     "CREATE INDEX IF NOT EXISTS idx_play_history_played_at ON play_history(played_at)",
     "CREATE INDEX IF NOT EXISTS idx_play_history_track_id  ON play_history(track_id)",
     // Beatgrid v2 — rich analysed grid stored alongside legacy beatgrid array
-    "ALTER TABLE tracks ADD COLUMN analysed_beatgrid TEXT"
+    "ALTER TABLE tracks ADD COLUMN analysed_beatgrid TEXT",
+    // Cut history — extended play event columns
+    "ALTER TABLE play_history ADD COLUMN mixed_from TEXT",
+    "ALTER TABLE play_history ADD COLUMN mixed_into TEXT",
+    "ALTER TABLE play_history ADD COLUMN deck_id   TEXT",
+    // Edit lineage — stored on the track
+    "ALTER TABLE tracks ADD COLUMN edit_lineage TEXT",
+    // Running orders — editorial programme documents
+    `CREATE TABLE IF NOT EXISTS running_orders (
+       id          TEXT PRIMARY KEY,
+       catalog_num INTEGER NOT NULL DEFAULT 1,
+       title       TEXT NOT NULL DEFAULT '',
+       entries     TEXT NOT NULL DEFAULT '[]',
+       annotations TEXT NOT NULL DEFAULT '[]',
+       created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+       updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+     )`,
+    "CREATE INDEX IF NOT EXISTS idx_running_orders_catalog ON running_orders(catalog_num)"
   ]) {
     try { db.exec(stmt) } catch { /* column already exists */ }
   }

@@ -72,6 +72,7 @@ export function importFromIntegration(appDb: Database.Database, xmlPath: string)
           danceability: null,
           mood: null,
           analysedBeatgrid: null,
+          editLineage: null,
           color: '',
           playCount: 0,
           lastPlayedAt: null,

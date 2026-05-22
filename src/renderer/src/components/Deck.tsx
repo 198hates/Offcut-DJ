@@ -8,6 +8,7 @@ import { generateBeatgrid } from '../lib/compatibility'
 import { fromBeatgridMarkers } from '../lib/quantiser'
 import { WaveformGL } from './WaveformGL'
 import { OverviewWaveform } from './OverviewWaveform'
+import { useArtwork } from '../hooks/useArtwork'
 import type { CuePoint } from '@shared/types'
 
 type DeckStoreHook = UseBoundStore<StoreApi<DeckStore>>
@@ -42,6 +43,7 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
   } = useStore()
 
   const updateTrack = useLibraryStore((s) => s.updateTrack)
+  const artworkUrl  = useArtwork(currentTrack?.filePath)
 
   const isRight = label === 'B'
 
@@ -167,7 +169,9 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
   const saveGrid = useCallback(async () => {
     if (!currentTrack || !editBpm) return
     const markers = generateBeatgrid(editBpm, editOffsetMs, duration * 1000)
-    const analysedBeatgrid = fromBeatgridMarkers(markers, 'manual')
+    // Human-verified: force confidence = 1.0 on every beat — shading clears, KEPT stamp earned
+    const keptMarkers = markers.map((m) => ({ ...m, confidence: 1.0 }))
+    const analysedBeatgrid = fromBeatgridMarkers(keptMarkers, 'manual')
     await updateTrack({ id: currentTrack.id, beatgrid: markers, bpm: Math.round(editBpm * 10) / 10, analysedBeatgrid })
     setGridEditMode(false)
   }, [currentTrack, editBpm, editOffsetMs, duration, updateTrack])
@@ -280,6 +284,21 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           {label}
         </div>
 
+        {/* Album art thumbnail — 40×40, only when artwork is available */}
+        {artworkUrl && (
+          <div
+            className="shrink-0 rounded overflow-hidden"
+            style={{ width: 40, height: 40, background: 'var(--deck-rule)' }}
+          >
+            <img
+              src={artworkUrl}
+              alt=""
+              className="w-full h-full object-cover"
+              style={{ display: 'block' }}
+            />
+          </div>
+        )}
+
         {/* Track info */}
         <div className="flex-1 min-w-0">
           <p
@@ -331,6 +350,7 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           cuePoints={currentTrack?.cuePoints ?? []}
           mainCueTime={mainCueTime}
           beatgrid={displayBeatgrid}
+          analysedBeatgrid={currentTrack?.analysedBeatgrid}
           onSeek={seek}
         />
       </div>
@@ -350,6 +370,7 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           cuePoints={currentTrack?.cuePoints ?? []}
           mainCueTime={mainCueTime}
           beatgrid={displayBeatgrid}
+          analysedBeatgrid={currentTrack?.analysedBeatgrid}
           loopStart={loopStart}
           loopEnd={loopEnd}
           isLooping={isLooping}

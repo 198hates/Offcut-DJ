@@ -4,11 +4,12 @@ import { useDeckAStore } from '../../store/playerStore'
 import { useToastStore } from '../../store/toastStore'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { compatibilityScore, magicSort } from '../../lib/compatibility'
+import { GraphView } from './GraphView'
 import type { Playlist, Track } from '@shared/types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-type ViewMode = 'split' | 'swimlane' | 'timeline'
+type ViewMode = 'split' | 'swimlane' | 'timeline' | 'graph'
 
 const CHAPTER_COLORS = [
   '#3CA8A1', '#E05E3B', '#4E7090', '#C9A02C',
@@ -21,6 +22,7 @@ const CHAPTER_COLORS = [
 interface ChapterProfile {
   bpmMin: number | null; bpmMax: number | null; bpmAvg: number | null
   energyMin: number | null; energyMax: number | null; energyAvg: number | null
+  moodAvg: number | null
   keyCluster: string | null
   duration: number; trackCount: number
 }
@@ -36,6 +38,7 @@ interface ArcTransition {
   score: number        // 0–1, higher = smoother
   energyDelta: number  // absolute energy difference between chapters
   bpmDelta: number     // absolute BPM difference
+  moodDelta: number    // absolute mood difference (0–2 range)
   label: 'smooth' | 'ok' | 'rough'
   color: string
 }
@@ -43,6 +46,7 @@ interface ArcTransition {
 function computeProfile(tracks: Track[]): ChapterProfile {
   const wb = tracks.filter((t) => t.bpm    != null)
   const we = tracks.filter((t) => t.energy != null)
+  const wm = tracks.filter((t) => t.mood   != null)
   const keyCounts = new Map<string, number>()
   for (const t of tracks) if (t.key) keyCounts.set(t.key, (keyCounts.get(t.key) ?? 0) + 1)
 
@@ -53,6 +57,7 @@ function computeProfile(tracks: Track[]): ChapterProfile {
     energyAvg:  we.length ? we.reduce((s, t) => s + t.energy!, 0) / we.length : null,
     energyMin:  we.length ? Math.min(...we.map((t) => t.energy!))  : null,
     energyMax:  we.length ? Math.max(...we.map((t) => t.energy!))  : null,
+    moodAvg:    wm.length ? wm.reduce((s, t) => s + t.mood!,   0) / wm.length : null,
     keyCluster: keyCounts.size ? [...keyCounts.entries()].sort((a, b) => b[1] - a[1])[0][0] : null,
     duration:   tracks.reduce((s, t) => s + (t.durationSeconds ?? 0), 0),
     trackCount: tracks.length,
@@ -62,7 +67,8 @@ function computeProfile(tracks: Track[]): ChapterProfile {
 /** How well a track fits an existing chapter (scored against its centroid) */
 function fitScore(track: Track, profile: ChapterProfile): number {
   const centroid = {
-    bpm: profile.bpmAvg, energy: profile.energyAvg, key: profile.keyCluster,
+    bpm: profile.bpmAvg, energy: profile.energyAvg,
+    key: profile.keyCluster, mood: profile.moodAvg,
   } as Track
   return compatibilityScore(track, centroid)
 }
@@ -72,7 +78,8 @@ function buildSuggestions(
   seed: Track, allTracks: Track[], profile: ChapterProfile, excludeIds: Set<string>
 ): Suggestion[] {
   const centroid = {
-    bpm: profile.bpmAvg, energy: profile.energyAvg, key: profile.keyCluster,
+    bpm: profile.bpmAvg, energy: profile.energyAvg,
+    key: profile.keyCluster, mood: profile.moodAvg,
   } as Track
 
   return allTracks
@@ -92,14 +99,17 @@ function arcTransition(a: ChapterProfile, b: ChapterProfile): ArcTransition {
     ? Math.abs(a.energyAvg - b.energyAvg) : 3
   const bDelta = (a.bpmAvg != null && b.bpmAvg != null)
     ? Math.abs(a.bpmAvg - b.bpmAvg) : 15
+  const mDelta = (a.moodAvg != null && b.moodAvg != null)
+    ? Math.abs(a.moodAvg - b.moodAvg) : 0.6   // neutral penalty when unknown
 
   const eScore = Math.max(0, 1 - eDelta / 5)
   const bScore = Math.max(0, 1 - bDelta / 20)
-  const score  = 0.65 * eScore + 0.35 * bScore
+  const mScore = Math.max(0, 1 - mDelta / 1.5)
+  const score  = 0.50 * eScore + 0.30 * bScore + 0.20 * mScore
 
   const label = score > 0.65 ? 'smooth' : score > 0.40 ? 'ok' : 'rough'
   const color  = score > 0.65 ? '#4A9B6F' : score > 0.40 ? '#C9A02C' : '#B86E72'
-  return { score, energyDelta: eDelta, bpmDelta: bDelta, label, color }
+  return { score, energyDelta: eDelta, bpmDelta: bDelta, moodDelta: mDelta, label, color }
 }
 
 // ── Misc helpers ──────────────────────────────────────────────────────────────
@@ -356,7 +366,7 @@ export function SetBuilderPage(): JSX.Element {
         {arcHealth.length > 0 && (
           <div className="flex items-center gap-1" title="Chapter transition quality">
             {arcHealth.map((h, i) => h && (
-              <span key={i} className="w-1.5 h-3 rounded-sm" style={{ background: h.color }} title={`Transition ${i + 1}→${i + 2}: ${h.label} (Δenergy ${h.energyDelta.toFixed(1)}, Δbpm ${h.bpmDelta.toFixed(0)})`} />
+              <span key={i} className="w-1.5 h-3 rounded-sm" style={{ background: h.color }} title={`Transition ${i + 1}→${i + 2}: ${h.label} (Δenergy ${h.energyDelta.toFixed(1)}, Δbpm ${h.bpmDelta.toFixed(0)}, Δmood ${h.moodDelta.toFixed(2)})`} />
             ))}
           </div>
         )}
@@ -397,7 +407,7 @@ export function SetBuilderPage(): JSX.Element {
 
         {/* View switcher */}
         <div className="flex items-center border border-border/35 rounded overflow-hidden">
-          {([['split', 'Split', SplitIcon], ['swimlane', 'Lanes', SwimlaneIcon], ['timeline', 'Arc', TimelineIcon]] as const).map(([mode, label, Icon]) => (
+          {([['split', 'Split', SplitIcon], ['swimlane', 'Lanes', SwimlaneIcon], ['timeline', 'Arc', TimelineIcon], ['graph', 'Graph', GraphIcon]] as const).map(([mode, label, Icon]) => (
             <button key={mode} onClick={() => setViewMode(mode)} title={label}
               className={`flex items-center gap-1 px-2 py-1 font-mono text-[9px] transition-colors ${
                 viewMode === mode ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink hover:bg-ink/5'
@@ -425,6 +435,16 @@ export function SetBuilderPage(): JSX.Element {
               {viewMode === 'split'    && <SplitView    {...viewProps} />}
               {viewMode === 'swimlane' && <SwimlaneView {...viewProps} />}
               {viewMode === 'timeline' && <TimelineView {...viewProps} />}
+              {viewMode === 'graph'    && (
+                <GraphView
+                  chapters={viewProps.chapters}
+                  chapterTracks={viewProps.chapterTracks}
+                  profiles={viewProps.profiles}
+                  activeChapterId={viewProps.activeChapterId}
+                  onAddTracks={viewProps.onAddTracks}
+                  onLoadA={viewProps.onLoadA}
+                />
+              )}
             </>
           )}
         </div>
@@ -707,7 +727,7 @@ function SplitView(p: ViewProps): JSX.Element {
               <div key={ch.id}>
                 {trans && (
                   <div className="flex items-center gap-1.5 px-3 py-0.5"
-                    title={`Transition: ${trans.label} · Δenergy ${trans.energyDelta.toFixed(1)} · Δbpm ${trans.bpmDelta.toFixed(0)}`}>
+                    title={`Transition: ${trans.label} · Δenergy ${trans.energyDelta.toFixed(1)} · Δbpm ${trans.bpmDelta.toFixed(0)} · Δmood ${trans.moodDelta.toFixed(2)}`}>
                     <div className="flex-1 h-px" style={{ background: trans.color + '60' }} />
                     <span className="font-mono text-[7px] uppercase tracking-[0.1em]" style={{ color: trans.color }}>
                       {trans.label}
@@ -1304,4 +1324,19 @@ function SwimlaneIcon(): JSX.Element {
 }
 function TimelineIcon(): JSX.Element {
   return <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><rect x="0" y="4" width="3.5" height="5" rx="0.4"/><rect x="4.5" y="2" width="3" height="7" rx="0.4"/><rect x="8.5" y="5" width="3.5" height="4" rx="0.4"/><rect x="0" y="10" width="12" height="1" rx="0.3"/></svg>
+}
+function GraphIcon(): JSX.Element {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" aria-hidden="true">
+      <circle cx="6" cy="6" r="1.8" fill="currentColor" stroke="none"/>
+      <circle cx="1.5" cy="3" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="10.5" cy="3" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="1.5" cy="9" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="10.5" cy="9" r="1.2" fill="currentColor" stroke="none"/>
+      <line x1="4.4" y1="4.9" x2="2.5" y2="3.9"/>
+      <line x1="7.6" y1="4.9" x2="9.5" y2="3.9"/>
+      <line x1="4.4" y1="7.1" x2="2.5" y2="8.1"/>
+      <line x1="7.6" y1="7.1" x2="9.5" y2="8.1"/>
+    </svg>
+  )
 }

@@ -76,6 +76,9 @@ function createDeckStore(deckId: 'A' | 'B') {
     }))
   }
 
+  // Previous track ID on this deck — used to populate mixedFrom in play events
+  let _prevTrackId: string | null = null
+
   return create<DeckStore>((set, get) => {
     engine.onTimeUpdate((t) => set({ currentTime: t }))
     engine.onEnded(() => set({ isPlaying: false, currentTime: 0 }))
@@ -111,8 +114,10 @@ function createDeckStore(deckId: 'A' | 'B') {
           engine.play()
           set({ isPlaying: true })
 
-          // Record play in DB and patch library store state
-          window.api.library.recordPlay(track.id).then((updated) => {
+          // Record play in DB with provenance (mixedFrom = previous track on this deck)
+          const prevId = _prevTrackId
+          _prevTrackId = track.id
+          window.api.library.recordPlay(track.id, { mixedFrom: prevId ?? undefined, deckId }).then((updated) => {
             set({ currentTrack: updated })
             import('./libraryStore').then(({ useLibraryStore }) => {
               useLibraryStore.setState((s) => ({

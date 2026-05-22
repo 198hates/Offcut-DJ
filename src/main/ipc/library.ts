@@ -57,7 +57,8 @@ const COL_MAP: Record<string, string> = {
   sourceIds: 'source_ids',
   cuePoints: 'cue_points',
   customTags: 'custom_tags',
-  analysedBeatgrid: 'analysed_beatgrid'
+  analysedBeatgrid: 'analysed_beatgrid',
+  editLineage: 'edit_lineage'
 }
 
 export function registerLibraryHandlers(): void {
@@ -152,14 +153,52 @@ export function registerLibraryHandlers(): void {
     db.prepare("UPDATE playlists SET color = ?, updated_at = datetime('now') WHERE id = ?").run(color, id)
   })
 
-  ipcMain.handle('library:recordPlay', (_e, id: string): Track => {
-    db.prepare(
-      "UPDATE tracks SET play_count = play_count + 1, last_played_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
-    ).run(id)
-    // Record timestamped event for calendar heatmap
-    const { v4: uuid } = require('uuid')
-    db.prepare("INSERT INTO play_history (id, track_id, played_at) VALUES (?, ?, datetime('now'))").run(uuid(), id)
-    return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown>)
+  ipcMain.handle(
+    'library:recordPlay',
+    (_e, id: string, opts?: { mixedFrom?: string; deckId?: 'A' | 'B' }): Track => {
+      db.prepare(
+        "UPDATE tracks SET play_count = play_count + 1, last_played_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
+      ).run(id)
+      const { v4: uuid } = require('uuid')
+      db.prepare(
+        "INSERT INTO play_history (id, track_id, played_at, mixed_from, deck_id) VALUES (?, ?, datetime('now'), ?, ?)"
+      ).run(uuid(), id, opts?.mixedFrom ?? null, opts?.deckId ?? null)
+      return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown>)
+    }
+  )
+
+  /** Full cut history for one track: play events + edit lineage */
+  ipcMain.handle('library:getCutHistory', (_e, trackId: string) => {
+    const track = db.prepare('SELECT play_count, last_played_at, edit_lineage FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown> | undefined
+    if (!track) return null
+
+    const rows = db.prepare(
+      "SELECT id, played_at, mixed_from, mixed_into, deck_id FROM play_history WHERE track_id = ? ORDER BY played_at DESC LIMIT 50"
+    ).all(trackId) as { id: string; played_at: string; mixed_from: string | null; mixed_into: string | null; deck_id: string | null }[]
+
+    const firstRow = db.prepare(
+      "SELECT played_at FROM play_history WHERE track_id = ? ORDER BY played_at ASC LIMIT 1"
+    ).get(trackId) as { played_at: string } | undefined
+
+    return {
+      trackId,
+      plays: rows.map((r) => ({
+        id: r.id,
+        at: r.played_at,
+        mixedFrom: r.mixed_from ?? null,
+        mixedInto: r.mixed_into ?? null,
+        deckId: (r.deck_id as 'A' | 'B' | null) ?? null,
+      })),
+      editLineage: track.edit_lineage ? JSON.parse(track.edit_lineage as string) : { isEdit: false, originalId: null, versionLabel: null },
+      playCount: (track.play_count as number) ?? 0,
+      firstPlayedAt: firstRow?.played_at ?? null,
+      lastPlayedAt: (track.last_played_at as string | null) ?? null,
+    }
+  })
+
+  /** Update edit lineage for a track */
+  ipcMain.handle('library:updateEditLineage', (_e, trackId: string, lineage: import('../../shared/types').EditLineage): void => {
+    db.prepare("UPDATE tracks SET edit_lineage = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(lineage), trackId)
   })
 
   /** Returns play counts per calendar day for the last N weeks (default 52) */
@@ -550,6 +589,116 @@ export function registerLibraryHandlers(): void {
       return exportToRekordboxDb(db, resolvedPath)
     }
   )
+
+  // ── Running Orders ────────────────────────────────────────────────────────
+
+  type RORow = { id: string; catalog_num: number; title: string; entries: string; annotations: string; created_at: string; updated_at: string }
+  type RO = import('../../shared/types').RunningOrder
+
+  function rowToOrder(row: RORow): RO {
+    return {
+      id: row.id, catalogNum: row.catalog_num, title: row.title,
+      entries: JSON.parse(row.entries), annotations: JSON.parse(row.annotations),
+      createdAt: row.created_at, updatedAt: row.updated_at,
+    }
+  }
+
+  ipcMain.handle('library:getRunningOrders', (): RO[] =>
+    (db.prepare('SELECT * FROM running_orders ORDER BY catalog_num').all() as RORow[]).map(rowToOrder)
+  )
+
+  ipcMain.handle('library:createRunningOrder', (_e, title: string): RO => {
+    const id = randomUUID()
+    const next = ((db.prepare('SELECT COALESCE(MAX(catalog_num),0) as m FROM running_orders').get() as { m: number }).m) + 1
+    db.prepare("INSERT INTO running_orders (id, catalog_num, title) VALUES (?,?,?)").run(id, next, title)
+    return rowToOrder(db.prepare('SELECT * FROM running_orders WHERE id = ?').get(id) as RORow)
+  })
+
+  ipcMain.handle('library:updateRunningOrder', (_e, id: string, patch: Partial<RO>): RO => {
+    const sets: string[] = []
+    const vals: unknown[] = []
+    if (patch.title      !== undefined) { sets.push('title = ?');       vals.push(patch.title) }
+    if (patch.entries    !== undefined) { sets.push('entries = ?');     vals.push(JSON.stringify(patch.entries)) }
+    if (patch.annotations!== undefined) { sets.push('annotations = ?'); vals.push(JSON.stringify(patch.annotations)) }
+    if (sets.length) {
+      sets.push("updated_at = datetime('now')")
+      db.prepare(`UPDATE running_orders SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id)
+    }
+    return rowToOrder(db.prepare('SELECT * FROM running_orders WHERE id = ?').get(id) as RORow)
+  })
+
+  ipcMain.handle('library:deleteRunningOrder', (_e, id: string): void => {
+    db.prepare('DELETE FROM running_orders WHERE id = ?').run(id)
+  })
+
+  ipcMain.handle('library:exportOrderPDF', async (_e, id: string): Promise<{ saved: boolean; path?: string }> => {
+    const row = db.prepare('SELECT * FROM running_orders WHERE id = ?').get(id) as RORow | undefined
+    if (!row) return { saved: false }
+    const order = rowToOrder(row)
+    const trackIds = order.entries.map((e) => e.trackId)
+    const tracks = trackIds.length
+      ? (db.prepare(`SELECT * FROM tracks WHERE id IN (${trackIds.map(() => '?').join(',')})`).all(...trackIds) as Record<string, unknown>[]).map(rowToTrack)
+      : []
+    const trackMap = new Map(tracks.map((t) => [t.id, t]))
+
+    const fmt = (s: number | null) => s ? `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}` : '—'
+    const rows = order.entries.map((e, i) => {
+      const t = trackMap.get(e.trackId)
+      return `<tr class="${i % 2 ? 'alt' : ''}${e.flexible ? ' flex' : ''}">
+        <td class="num">${i + 1}</td>
+        <td class="title">${t ? `<b>${t.title}</b><br><span class="artist">${t.artist}</span>` : e.trackId}</td>
+        <td>${t?.bpm?.toFixed(1) ?? '—'}</td>
+        <td>${t?.key ?? '—'}</td>
+        <td>${t?.energy ?? '—'}</td>
+        <td>${fmt(t?.durationSeconds ?? null)}</td>
+        <td class="trans">${e.plannedTransition ? e.plannedTransition.kind : ''}</td>
+        <td class="note">${e.note ?? ''}${e.flexible ? '<em> [flexible]</em>' : ''}</td>
+      </tr>`
+    }).join('')
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>N° ${String(order.catalogNum).padStart(3,'0')} · ${order.title}</title>
+<style>
+  body { font-family: 'Courier New', monospace; font-size: 9pt; color: #1a1a1a; margin: 12mm; }
+  h1 { font-size: 14pt; font-weight: bold; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 2mm; }
+  .sub { font-size: 8pt; color: #666; margin-bottom: 6mm; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; border-bottom: 1.5pt solid #1a1a1a; padding: 1.5mm 2mm; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.1em; }
+  td { padding: 1.5mm 2mm; font-size: 8pt; border-bottom: 0.3pt solid #ddd; vertical-align: top; }
+  .alt td { background: #f8f8f8; }
+  .flex td { color: #888; }
+  .num { width: 6mm; color: #999; }
+  .title b { font-weight: bold; }
+  .artist { font-size: 7pt; color: #666; }
+  .trans { width: 18mm; font-size: 7pt; text-transform: uppercase; color: #888; }
+  .note { font-size: 7pt; color: #666; font-style: italic; }
+  .footer { margin-top: 6mm; font-size: 7pt; color: #999; text-align: right; }
+</style></head><body>
+<h1>N° ${String(order.catalogNum).padStart(3,'0')} &nbsp;·&nbsp; ${order.title}</h1>
+<div class="sub">${order.entries.length} cuts &nbsp;·&nbsp; generated ${new Date().toISOString().slice(0,10)}</div>
+<table>
+<tr><th>#</th><th>Cut</th><th>BPM</th><th>Key</th><th>Nrg</th><th>Time</th><th>Into</th><th>Notes</th></tr>
+${rows}
+</table>
+<div class="footer">Crate · running order</div>
+</body></html>`
+
+    const { BrowserWindow } = require('electron')
+    const win = new BrowserWindow({ show: false })
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+    await new Promise((r) => win.webContents.once('did-finish-load', r))
+    const pdfBuf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
+    win.close()
+
+    const res = await dialog.showSaveDialog({
+      title: 'Save running order PDF',
+      defaultPath: `N${String(order.catalogNum).padStart(3,'0')}-${order.title.replace(/[^a-zA-Z0-9 ]/g,'').trim().replace(/ /g,'-')}.pdf`,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    })
+    if (res.canceled || !res.filePath) return { saved: false }
+    require('fs').writeFileSync(res.filePath, pdfBuf)
+    return { saved: true, path: res.filePath }
+  })
 }
 
 function getImportFilters(id: IntegrationId): Electron.FileFilter[] {

@@ -39,4 +39,27 @@ export function registerAudioHandlers(): void {
       return null
     }
   })
+
+  /**
+   * Read embedded cover art from an audio file.
+   * Reads only the first 512 KB to avoid loading large audio into memory —
+   * sufficient for ID3v2/Vorbis/MP4 tag headers in all common formats.
+   * Returns a base64 data URL ("data:image/jpeg;base64,…") or null.
+   */
+  ipcMain.handle('audio:readArtwork', async (_e, filePath: string): Promise<string | null> => {
+    if (!existsSync(filePath)) return null
+    try {
+      // Use parseFile — reads metadata without loading the full audio buffer.
+      // Falls back gracefully to null on any parse error.
+      const { parseFile } = await import('music-metadata')
+      const meta = await parseFile(filePath, { skipCovers: false, duration: false })
+      const pic  = meta.common.picture?.[0]
+      if (!pic?.data?.length) return null
+      // Validate MIME type to avoid passing garbage to the renderer
+      const fmt = pic.format?.startsWith('image/') ? pic.format : 'image/jpeg'
+      return `data:${fmt};base64,${Buffer.from(pic.data).toString('base64')}`
+    } catch {
+      return null
+    }
+  })
 }

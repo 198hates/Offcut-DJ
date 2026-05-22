@@ -3,13 +3,15 @@
  *
  * Phase 0: interfaces, helpers, and MockQuantiser.
  * Phase 1: BeatThisQuantiser (ONNX via IPC).
- * Phase 2: EssentiaQuantiser (Web Worker fallback).
+ * Phase 2: EssentiaQuantiser (Web Worker — spectral flux + DP beat tracker).
  *
  * The Quantiser interface lives in @shared/types.  This module re-exports
  * it for convenience and adds concrete implementations + conversion utilities.
  */
 
 import type { Beat, Bar, Beatgrid, BeatgridMarker, Quantiser, QuantiserHints, TriageResult, Track } from '@shared/types'
+import BeatTrackerWorker from './beatTrackerWorker?worker'
+import type { BeatTrackerInput, BeatTrackerMessage } from './beatTrackerWorker'
 
 export type { Quantiser, QuantiserHints, TriageResult }
 
@@ -221,6 +223,113 @@ export class BeatThisQuantiser implements Quantiser {
   }
 }
 
+// ── EssentiaQuantiser ─────────────────────────────────────────────────────────
+/**
+ * JS-only fallback quantiser — no ONNX model required.
+ *
+ * Uses a dedicated Web Worker (`beatTrackerWorker.ts`) that implements:
+ *   1. Spectral flux onset strength  (1024-pt FFT, 23 ms hop)
+ *   2. Autocorrelation tempo estimation
+ *   3. DP beat tracker  (Ellis-style, Gaussian transition cost)
+ *   4. Downbeat detection via 4-beat phase scoring
+ *
+ * Accuracy is lower than Beat This! for irregular-tempo material but is
+ * perfectly accurate for constant-tempo dance music and handles tempo hints.
+ */
+export class EssentiaQuantiser implements Quantiser {
+  async triage(_track: Track, _hints?: QuantiserHints): Promise<TriageResult> {
+    // No external deps — always available.  Rough estimate: ~500 ms per minute.
+    return {
+      canAnalyse: true,
+      estimatedMs: _track.durationSeconds
+        ? Math.round(_track.durationSeconds * 500 / 60)
+        : 10000
+    }
+  }
+
+  async analyse(
+    track: Track,
+    hints?: QuantiserHints,
+    onProgress?: (p: number) => void
+  ): Promise<Beatgrid> {
+    onProgress?.(0.02)
+
+    // Read + decode audio
+    const ab  = await window.api.audio.readFile(track.filePath)
+    onProgress?.(0.10)
+
+    const ctx    = new AudioContext()
+    const buffer = await ctx.decodeAudioData(ab)
+    await ctx.close()
+    onProgress?.(0.20)
+
+    // Mix to mono Float32Array
+    const mono = toMono(buffer)
+
+    // Run the DP beat tracker in a Web Worker
+    const markers = await runBeatTrackerWorker(mono, buffer.sampleRate, {
+      bpmHint: hints?.bpmHint ?? track.bpm ?? undefined,
+      onProgress: (p) => onProgress?.(0.20 + p * 0.70)   // maps worker [0,1] → [0.20, 0.90]
+    })
+
+    onProgress?.(0.92)
+
+    const beatgrid = fromBeatgridMarkers(markers, 'essentia')
+
+    // Persist v2 struct
+    await window.api.library.updateTrack({ id: track.id, analysedBeatgrid: beatgrid })
+
+    onProgress?.(1.0)
+    return beatgrid
+  }
+}
+
+function toMono(buffer: AudioBuffer): Float32Array {
+  if (buffer.numberOfChannels === 1) return buffer.getChannelData(0).slice()
+  const out = new Float32Array(buffer.length)
+  const inv = 1 / buffer.numberOfChannels
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const ch_data = buffer.getChannelData(ch)
+    for (let i = 0; i < out.length; i++) out[i] += ch_data[i] * inv
+  }
+  return out
+}
+
+function runBeatTrackerWorker(
+  samples: Float32Array,
+  sampleRate: number,
+  opts: { bpmHint?: number; onProgress?: (p: number) => void }
+): Promise<BeatgridMarker[]> {
+  return new Promise((resolve, reject) => {
+    const worker = new BeatTrackerWorker()
+
+    worker.onmessage = ({ data }: MessageEvent<BeatTrackerMessage>) => {
+      if (data.type === 'progress') {
+        opts.onProgress?.(data.pct)
+      } else if (data.type === 'result') {
+        worker.terminate()
+        resolve(data.markers as BeatgridMarker[])
+      } else {
+        worker.terminate()
+        reject(new Error(data.message))
+      }
+    }
+
+    worker.onerror = (err) => {
+      worker.terminate()
+      reject(new Error(err.message))
+    }
+
+    const input: BeatTrackerInput = {
+      samples,
+      sampleRate,
+      bpmHint: opts.bpmHint
+    }
+    // Transfer the ArrayBuffer to avoid copying 20–100 MB of audio data
+    worker.postMessage(input, [samples.buffer])
+  })
+}
+
 // ── Singleton accessor ────────────────────────────────────────────────────────
 // The active quantiser used by the player and Analyse page.
 // Call `initQuantiser()` once on app startup; thereafter `getQuantiser()` is sync.
@@ -238,14 +347,16 @@ export function setQuantiser(q: Quantiser): void {
 
 /**
  * Check model availability and install the best available quantiser.
- * Safe to call multiple times; no-ops if already initialised.
+ * Priority: BeatThisQuantiser (ONNX) > EssentiaQuantiser (JS) > MockQuantiser
+ * Safe to call multiple times; no-ops once a real quantiser is installed.
  */
 export async function initQuantiser(): Promise<void> {
+  // No-op if already using a real (non-mock) quantiser
   if (_quantiser && !(_quantiser instanceof MockQuantiser)) return
   try {
     const status = await window.api.library.beatModelStatus()
-    _quantiser = status.available ? new BeatThisQuantiser() : new MockQuantiser()
+    _quantiser = status.available ? new BeatThisQuantiser() : new EssentiaQuantiser()
   } catch {
-    _quantiser = new MockQuantiser()
+    _quantiser = new EssentiaQuantiser()
   }
 }

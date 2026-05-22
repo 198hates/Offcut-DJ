@@ -61,6 +61,7 @@ export function importFromIntegration(appDb: Database.Database, seratoDir: strin
             danceability: null,
           mood: null,
           analysedBeatgrid: null,
+          editLineage: null,
           color: '',
           playCount: 0,
           lastPlayedAt: null,

@@ -26,8 +26,12 @@ const api = {
       ipcRenderer.invoke('library:renamePlaylist', id, name),
     updatePlaylistColor: (id: string, color: string) =>
       ipcRenderer.invoke('library:updatePlaylistColor', id, color),
-    recordPlay: (id: string) =>
-      ipcRenderer.invoke('library:recordPlay', id),
+    recordPlay: (id: string, opts?: { mixedFrom?: string; deckId?: 'A' | 'B' }) =>
+      ipcRenderer.invoke('library:recordPlay', id, opts),
+    getCutHistory: (trackId: string) =>
+      ipcRenderer.invoke('library:getCutHistory', trackId),
+    updateEditLineage: (trackId: string, lineage: import('../shared/types').EditLineage) =>
+      ipcRenderer.invoke('library:updateEditLineage', trackId, lineage),
     getPlayHistory: (weeks?: number) =>
       ipcRenderer.invoke('library:getPlayHistory', weeks) as Promise<{ day: string; count: number }[]>,
     deletePlaylist: (id: string) => ipcRenderer.invoke('library:deletePlaylist', id),
@@ -67,13 +71,25 @@ const api = {
     createChapter: (setId: string, name: string, color: string) =>
       ipcRenderer.invoke('library:createChapter', setId, name, color),
     reorderChapters: (setId: string, orderedIds: string[]) =>
-      ipcRenderer.invoke('library:reorderChapters', setId, orderedIds)
+      ipcRenderer.invoke('library:reorderChapters', setId, orderedIds),
+    getRunningOrders: () =>
+      ipcRenderer.invoke('library:getRunningOrders'),
+    createRunningOrder: (title: string) =>
+      ipcRenderer.invoke('library:createRunningOrder', title),
+    updateRunningOrder: (id: string, patch: Partial<import('../shared/types').RunningOrder>) =>
+      ipcRenderer.invoke('library:updateRunningOrder', id, patch),
+    deleteRunningOrder: (id: string) =>
+      ipcRenderer.invoke('library:deleteRunningOrder', id),
+    exportOrderPDF: (id: string) =>
+      ipcRenderer.invoke('library:exportOrderPDF', id) as Promise<{ saved: boolean; path?: string }>
   },
   audio: {
     readFile: (filePath: string): Promise<ArrayBuffer> =>
       ipcRenderer.invoke('audio:readFile', filePath),
     readTags: (filePath: string) =>
-      ipcRenderer.invoke('audio:readTags', filePath)
+      ipcRenderer.invoke('audio:readTags', filePath),
+    readArtwork: (filePath: string): Promise<string | null> =>
+      ipcRenderer.invoke('audio:readArtwork', filePath)
   },
   settings: {
     get: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
