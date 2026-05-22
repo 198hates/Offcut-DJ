@@ -713,6 +713,21 @@ export function CompassPage(): JSX.Element {
               <p className="font-mono text-[11px] text-muted/40 uppercase tracking-[0.15em]">import tracks to begin</p>
             </div>
           )}
+          {tracks.length > 0 && (() => {
+            const withX = tracks.filter((t) => axisVal(t, xAxis) != null).length
+            const withY = tracks.filter((t) => axisVal(t, yAxis) != null).length
+            if (withX === 0 || withY === 0) return (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="text-center space-y-2 px-8">
+                  <p className="font-mono text-[10px] text-white/30 uppercase tracking-[0.15em]">no data for {axisLabel(withX === 0 ? xAxis : yAxis).toLowerCase()}</p>
+                  <p className="font-mono text-[8.5px] text-white/20 leading-relaxed">
+                    run Analysis → BPM + Key to populate energy and danceability,<br/>or switch axes using the controls above
+                  </p>
+                </div>
+              </div>
+            )
+            return null
+          })()}
 
           {/* Zoom hint */}
           <div className="absolute bottom-3 right-3 font-mono text-[8px] text-white/15 pointer-events-none select-none">

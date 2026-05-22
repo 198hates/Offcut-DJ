@@ -788,7 +788,7 @@ export function OrdersPage(): JSX.Element {
 
         <div className="flex-1 overflow-y-auto">
           {orders.length === 0 ? (
-            <p className="px-3 py-4 font-mono text-[9px] text-muted/50 italic">no orders yet</p>
+            <p className="px-3 py-4 font-mono text-[9px] text-muted/40 italic">empty — create your first below</p>
           ) : orders.map((o) => (
             <button
               key={o.id}
@@ -1245,20 +1245,46 @@ export function OrdersPage(): JSX.Element {
           )}
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-3">
-            <p className="font-mono text-[11px] text-muted/30 uppercase tracking-[0.15em]">no orders</p>
-            <button onClick={createOrder}
-              className="font-mono text-[9px] uppercase tracking-[0.1em] text-accent hover:text-ink border border-accent/30 hover:border-accent/60 rounded px-4 py-2 transition-colors">
-              create first order
-            </button>
-            <div className="pt-1">
-              <button onClick={importFromUsb}
-                className="font-mono text-[8px] uppercase tracking-[0.08em] text-muted/40 hover:text-muted border border-border/20 hover:border-border/50 rounded px-3 py-1.5 transition-colors">
-                ⬛ import from pioneer usb
-              </button>
-              <p className="font-mono text-[7px] text-muted/25 mt-1">reads HISTORY playlists from a plugged-in Pioneer USB</p>
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="max-w-sm w-full space-y-6">
+            {/* Heading */}
+            <div>
+              <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-accent/60 mb-1.5">running orders</p>
+              <p className="font-mono text-[11px] text-ink leading-relaxed">
+                A running order is your pre-gig programme — the arc of the night, laid out track by track.
+              </p>
+              <p className="font-mono text-[9.5px] text-muted/60 mt-2 leading-relaxed">
+                Build it by dragging tracks from the library, importing a Pioneer USB history, or starting from an existing playlist. The arc canvas, gig checklist, and Road Not Taken suggestions update as you work.
+              </p>
             </div>
+
+            {/* How to start */}
+            <div className="space-y-2">
+              {[
+                ['+ new order', 'blank canvas — start from scratch', createOrder],
+                ['⬛ pioneer usb', 'import HISTORY from a plugged-in CDJ stick', importFromUsb],
+              ].map(([label, desc, action]) => (
+                <button key={label as string}
+                  onClick={action as () => void}
+                  className="w-full text-left flex items-start gap-3 px-3 py-2.5 border border-border/25 hover:border-accent/40 rounded transition-colors group"
+                >
+                  <span className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent group-hover:text-ink transition-colors shrink-0 pt-0.5">{label as string}</span>
+                  <span className="font-mono text-[8.5px] text-muted/50 group-hover:text-muted/70 transition-colors leading-relaxed">{desc as string}</span>
+                </button>
+              ))}
+              <button
+                onClick={() => setShowPlaylistPicker(true)}
+                className="w-full text-left flex items-start gap-3 px-3 py-2.5 border border-border/25 hover:border-accent/40 rounded transition-colors group"
+              >
+                <span className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent group-hover:text-ink transition-colors shrink-0 pt-0.5">from playlist</span>
+                <span className="font-mono text-[8.5px] text-muted/50 group-hover:text-muted/70 transition-colors leading-relaxed">turn any existing playlist into a running order</span>
+              </button>
+            </div>
+
+            {/* Tip */}
+            <p className="font-mono text-[7.5px] text-muted/30 uppercase tracking-[0.12em] border-t border-border/15 pt-4">
+              tip — you can also drag tracks directly onto an empty order once it's created
+            </p>
           </div>
         </div>
       )}

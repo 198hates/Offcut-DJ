@@ -19,6 +19,7 @@ import { Onboarding } from './components/Onboarding'
 import { Player } from './components/Player'
 import { FnBus } from './components/FnBus'
 import { useLibraryStore } from './store/libraryStore'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 export default function App(): JSX.Element {
   const loadLibrary = useLibraryStore((s) => s.loadLibrary)
@@ -67,27 +68,29 @@ export default function App(): JSX.Element {
 
       <div className="flex flex-1 overflow-hidden">
         <NavRail active={activePage} onNavigate={setActivePage} />
-        {activePage === 'library' && <Sidebar />}
+        {activePage === 'library' && <ErrorBoundary name="sidebar" inline><Sidebar /></ErrorBoundary>}
         <main className="flex-1 overflow-hidden flex bg-chassis">
           <div className="flex-1 overflow-hidden">
-            {activePage === 'library' && <LibraryPage />}
-            {activePage === 'sync'    && <SyncPage />}
-            {activePage === 'analyse' && <AnalysePage />}
-            {activePage === 'health'  && <HealthPage />}
-            {activePage === 'fixes'   && <SmartFixesPage />}
-            {activePage === 'builder' && <SetBuilderPage />}
-            {activePage === 'search'  && <SearchPage />}
-            {activePage === 'orders'  && <OrdersPage />}
-            {activePage === 'compass' && <CompassPage />}
-            {activePage === 'settings'&& <SettingsPage />}
+            {activePage === 'library' && <ErrorBoundary name="library"><LibraryPage /></ErrorBoundary>}
+            {activePage === 'sync'    && <ErrorBoundary name="sync"><SyncPage /></ErrorBoundary>}
+            {activePage === 'analyse' && <ErrorBoundary name="analyse"><AnalysePage /></ErrorBoundary>}
+            {activePage === 'health'  && <ErrorBoundary name="health"><HealthPage /></ErrorBoundary>}
+            {activePage === 'fixes'   && <ErrorBoundary name="fixes"><SmartFixesPage /></ErrorBoundary>}
+            {activePage === 'builder' && <ErrorBoundary name="builder"><SetBuilderPage /></ErrorBoundary>}
+            {activePage === 'search'  && <ErrorBoundary name="search"><SearchPage /></ErrorBoundary>}
+            {activePage === 'orders'  && <ErrorBoundary name="orders"><OrdersPage /></ErrorBoundary>}
+            {activePage === 'compass' && <ErrorBoundary name="compass"><CompassPage /></ErrorBoundary>}
+            {activePage === 'settings'&& <ErrorBoundary name="settings"><SettingsPage /></ErrorBoundary>}
           </div>
           {activePage === 'library' && detailTrackId && (
-            <TrackDetail trackId={detailTrackId} onClose={() => setDetailTrackId(null)} />
+            <ErrorBoundary name="track-detail" inline>
+              <TrackDetail trackId={detailTrackId} onClose={() => setDetailTrackId(null)} />
+            </ErrorBoundary>
           )}
         </main>
       </div>
 
-      <Player />
+      <ErrorBoundary name="player" inline><Player /></ErrorBoundary>
 
       {/* Colophon */}
       <div className="shrink-0 flex items-center justify-between px-4 border-t border-border/20 bg-chassis-soft"
@@ -138,10 +141,14 @@ export default function App(): JSX.Element {
                   ['Click', 'Select track'],
                   ['⌘+Click', 'Multi-select'],
                   ['Shift+Click', 'Range select'],
+                  ['↑ / ↓', 'Move selection'],
+                  ['Shift+↑/↓', 'Extend selection'],
                   ['⌘A', 'Select all'],
-                  ['Delete', 'Remove selected from playlist'],
+                  ['Space', 'Preview 30s'],
                   ['Enter', 'Load to Deck A'],
                   ['Shift+Enter', 'Load to Deck B'],
+                  ['Delete', 'Remove from playlist'],
+                  ['Esc', 'Clear selection'],
                 ]],
               ].map(([section, shortcuts]) => (
                 <div key={section as string}>

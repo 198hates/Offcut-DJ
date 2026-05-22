@@ -78,6 +78,12 @@ export function LibraryPage(): JSX.Element {
     return () => { el.removeEventListener('scroll', onScroll); ro.disconnect() }
   }, [])
 
+  // Focus the outer container on mount so arrow keys work immediately
+  useEffect(() => {
+    const outer = containerRef.current?.closest<HTMLElement>('[tabindex]')
+    outer?.focus({ preventScroll: true })
+  }, [])
+
   const sorted = useMemo(() => {
     return [...filteredTracks].sort((a, b) => {
       const av = a[sortKey] ?? ''
@@ -136,8 +142,36 @@ export function LibraryPage(): JSX.Element {
         else if (rowY + ROW_HEIGHT > el.scrollTop + el.clientHeight)
           el.scrollTop = rowY + ROW_HEIGHT - el.clientHeight
       }
+      return
     }
-  }, [sorted, lastClickedId, setSelectedTrackIds])
+    // Enter — load to deck
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const target = lastClickedId ? sorted.find((t) => t.id === lastClickedId) : null
+      if (!target) return
+      if (e.shiftKey) loadTrackB(target)
+      else            loadTrackA(target)
+      return
+    }
+    // Space — toggle 30s preview on selected track
+    if (e.key === ' ') {
+      e.preventDefault()
+      const target = lastClickedId ? sorted.find((t) => t.id === lastClickedId) : null
+      if (target) previewToggle(target)
+      return
+    }
+    // Delete / Backspace — remove from active playlist (or nothing if all-tracks view)
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault()
+      const ids = [...selectedTrackIds]
+      if (!ids.length) return
+      if (activePlaylistId) {
+        // Remove from playlist, don't delete the tracks themselves
+        useLibraryStore.getState().removeTracksFromPlaylist(activePlaylistId, ids)
+      }
+      return
+    }
+  }, [sorted, lastClickedId, selectedTrackIds, activePlaylistId, loadTrackA, loadTrackB, previewToggle, setSelectedTrackIds])
 
   const handleRowClick = useCallback((e: React.MouseEvent, id: string) => {
     containerRef.current?.focus()
@@ -337,7 +371,7 @@ export function LibraryPage(): JSX.Element {
 
   return (
     <div
-      className="flex flex-col h-full outline-none"
+      className="flex flex-col h-full outline-none focus-visible:ring-1 focus-visible:ring-accent/20 focus-visible:ring-inset"
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
