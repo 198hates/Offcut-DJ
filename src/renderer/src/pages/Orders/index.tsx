@@ -15,6 +15,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
+import { usePreview } from '../../hooks/usePreview'
 import type { Playlist } from '@shared/types'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { compatibilityScore, camelotDistance, harmonicScore, magicSort } from '../../lib/compatibility'
@@ -405,6 +406,7 @@ export function OrdersPage(): JSX.Element {
   const { tracks, playlists } = useLibraryStore()
   const deckATrack = useDeckAStore((s) => s.currentTrack)
   const deckBTrack = useDeckBStore((s) => s.currentTrack)
+  const { previewId, toggle: previewToggle } = usePreview()
 
   const [orders, setOrders] = useState<RunningOrder[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -1023,12 +1025,14 @@ export function OrdersPage(): JSX.Element {
               </div>
               <div className="flex overflow-x-auto gap-1.5 px-3 pb-2" style={{ scrollbarWidth: 'none' }}>
                 {suggestions.map(({ track: t, score, freshnessBonus }) => (
-                  <button
-                    key={t.id}
-                    onClick={() => addTracks([t.id])}
-                    title={`${Math.round(score * 100)}% match${freshnessBonus > 0 ? ' · rediscovery +' : freshnessBonus < 0 ? ' · heavy rotation' : ''}`}
+                  <div key={t.id}
                     className="shrink-0 flex flex-col items-start bg-white/[0.03] hover:bg-accent/[0.06] border border-white/[0.05] hover:border-accent/25 rounded px-2 py-1.5 transition-colors text-left"
                     style={{ minWidth: 120, maxWidth: 160 }}
+                  >
+                  <button
+                    onClick={() => addTracks([t.id])}
+                    title={`${Math.round(score * 100)}% match${freshnessBonus > 0 ? ' · rediscovery +' : freshnessBonus < 0 ? ' · heavy rotation' : ''}`}
+                    className="w-full text-left"
                   >
                     <div className="flex items-center gap-1.5 w-full mb-0.5">
                       <span className="w-1.5 h-1.5 rounded-sm shrink-0" style={{ background: keyBlipColor(t.key) }} />
@@ -1045,6 +1049,16 @@ export function OrdersPage(): JSX.Element {
                       <span className="font-mono text-[7px] text-muted/40 tabular-nums shrink-0">{Math.round(score * 100)}%</span>
                     </div>
                   </button>
+                  {/* Preview button */}
+                  <div className="flex justify-end mt-0.5">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); previewToggle(t) }}
+                      className="font-mono text-[7px] text-muted/30 hover:text-amber-400 transition-colors"
+                    >
+                      {previewId === t.id ? '■' : '▶'}
+                    </button>
+                  </div>
+                </div>
                 ))}
               </div>
             </div>
@@ -1143,6 +1157,13 @@ export function OrdersPage(): JSX.Element {
                             <span className="font-mono text-[7px] text-muted/35 tabular-nums">{Math.round(totalScore * 100)}%</span>
                           </div>
 
+                          <button
+                            onClick={() => previewToggle(t)}
+                            className="shrink-0 font-mono text-[7px] text-muted/30 hover:text-amber-400 group-hover:text-amber-400/60 transition-colors"
+                            title={previewId === t.id ? 'Stop preview' : 'Preview 30s'}
+                          >
+                            {previewId === t.id ? '■' : '▶'}
+                          </button>
                           <button
                             onClick={() => addTracks([t.id])}
                             className="shrink-0 font-mono text-[7px] text-muted/30 hover:text-accent group-hover:text-accent/60 transition-colors"
