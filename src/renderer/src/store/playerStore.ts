@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { AudioEngine } from '../lib/audioEngine'
-import type { Track, CuePoint } from '@shared/types'
+import type { Track, CuePoint, StemKind, StemState } from '@shared/types'
 
 export const HOT_CUE_COLORS = [
   '#e91e63', '#ff9800', '#ffeb3b', '#4caf50',
@@ -37,6 +37,11 @@ export interface DeckStore {
   // Performance modes
   isQuantized: boolean        // cues/loops snap to nearest beat
   slipMode: boolean           // playhead advances under loops; exits to real position
+  // Flux mode — shadow playhead advances at normal rate while audible head is manipulated
+  fluxEnabled: boolean
+  // Stem UI state (actual bus routing lives in the engine; this drives the controls)
+  stemsVisible: boolean
+  stems: Record<StemKind, StemState>
   // Analysis
   analysisState: AnalysisState
   analyzeCurrentTrack: () => Promise<void>
@@ -70,6 +75,15 @@ export interface DeckStore {
   // Performance mode toggles
   toggleQuantize: () => void
   toggleSlipMode: () => void
+  // Flux mode
+  toggleFlux: () => void
+  /** Returns the shadow playhead position (seconds) — call from a RAF loop. */
+  getFluxTime: () => number
+  // Stem controls
+  toggleStemsVisible: () => void
+  setStemMuted: (kind: StemKind, muted: boolean) => void
+  setStemSoloed: (kind: StemKind, soloed: boolean) => void
+  setStemGain: (kind: StemKind, gainDb: number) => void
   // Quantiser
   quantiseCurrentTrack: () => Promise<void>
   _engine: AudioEngine
@@ -132,6 +146,17 @@ function createDeckStore(deckId: 'A' | 'B') {
     return _slipStartPos + elapsedSecs * playbackRate
   }
 
+  // Flux mode — shadow playhead that advances at tempo while audible is manipulated
+  let _fluxStartPos   = 0
+  let _fluxStartClock = 0
+
+  const DEFAULT_STEMS: Record<StemKind, StemState> = {
+    drums:  { muted: false, soloed: false, gainDb: 0 },
+    bass:   { muted: false, soloed: false, gainDb: 0 },
+    vocals: { muted: false, soloed: false, gainDb: 0 },
+    other:  { muted: false, soloed: false, gainDb: 0 },
+  }
+
   return create<DeckStore>((set, get) => {
     engine.onTimeUpdate((t) => set({ currentTime: t }))
     engine.onEnded(() => set({ isPlaying: false, currentTime: 0 }))
@@ -159,11 +184,15 @@ function createDeckStore(deckId: 'A' | 'B') {
       eqLow:  0,
       isQuantized: false,
       slipMode: false,
+      fluxEnabled: false,
+      stemsVisible: false,
+      stems: { ...DEFAULT_STEMS },
       analysisState: 'idle' as AnalysisState,
       _engine: engine,
 
       loadTrack: async (track) => {
-        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, eqHigh: 0, eqMid: 0, eqLow: 0, analysisState: 'idle', keylockEnabled: false })
+        _fluxStartPos = 0; _fluxStartClock = Date.now()
+        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, eqHigh: 0, eqMid: 0, eqLow: 0, analysisState: 'idle', keylockEnabled: false, fluxEnabled: false })
         try {
           const ab = await window.api.audio.readFile(track.filePath)
           const { peaks, detailPeaks, lowPeaks, midPeaks, highPeaks, duration } = await engine.load(ab)
@@ -487,6 +516,41 @@ function createDeckStore(deckId: 'A' | 'B') {
       toggleKeylock: () => set((s) => ({ keylockEnabled: !s.keylockEnabled })),
       toggleQuantize: () => set((s) => ({ isQuantized: !s.isQuantized })),
       toggleSlipMode: () => set((s) => ({ slipMode: !s.slipMode })),
+
+      // ── Flux mode ─────────────────────────────────────────────────────────
+      toggleFlux: () => {
+        const { fluxEnabled, currentTime, playbackRate } = get()
+        if (!fluxEnabled) {
+          // Engaging flux: anchor shadow at current audible position
+          _fluxStartPos   = currentTime
+          _fluxStartClock = Date.now()
+          set({ fluxEnabled: true })
+        } else {
+          // Disengaging: snap audible to where we would have been
+          const elapsed = (Date.now() - _fluxStartClock) / 1000
+          const shadowPos = Math.max(0, _fluxStartPos + elapsed * playbackRate)
+          engine.seek(shadowPos)
+          set({ fluxEnabled: false, currentTime: shadowPos })
+        }
+      },
+
+      getFluxTime: () => {
+        const { playbackRate } = get()
+        const elapsed = (Date.now() - _fluxStartClock) / 1000
+        return Math.max(0, _fluxStartPos + elapsed * playbackRate)
+      },
+
+      // ── Stem controls ─────────────────────────────────────────────────────
+      toggleStemsVisible: () => set((s) => ({ stemsVisible: !s.stemsVisible })),
+
+      setStemMuted: (kind, muted) =>
+        set((s) => ({ stems: { ...s.stems, [kind]: { ...s.stems[kind], muted } } })),
+
+      setStemSoloed: (kind, soloed) =>
+        set((s) => ({ stems: { ...s.stems, [kind]: { ...s.stems[kind], soloed } } })),
+
+      setStemGain: (kind, gainDb) =>
+        set((s) => ({ stems: { ...s.stems, [kind]: { ...s.stems[kind], gainDb } } })),
 
       setMemoryCue: async () => {
         const { currentTrack, currentTime } = get()

@@ -213,6 +213,47 @@ export interface Track {
   phrases: PhraseSegment[] | null
 }
 
+// ── Stem separation ───────────────────────────────────────────────────────────
+
+/** The four stem buses produced by HT-Demucs (or a mock in dev). */
+export type StemKind = 'drums' | 'bass' | 'vocals' | 'other'
+
+/** Per-stem UI state — actual audio routing lives in the engine; this drives the UI. */
+export interface StemState {
+  muted: boolean
+  soloed: boolean
+  /** Gain trim in dB relative to the stem bus unity (−∞ to +6). */
+  gainDb: number
+}
+
+// ── Automix decision model ────────────────────────────────────────────────────
+
+/** Confidence band: how much the automix engine trusts itself on this transition. */
+export type AutoMixBand = 'auto' | 'assisted' | 'handback'
+
+/** Component scores that feed the composite confidence. */
+export interface AutoMixScores {
+  /** Mean beat confidence across the first 16 beats of the incoming track's intro. */
+  grid: number
+  /** Camelot harmonic compatibility (1.0 = perfect, 0.0 = tritone clash). */
+  harmonic: number
+  /** Tempo proximity (1.0 = identical BPM, 0.0 = 20+ BPM apart). */
+  tempo: number
+  /** Energy continuity (1.0 = same energy level, 0.0 = full 9-point range apart). */
+  energy: number
+}
+
+export interface AutoMixDecision {
+  fromTrackId: string
+  toTrackId: string
+  /** Composite confidence score 0–1. */
+  confidence: number
+  band: AutoMixBand
+  /** Human-readable explanation of the weakest factor. */
+  reason: string
+  scores: AutoMixScores
+}
+
 export type SmartRuleField = 'bpm' | 'key' | 'genre' | 'artist' | 'album' | 'year' | 'label' | 'rating' | 'title' | 'comment' | 'durationSeconds' | 'dateAdded' | 'playCount' | 'lastPlayedAt' | 'energy' | 'danceability' | 'mood' | 'tags' | 'customTag'
 export type SmartRuleOp = 'is' | 'is_not' | 'contains' | 'not_contains' | 'greater_than' | 'less_than' | 'between' | 'in_last_days'
 

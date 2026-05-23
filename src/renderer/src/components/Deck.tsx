@@ -8,6 +8,7 @@ import { generateBeatgrid } from '../lib/compatibility'
 import { fromBeatgridMarkers } from '../lib/quantiser'
 import { WaveformGL } from './WaveformGL'
 import { OverviewWaveform } from './OverviewWaveform'
+import { StemPanel } from './StemPanel'
 import { useArtwork } from '../hooks/useArtwork'
 import type { CuePoint } from '@shared/types'
 
@@ -37,10 +38,13 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
     waveformPeaks, detailPeaks, lowPeaks, midPeaks, highPeaks, isLoading, mainCueTime,
     loopStart, loopEnd, isLooping, playbackRate, pitchRange, keylockEnabled,
     isQuantized, slipMode, analysisState,
+    fluxEnabled, stemsVisible, stems,
     loadTrack, togglePlay, seek, pressCue,
     setCue, clearCue, jumpToCue, setMemoryCue,
     setLoopIn, setLoopOut, beatLoop, loopRoll, toggleLoop, clearLoop, setPlaybackRate, setPitchRange,
     toggleKeylock, toggleQuantize, toggleSlipMode,
+    toggleFlux, getFluxTime,
+    toggleStemsVisible, setStemMuted, setStemSoloed, setStemGain,
     saveLoopSlot, jumpToLoopSlot, clearLoopSlot,
     beatJump, analyzeCurrentTrack
   } = useStore()
@@ -223,6 +227,25 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
 
   const [isDragOver, setIsDragOver] = useState(false)
 
+  // ── Flux ghost-time — updated via RAF while flux is active ────────────
+  const [fluxGhostTime, setFluxGhostTime] = useState<number | null>(null)
+  const fluxEnabledRef = useRef(fluxEnabled)
+  useEffect(() => { fluxEnabledRef.current = fluxEnabled }, [fluxEnabled])
+
+  useEffect(() => {
+    if (!fluxEnabled) { setFluxGhostTime(null); return }
+    let raf: number
+    const tick = () => {
+      if (fluxEnabledRef.current) {
+        setFluxGhostTime(getFluxTime())
+        raf = requestAnimationFrame(tick)
+      }
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fluxEnabled])
+
   // ── Drag-to-load: drop a track from the library onto this deck ────────
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes('application/x-crate-track-ids')) return
@@ -384,10 +407,21 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           loopStart={loopStart}
           loopEnd={loopEnd}
           isLooping={isLooping}
+          fluxTime={fluxGhostTime}
           onSeek={seek}
           isLoading={isLoading}
         />
       </div>
+
+      {/* ── Stem buses ───────────────────────────────────────────────── */}
+      {stemsVisible && (
+        <StemPanel
+          stems={stems}
+          onMute={setStemMuted}
+          onSolo={setStemSoloed}
+          onGain={setStemGain}
+        />
+      )}
 
       {/* ── Beatgrid edit panel ───────────────────────────────────────── */}
       {gridEditMode && (
@@ -461,7 +495,7 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
 
         <div className="flex-1" />
 
-        {/* QUANT / SLIP / KEY mode buttons */}
+        {/* QUANT / SLIP / FLUX / KEY mode buttons */}
         <button
           onClick={toggleQuantize}
           disabled={!currentTrack}
@@ -477,6 +511,14 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           className={`h-6 px-1.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-25 ${slipMode ? 'deck-btn-active' : 'deck-btn'}`}
         >
           SLIP
+        </button>
+        <button
+          onClick={toggleFlux}
+          disabled={!currentTrack}
+          title="Flux mode — shadow playhead advances at tempo while you juggle; release snaps back on-beat"
+          className={`h-6 px-1.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-25 ${fluxEnabled ? 'deck-btn-active' : 'deck-btn'}`}
+        >
+          FLUX
         </button>
         <button
           onClick={toggleKeylock}
@@ -495,6 +537,16 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           className={`h-6 px-2 rounded text-[10px] font-bold border transition-colors disabled:opacity-25 ${gridEditMode ? 'deck-btn-active' : 'deck-btn'}`}
         >
           GRID
+        </button>
+
+        {/* Stem buses toggle */}
+        <button
+          onClick={toggleStemsVisible}
+          disabled={!currentTrack}
+          title="Stem buses — drums / bass / vocals / other"
+          className={`h-6 px-1.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-25 ${stemsVisible ? 'deck-btn-active' : 'deck-btn'}`}
+        >
+          STEMS
         </button>
 
         <div className="w-px h-4 mx-0.5 shrink-0" style={{ background: 'var(--deck-rule)' }} />

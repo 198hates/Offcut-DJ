@@ -173,6 +173,8 @@ interface Props {
   loopStart?: number | null
   loopEnd?: number | null
   isLooping?: boolean
+  /** Flux-mode shadow playhead (seconds). Renders as a ghost hairline ahead of the real head. */
+  fluxTime?: number | null
   onSeek: (time: number) => void
   isLoading?: boolean
 }
@@ -185,6 +187,7 @@ export function WaveformGL({
   duration, currentTime, isPlaying = false, playbackRate: pbRate = 1,
   cuePoints, mainCueTime, beatgrid, analysedBeatgrid,
   loopStart, loopEnd, isLooping,
+  fluxTime,
   onSeek, isLoading,
 }: Props): JSX.Element {
   const glCanvasRef  = useRef<HTMLCanvasElement>(null)
@@ -198,10 +201,12 @@ export function WaveformGL({
   // Anchor: lets drawOverlay interpolate position smoothly between audio-engine ticks
   const anchorRef    = useRef<{ pos: number; wall: number } | null>(null)
   const playbackRate = useRef(pbRate)
+  const fluxTimeRef  = useRef<number | null | undefined>(fluxTime)
   const [pps, setPps] = useState(DEFAULT_PPS)
 
-  // Keep playbackRate ref in sync without triggering callbacks
+  // Keep playbackRate + fluxTime refs in sync without triggering callbacks
   useLayoutEffect(() => { playbackRate.current = pbRate }, [pbRate])
+  useLayoutEffect(() => { fluxTimeRef.current = fluxTime }, [fluxTime])
 
   // On each new currentTime from the engine: reset the anchor so interpolation
   // starts fresh from this exact position.
@@ -483,6 +488,25 @@ export function WaveformGL({
 
     // Center baseline
     ctx.fillStyle = 'rgba(235,229,211,0.10)'; ctx.fillRect(0, mid - 0.5, cw, 1)
+
+    // Flux ghost playhead — dashed terracotta hairline showing where we "would be"
+    const ft = fluxTimeRef.current
+    if (ft != null && ft !== ctRef.current) {
+      const fx = ((ft - startTime) / visDur) * cw
+      if (fx >= 0 && fx <= cw) {
+        ctx.save()
+        ctx.setLineDash([4 * dpr, 3 * dpr])
+        ctx.strokeStyle = 'rgba(216,106,74,0.55)'
+        ctx.lineWidth   = Math.round(dpr)
+        ctx.beginPath(); ctx.moveTo(fx, 0); ctx.lineTo(fx, ch); ctx.stroke()
+        ctx.restore()
+        // "FLUX" label
+        ctx.font      = `${Math.round(7 * dpr)}px 'JetBrains Mono', monospace`
+        ctx.fillStyle = 'rgba(216,106,74,0.65)'
+        ctx.textAlign = 'left'
+        ctx.fillText('FLUX', fx + 3 * dpr, Math.round(10 * dpr))
+      }
+    }
 
     // Playhead — terracotta
     const cx = cw / 2

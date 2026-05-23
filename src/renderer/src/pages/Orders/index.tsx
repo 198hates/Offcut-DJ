@@ -20,7 +20,8 @@ import type { Playlist } from '@shared/types'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { compatibilityScore, camelotDistance, harmonicScore, magicSort } from '../../lib/compatibility'
 import { scoreLibrary, transitionContext } from '../../lib/roadNotTaken'
-import type { RunningOrder, OrderEntry, TransitionKind, Track } from '@shared/types'
+import { scoreTransition, BAND_LABEL, BAND_GLYPH, BAND_COLOR, BAND_BG, BAND_BORDER } from '../../lib/automix'
+import type { RunningOrder, OrderEntry, TransitionKind, Track, AutoMixDecision } from '@shared/types'
 // crypto.randomUUID() is used throughout (browser built-in)
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -179,11 +180,13 @@ function OrderArc({ tracks, lens }: { tracks: (Track | null)[]; lens: Lens }): J
 // ── Entry row ─────────────────────────────────────────────────────────────────
 
 function EntryRow({
-  entry, index, track, nextTrack, isLast,
+  entry, index, track, nextTrack, isLast, automix,
   onToggleFlexible, onSetTransition, onSetNote, onRemove,
   onDragStart, onDragOver, onDrop, isDragOver,
 }: {
   entry: OrderEntry; index: number; track: Track | null; nextTrack: Track | null; isLast: boolean
+  /** AutoMix decision for the transition INTO the next track (null on last entry). */
+  automix: AutoMixDecision | null
   onToggleFlexible: () => void
   onSetTransition: (k: TransitionKind | null) => void
   onSetNote: (note: string) => void
@@ -388,6 +391,22 @@ function EntryRow({
                 {bpmDelta > 0 ? '+' : ''}{bpmDelta.toFixed(0)} bpm
               </span>
             )}
+            {/* AutoMix decision band pill */}
+            {automix && (
+              <span
+                className="ml-auto font-mono text-[7px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded shrink-0"
+                style={{
+                  color: BAND_COLOR[automix.band],
+                  background: BAND_BG[automix.band],
+                  borderWidth: 1,
+                  borderStyle: 'solid',
+                  borderColor: BAND_BORDER[automix.band],
+                }}
+                title={`${(automix.confidence * 100).toFixed(0)}% — ${automix.reason}`}
+              >
+                {BAND_GLYPH[automix.band]} {BAND_LABEL[automix.band]}
+              </span>
+            )}
           </div>
         )
       })()}
@@ -436,6 +455,18 @@ export function OrdersPage(): JSX.Element {
     () => (active?.entries ?? []).map((e) => trackMap.get(e.trackId) ?? null),
     [active, trackMap]
   )
+
+  /** AutoMix decisions for each consecutive pair in the active order. Keyed by fromTrackId. */
+  const automixDecisions = useMemo((): Map<string, AutoMixDecision> => {
+    const map = new Map<string, AutoMixDecision>()
+    if (!active) return map
+    for (let i = 0; i < active.entries.length - 1; i++) {
+      const from = trackMap.get(active.entries[i].trackId)
+      const to   = trackMap.get(active.entries[i + 1].trackId)
+      if (from && to) map.set(from.id, scoreTransition(from, to))
+    }
+    return map
+  }, [active, trackMap])
 
   // Persist helper
   const update = useCallback(async (patch: Partial<RunningOrder>) => {
@@ -1045,6 +1076,7 @@ export function OrdersPage(): JSX.Element {
                   track={trackMap.get(entry.trackId) ?? null}
                   nextTrack={idx < active.entries.length - 1 ? (trackMap.get(active.entries[idx + 1].trackId) ?? null) : null}
                   isLast={idx === active.entries.length - 1}
+                  automix={automixDecisions.get(entry.trackId) ?? null}
                   onToggleFlexible={() => patchEntry(idx, { flexible: !entry.flexible })}
                   onSetTransition={(k) => patchEntry(idx, {
                     plannedTransition: k ? { kind: k } : null
