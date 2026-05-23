@@ -19,7 +19,17 @@ import { useRef, useEffect, useCallback, useMemo, useState } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { compatibilityScore, harmonicScore } from '../../lib/compatibility'
 import { keyBlipColor } from '../../components/CamelotWheel'
+import { useArtwork } from '../../hooks/useArtwork'
+import { usePreview } from '../../hooks/usePreview'
 import type { Track, Playlist } from '@shared/types'
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Returns the duration of 8 bars in seconds given a BPM. */
+function eightBarsSec(bpm: number | null): number {
+  if (!bpm || bpm < 40) return 15
+  return (8 * 4 * 60) / bpm   // 8 bars × 4 beats / bpm
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -88,6 +98,27 @@ export function GraphView({ chapterTracks, profiles, activeChapterId, onAddTrack
   const [hoverPos,   setHoverPos]   = useState<{ x: number; y: number } | null>(null)
   const [dismissed,  setDismissed]  = useState<Set<string>>(new Set())
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 500 })
+
+  // ── Audio preview on hover ───────────────────────────────────────────────────
+  const { previewId, preview: startPreview, stop: stopPreview } = usePreview()
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Album art for the currently hovered node
+  const hoverArtwork = useArtwork(hoverNode?.track.filePath)
+
+  // When hoverNode changes, schedule an 8-bar preview after 600ms.
+  // Candidates only — clicking anchors loads them on deck.
+  useEffect(() => {
+    if (previewTimerRef.current) { clearTimeout(previewTimerRef.current); previewTimerRef.current = null }
+    if (!hoverNode || hoverNode.isAnchor) { stopPreview(); return }
+    previewTimerRef.current = setTimeout(() => {
+      startPreview(hoverNode.track, eightBarsSec(hoverNode.track.bpm))
+    }, 600)
+    return () => {
+      if (previewTimerRef.current) clearTimeout(previewTimerRef.current)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hoverNode?.id])
 
   const anchorTracks  = activeChapterId ? (chapterTracks.get(activeChapterId) ?? []) : []
 
@@ -395,33 +426,56 @@ export function GraphView({ chapterTracks, profiles, activeChapterId, onAddTrack
       {/* Hover tooltip */}
       {hoverNode && hoverPos && (
         <div
-          className="pointer-events-none absolute z-20 bg-[#1a1612] border border-white/10 rounded px-3 py-2 space-y-0.5"
+          className="pointer-events-none absolute z-20 bg-[#1a1612] border border-white/10 rounded overflow-hidden"
           style={{
             left:  hoverPos.x + 14,
             top:   hoverPos.y - 10,
             transform: hoverPos.x > (canvasSize.w ?? 600) * 0.65 ? 'translateX(calc(-100% - 28px))' : undefined
           }}
         >
-          <p className="font-mono text-[10px] font-bold text-ink max-w-[200px] truncate">{hoverNode.track.title}</p>
-          <p className="font-mono text-[9px] text-muted truncate">{hoverNode.track.artist}</p>
-          <div className="flex items-center gap-2 pt-0.5">
-            {hoverNode.track.bpm != null    && <span className="font-mono text-[8.5px] text-ink-soft">{hoverNode.track.bpm.toFixed(1)} bpm</span>}
-            {hoverNode.track.key            && <span className="font-mono text-[8.5px] font-bold" style={{ color: keyBlipColor(hoverNode.track.key) }}>{hoverNode.track.key}</span>}
-            {hoverNode.track.energy != null && <span className="font-mono text-[8.5px] text-muted">nrg {hoverNode.track.energy}</span>}
-            {MOOD_LABEL(hoverNode.track.mood ?? null) && <span className="font-mono text-[8.5px] text-muted">{MOOD_LABEL(hoverNode.track.mood ?? null)}</span>}
-          </div>
-          {!hoverNode.isAnchor && (
-            <div className="flex items-center gap-2 pt-0.5">
-              <div className="flex-1 h-0.5 bg-border/20 rounded-full overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${hoverNode.score * 100}%`, background: '#D86A4A' }} />
+          <div className="flex items-stretch">
+            {/* Album art */}
+            {hoverArtwork && (
+              <img src={hoverArtwork} alt="" className="w-14 h-14 object-cover shrink-0" />
+            )}
+            {/* Text */}
+            <div className="px-3 py-2 space-y-0.5 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <p className="font-mono text-[10px] font-bold text-ink max-w-[200px] truncate">{hoverNode.track.title}</p>
+                {/* Preview pulse — shown once audio starts */}
+                {previewId === hoverNode.track.id && (
+                  <span className="flex items-center gap-0.5 shrink-0" title="previewing">
+                    {[0, 1, 2].map((i) => (
+                      <span
+                        key={i}
+                        className="w-0.5 rounded-full bg-accent animate-pulse"
+                        style={{ height: `${6 + i * 3}px`, animationDelay: `${i * 0.15}s` }}
+                      />
+                    ))}
+                  </span>
+                )}
               </div>
-              <span className="font-mono text-[8px] text-muted tabular-nums">{Math.round(hoverNode.score * 100)}%</span>
-              <span className="font-mono text-[8px] text-muted/50">click to add · right-click dismiss</span>
+              <p className="font-mono text-[9px] text-muted truncate">{hoverNode.track.artist}</p>
+              <div className="flex items-center gap-2 pt-0.5">
+                {hoverNode.track.bpm != null    && <span className="font-mono text-[8.5px] text-ink-soft">{hoverNode.track.bpm.toFixed(1)} bpm</span>}
+                {hoverNode.track.key            && <span className="font-mono text-[8.5px] font-bold" style={{ color: keyBlipColor(hoverNode.track.key) }}>{hoverNode.track.key}</span>}
+                {hoverNode.track.energy != null && <span className="font-mono text-[8.5px] text-muted">nrg {hoverNode.track.energy}</span>}
+                {MOOD_LABEL(hoverNode.track.mood ?? null) && <span className="font-mono text-[8.5px] text-muted">{MOOD_LABEL(hoverNode.track.mood ?? null)}</span>}
+              </div>
+              {!hoverNode.isAnchor && (
+                <div className="flex items-center gap-2 pt-0.5">
+                  <div className="flex-1 h-0.5 bg-border/20 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${hoverNode.score * 100}%`, background: '#D86A4A' }} />
+                  </div>
+                  <span className="font-mono text-[8px] text-muted tabular-nums">{Math.round(hoverNode.score * 100)}%</span>
+                  <span className="font-mono text-[8px] text-muted/50">click to add · right-click dismiss</span>
+                </div>
+              )}
+              {hoverNode.isAnchor && (
+                <p className="font-mono text-[8px] text-muted/50 pt-0.5">click to load on deck A</p>
+              )}
             </div>
-          )}
-          {hoverNode.isAnchor && (
-            <p className="font-mono text-[8px] text-muted/50 pt-0.5">click to load on deck A</p>
-          )}
+          </div>
         </div>
       )}
 

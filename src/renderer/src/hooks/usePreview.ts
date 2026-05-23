@@ -26,7 +26,7 @@ export function usePreview() {
     _globalStop = null
   }, [])
 
-  const preview = useCallback(async (track: Track) => {
+  const preview = useCallback(async (track: Track, durationSec = PREVIEW_DURATION) => {
     // Stop any existing preview (globally — so two usePreview hooks don't fight)
     if (_globalStop) _globalStop()
 
@@ -48,7 +48,7 @@ export function usePreview() {
       const source = ctx.createBufferSource()
       source.buffer = buf
       source.connect(ctx.destination)
-      source.start(0, startSec, PREVIEW_DURATION)
+      source.start(0, startSec, durationSec)
       source.onended = () => {
         if (ctxRef.current === ctx) stop()
       }
@@ -57,13 +57,13 @@ export function usePreview() {
     }
   }, [stop])
 
-  const toggle = useCallback(async (track: Track) => {
+  const toggle = useCallback(async (track: Track, durationSec = PREVIEW_DURATION) => {
     if (previewId === track.id) {
       stop()
     } else {
-      await preview(track)
+      await preview(track, durationSec)
     }
   }, [previewId, preview, stop])
 
-  return { previewId, toggle, stop }
+  return { previewId, preview, toggle, stop }
 }

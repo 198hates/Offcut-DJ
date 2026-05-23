@@ -10,13 +10,14 @@
  *   Drag          — pan
  *   Shift+drag    — lasso select
  *   Click dot     — open TrackDetail panel
- *   Hover dot     — tooltip (title, artist, BPM, key, mood)
+ *   Hover dot     — tooltip (album art + title, artist, BPM, key, energy, mood)
  */
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { TrackDetail } from '../../components/TrackDetail'
+import { useArtwork } from '../../hooks/useArtwork'
 // deck stores reserved for future "load to deck" from Compass
 // import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
 import type { Track } from '@shared/types'
@@ -545,6 +546,9 @@ export function CompassPage(): JSX.Element {
     [hoverId, tracks]
   )
 
+  // Album art for whichever track is currently hovered (null when no hover)
+  const hoverArtwork = useArtwork(hoverTrack?.filePath)
+
   const MOOD_LABEL = (m: number) => MOOD_LABELS[MOOD_RANGES.findIndex(([lo, hi]) => m >= lo && m <= hi)] ?? 'Neutral'
 
   return (
@@ -631,7 +635,7 @@ export function CompassPage(): JSX.Element {
           {/* Hover tooltip */}
           {hoverTrack && hoverPos && (
             <div
-              className="pointer-events-none absolute z-20 bg-[#1a1612] border border-white/10 rounded px-3 py-2 space-y-0.5"
+              className="pointer-events-none absolute z-20 bg-[#1a1612] border border-white/10 rounded overflow-hidden"
               style={{
                 left:  hoverPos.x + 14,
                 top:   hoverPos.y - 10,
@@ -639,19 +643,32 @@ export function CompassPage(): JSX.Element {
                   ? 'translateX(calc(-100% - 28px))' : undefined,
               }}
             >
-              <p className="font-mono text-[10px] font-bold text-ink max-w-[220px] truncate">
-                {hoverTrack.title || hoverTrack.filePath.split('/').pop()}
-              </p>
-              <p className="font-mono text-[9px] text-muted truncate">{hoverTrack.artist}</p>
-              <div className="flex items-center gap-2 pt-0.5">
-                {hoverTrack.bpm    != null && <span className="font-mono text-[8.5px] text-ink-soft">{hoverTrack.bpm.toFixed(1)} bpm</span>}
-                {hoverTrack.key               && <span className="font-mono text-[8.5px] font-bold" style={{ color: keyBlipColor(hoverTrack.key) }}>{hoverTrack.key}</span>}
-                {hoverTrack.energy != null && <span className="font-mono text-[8.5px] text-muted">nrg {hoverTrack.energy}</span>}
-                {hoverTrack.mood   != null && <span className="font-mono text-[8.5px] text-muted">{MOOD_LABEL(hoverTrack.mood)}</span>}
+              <div className="flex items-stretch">
+                {/* Album art — shown when available */}
+                {hoverArtwork && (
+                  <img
+                    src={hoverArtwork}
+                    alt=""
+                    className="w-14 h-14 object-cover shrink-0"
+                  />
+                )}
+                {/* Text content */}
+                <div className="px-3 py-2 space-y-0.5 min-w-0">
+                  <p className="font-mono text-[10px] font-bold text-ink max-w-[200px] truncate">
+                    {hoverTrack.title || hoverTrack.filePath.split('/').pop()}
+                  </p>
+                  <p className="font-mono text-[9px] text-muted truncate">{hoverTrack.artist}</p>
+                  <div className="flex items-center gap-2 pt-0.5">
+                    {hoverTrack.bpm    != null && <span className="font-mono text-[8.5px] text-ink-soft">{hoverTrack.bpm.toFixed(1)} bpm</span>}
+                    {hoverTrack.key               && <span className="font-mono text-[8.5px] font-bold" style={{ color: keyBlipColor(hoverTrack.key) }}>{hoverTrack.key}</span>}
+                    {hoverTrack.energy != null && <span className="font-mono text-[8.5px] text-muted">nrg {hoverTrack.energy}</span>}
+                    {hoverTrack.mood   != null && <span className="font-mono text-[8.5px] text-muted">{MOOD_LABEL(hoverTrack.mood)}</span>}
+                  </div>
+                  {(axisVal(hoverTrack, xAxis) == null || axisVal(hoverTrack, yAxis) == null) && (
+                    <p className="font-mono text-[8px] text-muted/50">needs analysis</p>
+                  )}
+                </div>
               </div>
-              {(axisVal(hoverTrack, xAxis) == null || axisVal(hoverTrack, yAxis) == null) && (
-                <p className="font-mono text-[8px] text-muted/50">needs analysis</p>
-              )}
             </div>
           )}
 
