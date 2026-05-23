@@ -22,6 +22,7 @@ import { Onboarding } from './components/Onboarding'
 import { Player } from './components/Player'
 import { FnBus } from './components/FnBus'
 import { useLibraryStore } from './store/libraryStore'
+import { useDeckAStore, useDeckBStore } from './store/playerStore'
 import { ErrorBoundary } from './components/ErrorBoundary'
 
 export default function App(): JSX.Element {
@@ -36,6 +37,22 @@ export default function App(): JSX.Element {
 
   // MIDI engine — initialise once on mount
   useEffect(() => { midiEngine.init() }, [])
+
+  // Native audio engine — activate both decks if the Rust addon is compiled & loaded.
+  // Falls back silently to Web Audio if not yet available.
+  useEffect(() => {
+    window.api.engine.isAvailable().then((available) => {
+      if (available) {
+        useDeckAStore.getState().activateNativeEngine()
+        useDeckBStore.getState().activateNativeEngine()
+        console.info('[App] Native audio engine activated for decks A and B')
+      } else {
+        console.info('[App] Native engine not available — using Web Audio')
+      }
+    }).catch(() => {
+      // IPC failure (e.g. engine handlers not registered yet) — stay on Web Audio
+    })
+  }, [])
 
   useEffect(() => { loadLibrary() }, [loadLibrary])
 

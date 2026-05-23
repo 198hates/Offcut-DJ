@@ -189,6 +189,11 @@ export class NativeAudioEngine implements AudioEngineContract {
     // TODO (Phase 4): send deckId pair to main process, Rust engine locks clocks
   }
 
+  // ── Recording ────────────────────────────────────────────────────────────
+
+  /** Native engine routes to hardware directly — no MediaStream available. */
+  get recordingStream(): MediaStream | null { return null }
+
   // ── VU ───────────────────────────────────────────────────────────────────
 
   getLevel(): number {

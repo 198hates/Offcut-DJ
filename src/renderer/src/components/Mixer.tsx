@@ -11,7 +11,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useDeckAStore, useDeckBStore } from '../store/playerStore'
 import { useMixerStore } from '../store/mixerStore'
-import type { AudioEngine } from '../lib/audioEngine'
+import type { AudioEngineContract } from '../lib/audioEngineContract'
 
 // ── EQ Knob ──────────────────────────────────────────────────────────────────
 // TE-style: flat circle, single indicator line, range marks at ±140°.
@@ -235,7 +235,7 @@ function ChannelStrip({
   label: 'A' | 'B'
   eqHigh: number; eqMid: number; eqLow: number
   volume: number; isPlaying: boolean; hasTrack: boolean
-  engine: AudioEngine
+  engine: AudioEngineContract
   onEq: (band: 'high' | 'mid' | 'low', db: number) => void
   onVolume: (v: number) => void
 }): JSX.Element {

@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { AudioEngine } from '../lib/audioEngine'
+import { NativeAudioEngine } from '../lib/nativeAudioEngine'
+import type { AudioEngineContract } from '../lib/audioEngineContract'
 import type { Track, CuePoint, StemKind, StemState } from '@shared/types'
 
 export const HOT_CUE_COLORS = [
@@ -86,7 +88,14 @@ export interface DeckStore {
   setStemGain: (kind: StemKind, gainDb: number) => void
   // Quantiser
   quantiseCurrentTrack: () => Promise<void>
-  _engine: AudioEngine
+  /**
+   * Swap this deck's engine to the native Rust backend.
+   * Called once at startup when `window.api.engine.isAvailable()` resolves true.
+   * No-op if native is already active.
+   */
+  activateNativeEngine: () => void
+  /** The active audio engine (Web Audio or native). */
+  _engine: AudioEngineContract
 }
 
 // ── Beat / quantise helpers ───────────────────────────────────────────────────
@@ -117,7 +126,21 @@ function snapToBeat(timeSeconds: number, track: Track | null): number {
 }
 
 function createDeckStore(deckId: 'A' | 'B') {
-  const engine = new AudioEngine()
+  // `engine` is mutable so activateNativeEngine() can swap the backend.
+  // All action closures reference `engine` by closure — they pick up the new
+  // value automatically after the swap.
+  let engine: AudioEngineContract = new AudioEngine()
+
+  // Unsubscribers for the current engine's events — re-wired on swap.
+  let _unsubTime:  (() => void) | null = null
+  let _unsubEnded: (() => void) | null = null
+
+  function wireEngineEvents(e: AudioEngineContract, setState: (p: Partial<DeckStore>) => void): void {
+    _unsubTime?.()
+    _unsubEnded?.()
+    _unsubTime  = e.onTimeUpdate((t) => setState({ currentTime: t }))
+    _unsubEnded = e.onEnded(() => setState({ isPlaying: false, currentTime: 0 }))
+  }
 
   const patchTrackCues = async (
     cuePoints: CuePoint[],
@@ -158,8 +181,8 @@ function createDeckStore(deckId: 'A' | 'B') {
   }
 
   return create<DeckStore>((set, get) => {
-    engine.onTimeUpdate((t) => set({ currentTime: t }))
-    engine.onEnded(() => set({ isPlaying: false, currentTime: 0 }))
+    // Wire the initial (Web Audio) engine events
+    wireEngineEvents(engine, set)
 
     return {
       currentTrack: null,
@@ -602,7 +625,32 @@ function createDeckStore(deckId: 'A' | 'B') {
             tracks: s.tracks.map((t) => (t.id === updated.id ? updated : t))
           }))
         } catch { /* non-fatal — legacy grid still works */ }
-      }
+      },
+
+      // ── Native engine activation ───────────────────────────────────────────
+      activateNativeEngine: () => {
+        // Already on native — nothing to do.
+        if (engine instanceof NativeAudioEngine) return
+
+        const native = new NativeAudioEngine(deckId)
+
+        // Transfer persistent settings to the new engine.
+        const s = get()
+        native.keylockEnabled = s.keylockEnabled
+        native.playbackRate   = s.playbackRate
+        native.setEqGain('high', s.eqHigh)
+        native.setEqGain('mid',  s.eqMid)
+        native.setEqGain('low',  s.eqLow)
+        // Volume lives inside the engine (not in Zustand state); native engine
+        // defaults to 0.8 which matches AudioEngine's initial value.
+
+        // Swap the engine — all action closures pick up the new reference immediately.
+        engine = native
+        wireEngineEvents(native, set)
+        set({ _engine: native })
+
+        console.info(`[Deck ${deckId}] switched to native audio engine`)
+      },
     }
   })
 }

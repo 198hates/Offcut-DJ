@@ -148,6 +148,15 @@ export interface AudioEngineContract {
   /** Post-fader RMS level, 0–1 linear. Call from a RAF loop. */
   getLevel(): number
 
+  // ── Recording (Web Audio only) ────────────────────────────────────────────
+
+  /**
+   * A MediaStream of this deck's post-fader output for mix recording.
+   * `null` when the native Rust engine is active — recording is not yet
+   * supported for native output (requires a virtual audio loopback, Phase 6+).
+   */
+  readonly recordingStream: MediaStream | null
+
   // ── Event subscriptions ──────────────────────────────────────────────────
 
   /** Register a callback fired ~60 fps with the current playback time (seconds).
