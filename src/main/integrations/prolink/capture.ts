@@ -84,6 +84,15 @@ const EMPTY_META: TrackMeta = {
   genre: null, key: null, year: null, bpm: null, durationSeconds: null,
 }
 
+// ── Library lookup ────────────────────────────────────────────────────────────
+
+/**
+ * Callback injected by the IPC layer so the capture engine can check whether
+ * a played track is already in the local library.
+ * Returns `{ id }` on a match, or `null` if unowned.
+ */
+export type LibraryLookup = (title: string, artist: string) => { id: string } | null
+
 // ── Capture engine ────────────────────────────────────────────────────────────
 
 type StatusCallback   = (statuses: PlayerStatus[]) => void
@@ -94,9 +103,10 @@ export class ProLinkCapture {
   private network: ProlinkNetwork | null = null
   private connected: ConnectedProlinkNetwork | null = null
 
-  private onStatus:   StatusCallback   = () => {}
-  private onCaptured: CapturedCallback = () => {}
-  private onError:    ErrorCallback    = () => {}
+  private onStatus:      StatusCallback   = () => {}
+  private onCaptured:    CapturedCallback = () => {}
+  private onError:       ErrorCallback    = () => {}
+  private libraryLookup: LibraryLookup    = () => null
 
   // Per-device live state
   private playerMap = new Map<number, PlayerStatus>()
@@ -105,9 +115,10 @@ export class ProLinkCapture {
   // Track which devices currently have in-flight metadata fetches
   private metaPending = new Set<string>()
 
-  setOnStatus  (cb: StatusCallback):   void { this.onStatus   = cb }
-  setOnCaptured(cb: CapturedCallback): void { this.onCaptured = cb }
-  setOnError   (cb: ErrorCallback):    void { this.onError    = cb }
+  setOnStatus     (cb: StatusCallback):   void { this.onStatus      = cb }
+  setOnCaptured   (cb: CapturedCallback): void { this.onCaptured    = cb }
+  setOnError      (cb: ErrorCallback):    void { this.onError       = cb }
+  setLibraryLookup(fn: LibraryLookup):    void { this.libraryLookup = fn }
 
   /**
    * Start the capture session.
@@ -341,12 +352,23 @@ export class ProLinkCapture {
     }
 
     const m = meta ?? EMPTY_META
+    const title  = m.title  ?? `Track ${state.trackId}`
+    const artist = m.artist ?? ''
+
+    // Resolve against local library by normalised title + artist
+    let inLibrary    = false
+    let localTrackId: string | null = null
+    try {
+      const match = this.libraryLookup(title, artist)
+      if (match) { inLibrary = true; localTrackId = match.id }
+    } catch { /* lookup errors must not block capture */ }
+
     const captured: CapturedTrack = {
       id:              randomUUID(),
       player:          state.deviceId,
       capturedAt:      new Date().toISOString(),
-      title:           m.title ?? `Track ${state.trackId}`,
-      artist:          m.artist ?? '',
+      title,
+      artist,
       album:           m.album ?? '',
       label:           m.label ?? '',
       genre:           m.genre ?? '',
@@ -354,8 +376,8 @@ export class ProLinkCapture {
       bpm:             m.bpm ?? (state.trackBPM ?? null),
       year:            m.year,
       durationSeconds: m.durationSeconds,
-      inLibrary:       false,  // TODO: resolve against local library by path/fingerprint
-      localTrackId:    null,
+      inLibrary,
+      localTrackId,
       sourcedFrom:     'prolink',
     }
 

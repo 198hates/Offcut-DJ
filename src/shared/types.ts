@@ -1,4 +1,4 @@
-export type IntegrationId = 'rekordbox' | 'serato' | 'traktor' | 'apple-music' | 'engine-dj' | 'm3u' | 'virtualdj'
+export type IntegrationId = 'rekordbox' | 'serato' | 'traktor' | 'apple-music' | 'engine-dj' | 'm3u' | 'virtualdj' | 'prolink'
 
 // ── Running Order ─────────────────────────────────────────────────────────────
 

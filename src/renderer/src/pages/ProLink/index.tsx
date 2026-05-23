@@ -131,26 +131,61 @@ function PlayerCard({ status }: { status: PlayerStatus }): JSX.Element {
   )
 }
 
-function CapturedRow({ track, index }: { track: CapturedTrack; index: number }): JSX.Element {
+interface CapturedRowProps {
+  track: CapturedTrack
+  index: number
+  onImport: (id: string) => void
+  importing: boolean
+}
+
+function CapturedRow({ track, index, onImport, importing }: CapturedRowProps): JSX.Element {
   return (
     <div className="flex items-center gap-3 px-3 py-1.5 hover:bg-ink/[0.04] group border-b border-border/10 last:border-0">
-      <span className="font-mono text-[9px] text-muted/50 w-5 shrink-0 text-right">{index + 1}</span>
-      <div className="flex items-center gap-1 w-6 shrink-0">
-        <div className="w-4 h-4 rounded bg-accent/10 flex items-center justify-center">
-          <span className="font-mono text-[7px] text-accent/70">{track.player}</span>
-        </div>
+      <span className="font-mono text-[9px] text-muted/50 w-5 shrink-0 text-right tabular-nums">{index + 1}</span>
+
+      {/* Player badge */}
+      <div className="w-4 h-4 rounded bg-accent/10 flex items-center justify-center shrink-0">
+        <span className="font-mono text-[7px] text-accent/70">{track.player}</span>
       </div>
+
+      {/* Title + artist */}
       <div className="flex-1 min-w-0 space-y-0.5">
         <p className="font-mono text-[10px] text-ink truncate">{track.title}</p>
         <p className="font-mono text-[8px] text-muted truncate">{track.artist || '—'}</p>
       </div>
-      <div className="hidden sm:flex items-center gap-3 shrink-0 text-muted">
-        {track.label && <span className="font-mono text-[8px] uppercase tracking-[0.06em] truncate max-w-[80px]">{track.label}</span>}
-        {track.bpm && <span className="font-mono text-[9px] tabular-nums">{fmtBpm(track.bpm)}</span>}
-        {track.key && <span className="font-mono text-[9px]">{track.key}</span>}
-        {track.durationSeconds && <span className="font-mono text-[9px] tabular-nums">{fmtDuration(track.durationSeconds)}</span>}
+
+      {/* Metadata chips */}
+      <div className="hidden sm:flex items-center gap-2.5 shrink-0 text-muted">
+        {track.label && (
+          <span className="font-mono text-[8px] uppercase tracking-[0.06em] truncate max-w-[80px]">
+            {track.label}
+          </span>
+        )}
+        {track.bpm   && <span className="font-mono text-[9px] tabular-nums">{fmtBpm(track.bpm)}</span>}
+        {track.key   && <span className="font-mono text-[9px]">{track.key}</span>}
+        {track.durationSeconds && (
+          <span className="font-mono text-[9px] tabular-nums">{fmtDuration(track.durationSeconds)}</span>
+        )}
       </div>
+
       <span className="font-mono text-[8px] text-muted/60 shrink-0">{fmtTime(track.capturedAt)}</span>
+
+      {/* Import action — only shown for unowned tracks */}
+      {!track.inLibrary && (
+        <button
+          onClick={() => onImport(track.id)}
+          disabled={importing}
+          className="shrink-0 px-2 py-0.5 font-mono text-[8px] uppercase tracking-[0.1em] rounded border border-accent/40 text-accent/80 hover:bg-accent/10 hover:text-accent transition-colors disabled:opacity-40 opacity-0 group-hover:opacity-100"
+          title="Add to library as a discovery (file not yet acquired)"
+        >
+          + library
+        </button>
+      )}
+      {track.inLibrary && (
+        <span className="shrink-0 px-1.5 py-0.5 font-mono text-[7px] uppercase tracking-[0.1em] rounded bg-green-500/10 border border-green-500/20 text-green-400/70">
+          yours
+        </span>
+      )}
     </div>
   )
 }
@@ -164,6 +199,7 @@ export function ProLinkPage(): JSX.Element {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [ifaces, setIfaces] = useState<ProLinkNetworkIface[]>([])
   const [selectedIface, setSelectedIface] = useState<string>('')
+  const [importingId, setImportingId] = useState<string | null>(null)
   const capturedEndRef = useRef<HTMLDivElement>(null)
 
   // Load initial state + register push listeners on mount
@@ -183,6 +219,9 @@ export function ProLinkPage(): JSX.Element {
     const offCaptured = window.api.prolink.onTrackCaptured((_e, track) => {
       setCapturedTracks((prev) => [...prev, track])
     })
+    const offUpdated = window.api.prolink.onTrackUpdated((_e, updated) => {
+      setCapturedTracks((prev) => prev.map((t) => t.id === updated.id ? updated : t))
+    })
     const offError = window.api.prolink.onError((_e, msg) => {
       setErrorMsg(msg)
       setSessionState('error')
@@ -193,7 +232,7 @@ export function ProLinkPage(): JSX.Element {
       setCapturedTracks(payload.capturedTracks)
     })
 
-    return () => { offStatus(); offCaptured(); offError(); offSession() }
+    return () => { offStatus(); offCaptured(); offUpdated(); offError(); offSession() }
   }, [])
 
   // Auto-scroll captured list to bottom on new track
@@ -218,10 +257,31 @@ export function ProLinkPage(): JSX.Element {
     // state is pushed via prolink:sessionState event
   }
 
+  const handleImport = async (capturedId: string): Promise<void> => {
+    setImportingId(capturedId)
+    try {
+      const result = await window.api.prolink.importUnownedTrack(capturedId)
+      if (result.ok && result.localTrackId) {
+        setCapturedTracks((prev) =>
+          prev.map((t) => t.id === capturedId
+            ? { ...t, inLibrary: true, localTrackId: result.localTrackId! }
+            : t
+          )
+        )
+      }
+    } finally {
+      setImportingId(null)
+    }
+  }
+
   const isConnecting = sessionState === 'connecting'
   const isActive     = sessionState === 'active'
   const isStopping   = sessionState === 'stopping'
   const isIdle       = sessionState === 'idle' || sessionState === 'error'
+
+  // Split captured tracks into two groups
+  const ownedTracks      = capturedTracks.filter((t) => t.inLibrary)
+  const discoveryTracks  = capturedTracks.filter((t) => !t.inLibrary)
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -244,7 +304,10 @@ export function ProLinkPage(): JSX.Element {
         <div className="flex items-center gap-2">
           {capturedTracks.length > 0 && (
             <span className="font-mono text-[9px] text-muted tabular-nums">
-              {capturedTracks.length} track{capturedTracks.length !== 1 ? 's' : ''} captured
+              {capturedTracks.length} captured
+              {discoveryTracks.length > 0 && (
+                <span className="text-amber-400/80"> · {discoveryTracks.length} new</span>
+              )}
             </span>
           )}
           {isActive ? (
@@ -375,18 +438,8 @@ export function ProLinkPage(): JSX.Element {
               )}
             </div>
 
-            {/* Captured track list */}
+            {/* Captured track list — two sections */}
             <div className="flex-1 overflow-hidden flex flex-col">
-              <div className="px-4 py-2 border-b border-border/20 shrink-0 flex items-center justify-between">
-                <span className="font-mono text-[8px] uppercase tracking-[0.14em] text-muted/60">
-                  captured tracks
-                </span>
-                {capturedTracks.length === 0 && (
-                  <span className="font-mono text-[9px] text-muted/50 italic">
-                    waiting for first track to pass played gate…
-                  </span>
-                )}
-              </div>
               {capturedTracks.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="text-center space-y-1">
@@ -398,14 +451,56 @@ export function ProLinkPage(): JSX.Element {
                 </div>
               ) : (
                 <div className="flex-1 overflow-y-auto">
-                  <div className="px-2 py-1 grid grid-cols-[20px_24px_1fr_auto_auto] gap-3 border-b border-border/20">
-                    {['#', '', 'title / artist', 'meta', 'time'].map((h) => (
-                      <span key={h} className="font-mono text-[8px] uppercase tracking-[0.12em] text-muted/50">{h}</span>
-                    ))}
-                  </div>
-                  {capturedTracks.map((t, i) => (
-                    <CapturedRow key={t.id} track={t} index={i} />
-                  ))}
+
+                  {/* ── Discoveries — tracks not in your library ─────────── */}
+                  {discoveryTracks.length > 0 && (
+                    <div>
+                      <div className="px-4 py-1.5 flex items-center gap-2 bg-amber-500/[0.04] border-b border-amber-500/15 sticky top-0">
+                        <span className="font-mono text-[8px] uppercase tracking-[0.14em] text-amber-400/80">
+                          ✦ discoveries
+                        </span>
+                        <span className="font-mono text-[8px] text-muted/50">
+                          {discoveryTracks.length} track{discoveryTracks.length !== 1 ? 's' : ''} not in your library
+                        </span>
+                        <span className="ml-auto font-mono text-[7px] text-muted/40">
+                          hover to add → library
+                        </span>
+                      </div>
+                      {discoveryTracks.map((t, i) => (
+                        <CapturedRow
+                          key={t.id}
+                          track={t}
+                          index={i}
+                          onImport={handleImport}
+                          importing={importingId === t.id}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* ── Yours — tracks already in your library ───────────── */}
+                  {ownedTracks.length > 0 && (
+                    <div>
+                      <div className="px-4 py-1.5 flex items-center gap-2 bg-green-500/[0.03] border-b border-green-500/10 border-t border-t-border/20 sticky top-0">
+                        <span className="font-mono text-[8px] uppercase tracking-[0.14em] text-green-400/70">
+                          ✓ yours
+                        </span>
+                        <span className="font-mono text-[8px] text-muted/50">
+                          {ownedTracks.length} track{ownedTracks.length !== 1 ? 's' : ''} in your library
+                        </span>
+                      </div>
+                      {ownedTracks.map((t, i) => (
+                        <CapturedRow
+                          key={t.id}
+                          track={t}
+                          index={discoveryTracks.length + i}
+                          onImport={handleImport}
+                          importing={false}
+                        />
+                      ))}
+                    </div>
+                  )}
+
                   <div ref={capturedEndRef} />
                 </div>
               )}

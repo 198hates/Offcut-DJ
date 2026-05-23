@@ -133,6 +133,12 @@ const api = {
       ipcRenderer.on('prolink:sessionState', cb)
       return () => ipcRenderer.removeListener('prolink:sessionState', cb)
     },
+    onTrackUpdated: (cb: (_e: unknown, track: CapturedTrack) => void): (() => void) => {
+      ipcRenderer.on('prolink:trackUpdated', cb)
+      return () => ipcRenderer.removeListener('prolink:trackUpdated', cb)
+    },
+    importUnownedTrack: (capturedId: string): Promise<{ ok: boolean; localTrackId?: string; error?: string }> =>
+      ipcRenderer.invoke('prolink:importUnownedTrack', capturedId),
   }
 }
 

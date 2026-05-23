@@ -96,6 +96,8 @@ declare global {
         onTrackCaptured: (cb: (_e: unknown, track: CapturedTrack) => void) => () => void
         onError: (cb: (_e: unknown, message: string) => void) => () => void
         onSessionState: (cb: (_e: unknown, payload: { state: ProLinkSessionState; playerStatuses: PlayerStatus[]; capturedTracks: CapturedTrack[] }) => void) => () => void
+        onTrackUpdated: (cb: (_e: unknown, track: CapturedTrack) => void) => () => void
+        importUnownedTrack: (capturedId: string) => Promise<{ ok: boolean; localTrackId?: string; error?: string }>
       }
     }
   }
