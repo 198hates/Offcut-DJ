@@ -1,16 +1,22 @@
-export interface WaveformData {
-  peaks: Float32Array
-  detailPeaks: Float32Array
-  lowPeaks: Float32Array    // bass  (20–300 Hz) — cream/white in 3-band mode
-  midPeaks: Float32Array    // mids  (300–3000 Hz) — orange in 3-band mode
-  highPeaks: Float32Array   // highs (3000–16000 Hz) — blue in 3-band mode
-  duration: number
-}
+/**
+ * Web Audio API engine — implements AudioEngineContract for the renderer process.
+ *
+ * Stays as the default runtime engine until the native Rust engine (id·2026·009)
+ * is compiled and shipped. The two engines are swappable behind the shared interface.
+ */
+
+import type { AudioEngineContract, LoadResult } from './audioEngineContract'
+import type { StemKind } from '@shared/types'
+
+// Re-export LoadResult so callers that previously imported WaveformData can migrate.
+export type { LoadResult }
+/** @deprecated Use LoadResult from audioEngineContract.ts */
+export type WaveformData = LoadResult
 
 type TimeCallback = (time: number) => void
 type VoidCallback = () => void
 
-class AudioEngine {
+class AudioEngine implements AudioEngineContract {
   private ctx: AudioContext | null = null
   private buffer: AudioBuffer | null = null
   private source: AudioBufferSourceNode | null = null
@@ -107,12 +113,21 @@ class AudioEngine {
 
   // ── Load ──────────────────────────────────────────────────────────────────
 
-  async load(arrayBuffer: ArrayBuffer): Promise<WaveformData> {
+  async load(source: string | ArrayBuffer): Promise<LoadResult> {
     const ctx = this.getCtx()
     this.stop()
     this._looping = false
     this._rate = 1.0
-    this.buffer = await ctx.decodeAudioData(arrayBuffer.slice(0))
+
+    let ab: ArrayBuffer
+    if (typeof source === 'string') {
+      // File path — read via IPC (renderer cannot access fs directly)
+      ab = await window.api.audio.readFile(source)
+    } else {
+      ab = source
+    }
+
+    this.buffer = await ctx.decodeAudioData(ab.slice(0))
     this.pausedAt = 0
     const { lowPeaks, midPeaks, highPeaks } = computeBandPeaks(this.buffer, 8000)
     return {
@@ -257,6 +272,60 @@ class AudioEngine {
     return Math.sqrt(sum / this.analyserBuf.length)
   }
 
+  // ── Keylock ───────────────────────────────────────────────────────────────
+
+  private _keylock = false
+
+  /**
+   * Enable keylock (pitch-preserving tempo change).
+   * Web Audio fallback: stored but not yet applied — wired in Phase 2 via
+   * AudioWorklet + RubberBand WASM when the native engine is not loaded.
+   */
+  set keylockEnabled(v: boolean) { this._keylock = v }
+  get keylockEnabled(): boolean { return this._keylock }
+
+  // ── Stems ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Stem bus controls (drums / bass / vocals / other).
+   * Pre-demucs: stored but not routed — all audio is on the main bus.
+   * Post-demucs (Phase 3): each stem will have its own GainNode bus.
+   */
+  private _stemGain:   Record<StemKind, number>  = { drums: 0, bass: 0, vocals: 0, other: 0 }
+  private _stemMuted:  Record<StemKind, boolean> = { drums: false, bass: false, vocals: false, other: false }
+  private _stemSoloed: Record<StemKind, boolean> = { drums: false, bass: false, vocals: false, other: false }
+
+  setStemGain(kind: StemKind, db: number): void   { this._stemGain[kind]   = db   }
+  setStemMuted(kind: StemKind, muted: boolean):    void { this._stemMuted[kind]  = muted  }
+  setStemSoloed(kind: StemKind, soloed: boolean):  void { this._stemSoloed[kind] = soloed }
+
+  // ── Output routing ────────────────────────────────────────────────────────
+
+  /**
+   * Route this deck to a specific audio output device.
+   * Web Audio: uses AudioContext.setSinkId() where supported.
+   */
+  async setOutputDevice(deviceId: string): Promise<void> {
+    const ctx = this.getCtx()
+    // AudioContext.setSinkId() is a newer API; cast through unknown for safety.
+    const ctxAny = ctx as unknown as { setSinkId?: (id: string) => Promise<void> }
+    if (typeof ctxAny.setSinkId === 'function') {
+      await ctxAny.setSinkId(deviceId)
+    }
+    // Silently ignore on browsers / Electron versions that don't support setSinkId yet.
+  }
+
+  // ── Inter-deck sync ───────────────────────────────────────────────────────
+
+  /**
+   * Lock this deck's tempo to a master engine.
+   * Stub — Phase 4: implemented once both decks share a Rust clock.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  syncTo(_master: AudioEngineContract): void {
+    // TODO (Phase 4): adjust playbackRate to match master BPM and align phase
+  }
+
   // ── Volume ────────────────────────────────────────────────────────────────
 
   set volume(v: number) {
@@ -295,7 +364,7 @@ class AudioEngine {
     return Math.min(t, this.buffer?.duration ?? t)
   }
 
-  get duration(): number { return this.buffer?.duration ?? 0 }
+  get duration(): number  { return this.buffer?.duration ?? 0 }
   get isPlaying(): boolean { return this._playing }
 
   // ── Callbacks ─────────────────────────────────────────────────────────────

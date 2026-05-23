@@ -1,0 +1,58 @@
+[package]
+name        = "crate-audio-engine"
+version     = "0.1.0"
+edition     = "2021"
+description = "Native real-time audio engine for the Crate DJ app (id·2026·009)"
+license     = "UNLICENSED"
+
+[lib]
+# Required by napi-rs: produces a C dynamic library (.node file)
+crate-type = ["cdylib"]
+
+# ── Runtime dependencies ─────────────────────────────────────────────────────
+
+[dependencies]
+# N-API bindings (napi4 = async/threadsafe-function support; Node.js 10.6+)
+napi        = { version = "2.16", features = ["napi4", "async"] }
+napi-derive = "2.16"
+
+# Cross-platform audio I/O (CoreAudio/WASAPI/ALSA)
+cpal        = { version = "0.15", features = ["asio"] }
+
+# Pure-Rust audio decoding (MP3, AAC, FLAC, WAV, OGG, AIFF, …)
+# "all" enables every built-in codec; trim this list for smaller binary if needed.
+symphonia   = { version = "0.5", features = ["all"] }
+
+# Linear interpolation sample-rate converter (for rate changes)
+# rubato is lock-free and real-time safe for the audio callback.
+rubato      = "0.15"
+
+# Lock-free atomically-swappable Arc — lets the audio callback read PCM data
+# that the main thread can swap out on track load without a mutex.
+arc-swap    = "1.7"
+
+# Multi-producer / multi-consumer channels for event notification from audio
+# callback → event-dispatch thread (no allocation, no blocking in callback).
+crossbeam-channel = "0.5"
+
+# Parking-lot Mutex for the stream handle (not in the hot path).
+parking_lot = "0.12"
+
+# ── Build dependencies ───────────────────────────────────────────────────────
+
+[build-dependencies]
+napi-build = "2"
+
+# ── Profile overrides ────────────────────────────────────────────────────────
+
+[profile.release]
+# Strip debug symbols, enable LTO, and max optimisation for the smallest
+# and fastest native addon binary.
+opt-level = 3
+lto       = true
+strip     = "symbols"
+
+[profile.dev]
+# Fast incremental build; skip the strip so backtraces are readable.
+opt-level = 0
+debug     = true

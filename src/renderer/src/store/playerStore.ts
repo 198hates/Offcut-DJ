@@ -194,8 +194,9 @@ function createDeckStore(deckId: 'A' | 'B') {
         _fluxStartPos = 0; _fluxStartClock = Date.now()
         set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, eqHigh: 0, eqMid: 0, eqLow: 0, analysisState: 'idle', keylockEnabled: false, fluxEnabled: false })
         try {
-          const ab = await window.api.audio.readFile(track.filePath)
-          const { peaks, detailPeaks, lowPeaks, midPeaks, highPeaks, duration } = await engine.load(ab)
+          // Pass the file path — engine.load() handles reading internally.
+          // Web Audio engine fetches via IPC; native engine reads from disk directly.
+          const { peaks, detailPeaks, lowPeaks, midPeaks, highPeaks, duration } = await engine.load(track.filePath)
           set({ waveformPeaks: peaks, detailPeaks, lowPeaks, midPeaks, highPeaks, duration, isLoading: false })
           engine.play()
           set({ isPlaying: true })
@@ -513,7 +514,11 @@ function createDeckStore(deckId: 'A' | 'B') {
           set({ playbackRate: clamped })
         }
       },
-      toggleKeylock: () => set((s) => ({ keylockEnabled: !s.keylockEnabled })),
+      toggleKeylock: () => {
+        const next = !get().keylockEnabled
+        engine.keylockEnabled = next
+        set({ keylockEnabled: next })
+      },
       toggleQuantize: () => set((s) => ({ isQuantized: !s.isQuantized })),
       toggleSlipMode: () => set((s) => ({ slipMode: !s.slipMode })),
 
@@ -543,14 +548,20 @@ function createDeckStore(deckId: 'A' | 'B') {
       // ── Stem controls ─────────────────────────────────────────────────────
       toggleStemsVisible: () => set((s) => ({ stemsVisible: !s.stemsVisible })),
 
-      setStemMuted: (kind, muted) =>
-        set((s) => ({ stems: { ...s.stems, [kind]: { ...s.stems[kind], muted } } })),
+      setStemMuted: (kind, muted) => {
+        engine.setStemMuted(kind, muted)
+        set((s) => ({ stems: { ...s.stems, [kind]: { ...s.stems[kind], muted } } }))
+      },
 
-      setStemSoloed: (kind, soloed) =>
-        set((s) => ({ stems: { ...s.stems, [kind]: { ...s.stems[kind], soloed } } })),
+      setStemSoloed: (kind, soloed) => {
+        engine.setStemSoloed(kind, soloed)
+        set((s) => ({ stems: { ...s.stems, [kind]: { ...s.stems[kind], soloed } } }))
+      },
 
-      setStemGain: (kind, gainDb) =>
-        set((s) => ({ stems: { ...s.stems, [kind]: { ...s.stems[kind], gainDb } } })),
+      setStemGain: (kind, gainDb) => {
+        engine.setStemGain(kind, gainDb)
+        set((s) => ({ stems: { ...s.stems, [kind]: { ...s.stems[kind], gainDb } } }))
+      },
 
       setMemoryCue: async () => {
         const { currentTrack, currentTime } = get()

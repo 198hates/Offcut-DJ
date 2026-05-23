@@ -113,6 +113,63 @@ const api = {
     readArtwork: (filePath: string): Promise<string | null> =>
       ipcRenderer.invoke('audio:readArtwork', filePath)
   },
+  engine: {
+    /** True if the native Rust audio engine addon is loaded and ready. */
+    isAvailable: (): Promise<boolean> =>
+      ipcRenderer.invoke('engine:isAvailable'),
+    listOutputDevices: (): Promise<string[]> =>
+      ipcRenderer.invoke('engine:listOutputDevices'),
+
+    // ── Lifecycle ──────────────────────────────────────────────────────────
+    load: (deckId: string, filePath: string): Promise<{
+      duration: number
+      peaks: number[]
+      detailPeaks: number[]
+      lowPeaks: number[]
+      midPeaks: number[]
+      highPeaks: number[]
+    }> => ipcRenderer.invoke('engine:load', deckId, filePath),
+
+    // ── Playback (fire-and-forget) ──────────────────────────────────────────
+    play:  (deckId: string, fromMs?: number) => ipcRenderer.send('engine:play', deckId, fromMs),
+    pause: (deckId: string)                  => ipcRenderer.send('engine:pause', deckId),
+    seek:  (deckId: string, ms: number)      => ipcRenderer.send('engine:seek', deckId, ms),
+
+    // ── Settings ───────────────────────────────────────────────────────────
+    setVolume:    (deckId: string, v: number)        => ipcRenderer.send('engine:setVolume', deckId, v),
+    setRate:      (deckId: string, r: number)        => ipcRenderer.send('engine:setRate', deckId, r),
+    setKeylock:   (deckId: string, v: boolean)       => ipcRenderer.send('engine:setKeylock', deckId, v),
+    setEqGain:    (deckId: string, band: string, db: number) => ipcRenderer.send('engine:setEqGain', deckId, band, db),
+    setStemGain:  (deckId: string, kind: string, db: number) => ipcRenderer.send('engine:setStemGain', deckId, kind, db),
+    setStemMuted: (deckId: string, kind: string, muted: boolean) => ipcRenderer.send('engine:setStemMuted', deckId, kind, muted),
+    setStemSoloed:(deckId: string, kind: string, soloed: boolean) => ipcRenderer.send('engine:setStemSoloed', deckId, kind, soloed),
+
+    // ── Loop ───────────────────────────────────────────────────────────────
+    setLoop:   (deckId: string, startMs: number, endMs: number) => ipcRenderer.send('engine:setLoop', deckId, startMs, endMs),
+    clearLoop: (deckId: string) => ipcRenderer.send('engine:clearLoop', deckId),
+
+    // ── Output ─────────────────────────────────────────────────────────────
+    setOutputDevice: (deckId: string, deviceId: string): Promise<void> =>
+      ipcRenderer.invoke('engine:setOutputDevice', deckId, deviceId),
+
+    // ── Polled getters ──────────────────────────────────────────────────────
+    getTime:  (deckId: string): Promise<number> => ipcRenderer.invoke('engine:getTime', deckId),
+    getLevel: (deckId: string): Promise<number> => ipcRenderer.invoke('engine:getLevel', deckId),
+
+    // ── Push events from native engine ─────────────────────────────────────
+    onTimeUpdate: (deckId: string, cb: (time: number, level?: number) => void): (() => void) => {
+      const handler = (_e: unknown, id: string, time: number, level?: number) => {
+        if (id === deckId) cb(time, level)
+      }
+      ipcRenderer.on('engine:timeUpdate', handler)
+      return () => ipcRenderer.removeListener('engine:timeUpdate', handler)
+    },
+    onEnded: (deckId: string, cb: () => void): (() => void) => {
+      const handler = (_e: unknown, id: string) => { if (id === deckId) cb() }
+      ipcRenderer.on('engine:ended', handler)
+      return () => ipcRenderer.removeListener('engine:ended', handler)
+    },
+  },
   settings: {
     get: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
     save: (patch: Partial<AppSettings>): Promise<AppSettings> =>

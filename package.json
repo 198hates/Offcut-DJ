@@ -12,7 +12,11 @@
     "rebuild:sqlcipher": "node scripts/rebuild-sqlcipher.js",
     "build:mac": "npm run build && electron-builder --mac --arm64",
     "build:win": "npm run build && electron-builder --win",
-    "build:linux": "npm run build && electron-builder --linux"
+    "build:linux": "npm run build && electron-builder --linux",
+    "engine:build": "cd native/audio-engine && cargo build --release && cp target/release/libcrate_audio_engine.dylib ../../out/main/crate-audio-engine.node 2>/dev/null; cp target/release/crate_audio_engine.dll ../../out/main/crate-audio-engine.node 2>/dev/null; cp target/release/libcrate_audio_engine.so ../../out/main/crate-audio-engine.node 2>/dev/null; true",
+    "engine:build:napi": "cd native/audio-engine && napi build --platform --release --output-dir ../../out/main",
+    "engine:dev": "cd native/audio-engine && cargo build && cp target/debug/libcrate_audio_engine.dylib ../../out/main/crate-audio-engine.node 2>/dev/null; cp target/debug/crate_audio_engine.dll ../../out/main/crate-audio-engine.node 2>/dev/null; cp target/debug/libcrate_audio_engine.so ../../out/main/crate-audio-engine.node 2>/dev/null; true",
+    "engine:check": "cd native/audio-engine && cargo check"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",
@@ -64,7 +68,8 @@
       "**/node_modules/onnxruntime-node/**/*.node",
       "**/node_modules/onnxruntime-node/bin/**",
       "**/node_modules/ffmpeg-static/ffmpeg",
-      "out/main/beat-analysis-worker.js"
+      "out/main/beat-analysis-worker.js",
+      "out/main/crate-audio-engine.node"
     ],
     "publish": {
       "provider": "github",

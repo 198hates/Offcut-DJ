@@ -107,6 +107,44 @@ declare global {
         onTrackUpdated: (cb: (_e: unknown, track: CapturedTrack) => void) => () => void
         importUnownedTrack: (capturedId: string) => Promise<{ ok: boolean; localTrackId?: string; error?: string }>
       }
+      /** Native Rust audio engine IPC bridge (id·2026·009). */
+      engine: {
+        isAvailable: () => Promise<boolean>
+        listOutputDevices: () => Promise<string[]>
+        // Lifecycle
+        load: (deckId: string, filePath: string) => Promise<{
+          duration: number
+          peaks: number[]
+          detailPeaks: number[]
+          lowPeaks: number[]
+          midPeaks: number[]
+          highPeaks: number[]
+        }>
+        // Playback (fire-and-forget)
+        play:  (deckId: string, fromMs?: number) => void
+        pause: (deckId: string) => void
+        seek:  (deckId: string, ms: number) => void
+        // Settings
+        setVolume:    (deckId: string, v: number) => void
+        setRate:      (deckId: string, r: number) => void
+        setKeylock:   (deckId: string, v: boolean) => void
+        setEqGain:    (deckId: string, band: string, db: number) => void
+        setStemGain:  (deckId: string, kind: string, db: number) => void
+        setStemMuted: (deckId: string, kind: string, muted: boolean) => void
+        setStemSoloed:(deckId: string, kind: string, soloed: boolean) => void
+        // Loop
+        setLoop:   (deckId: string, startMs: number, endMs: number) => void
+        clearLoop: (deckId: string) => void
+        // Output
+        setOutputDevice: (deckId: string, deviceId: string) => Promise<void>
+        // Polled getters
+        getTime:  (deckId: string) => Promise<number>
+        getLevel: (deckId: string) => Promise<number>
+        // Push events from native engine
+        /** `time` is seconds; `level` is the post-fader RMS (0–1) piggy-backed on the same event. */
+        onTimeUpdate: (deckId: string, cb: (time: number, level?: number) => void) => () => void
+        onEnded:      (deckId: string, cb: () => void) => () => void
+      }
     }
   }
 }

@@ -6,6 +6,7 @@ import { registerLibraryHandlers } from './ipc/library'
 import { registerSettingsHandlers } from './ipc/settings'
 import { registerAudioHandlers } from './ipc/audio'
 import { registerProLinkHandlers } from './ipc/prolink'
+import { loadNativeEngine, registerEngineHandlers } from './engine'
 import { warmModel } from './integrations/beat-analysis'
 import { startWatcher } from './integrations/watch-folder'
 import { loadSettings, saveSettings } from './settings'
@@ -78,6 +79,8 @@ app.whenReady().then(() => {
   registerSettingsHandlers()
   registerAudioHandlers()
   registerProLinkHandlers()
+  registerEngineHandlers()
+  loadNativeEngine()    // non-fatal: logs warning if .node not compiled yet
   setupAutoUpdater()
   createWindow()
   warmModel() // preload beat model into memory if installed
