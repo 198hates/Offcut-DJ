@@ -65,6 +65,8 @@ export interface CuePoint {
   index: number
   type: 'hotcue' | 'memory' | 'loop'
   positionMs: number
+  /** Loop end position in ms — only set when type === 'loop' */
+  endMs?: number
   color: string
   label: string
 }
@@ -119,6 +121,26 @@ export interface Beatgrid {
   computedAt: string
 }
 
+// ── Phrase / song structure ───────────────────────────────────────────────────
+
+export type PhraseLabel =
+  | 'intro'
+  | 'verse'
+  | 'buildup'
+  | 'drop'
+  | 'chorus'
+  | 'breakdown'
+  | 'bridge'
+  | 'outro'
+
+export interface PhraseSegment {
+  label: PhraseLabel
+  startMs: number
+  endMs: number
+  /** 0–1 confidence from the analyser */
+  confidence: number
+}
+
 // ── Quantiser interface ───────────────────────────────────────────────────────
 
 export interface QuantiserHints {
@@ -168,6 +190,7 @@ export interface Track {
   playCount: number
   lastPlayedAt: string | null
   dateAdded: string
+  updatedAt: string | null     // ISO timestamp of last metadata edit
   comment: string
   tags: string[]
   customTags: Record<string, string>   // user-defined key→value fields
@@ -178,6 +201,16 @@ export interface Track {
   /** provenance: is this an edit of another track? */
   editLineage: EditLineage | null
   sourceIds: Partial<Record<IntegrationId, string>>
+  // ── File-level metadata (filled on import / watch-folder add) ────────────
+  fileSize: number | null      // bytes
+  fileType: string | null      // 'mp3' | 'flac' | 'aiff' | 'wav' | 'm4a' | …
+  sampleRate: number | null    // Hz e.g. 44100
+  bitDepth: number | null      // 16 | 24 | 32
+  // ── Per-track gain trim ───────────────────────────────────────────────────
+  gainDb: number | null        // dB offset for auto-gain; 0 = unity, null = not analysed
+  // ── Phrase / song structure ───────────────────────────────────────────────
+  /** Phrase segments detected by the phrase analyser */
+  phrases: PhraseSegment[] | null
 }
 
 export type SmartRuleField = 'bpm' | 'key' | 'genre' | 'artist' | 'album' | 'year' | 'label' | 'rating' | 'title' | 'comment' | 'durationSeconds' | 'dateAdded' | 'playCount' | 'lastPlayedAt' | 'energy' | 'danceability' | 'mood' | 'tags' | 'customTag'

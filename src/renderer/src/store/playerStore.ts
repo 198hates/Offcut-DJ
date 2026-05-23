@@ -28,10 +28,15 @@ export interface DeckStore {
   isLooping: boolean
   // Pitch
   playbackRate: number
+  pitchRange: number          // ±% — e.g. 8 means ±8%; controls slider clamp
+  keylockEnabled: boolean     // display-only until Web Audio pitch shift is added
   // EQ (dB, -24 to +6)
   eqHigh: number
   eqMid:  number
   eqLow:  number
+  // Performance modes
+  isQuantized: boolean        // cues/loops snap to nearest beat
+  slipMode: boolean           // playhead advances under loops; exits to real position
   // Analysis
   analysisState: AnalysisState
   analyzeCurrentTrack: () => Promise<void>
@@ -49,13 +54,52 @@ export interface DeckStore {
   setLoopIn: () => void
   setLoopOut: () => void
   beatLoop: (bars: number) => void
+  loopRoll: (bars: number) => void   // slip-enabled beat loop
   toggleLoop: () => void
   clearLoop: () => void
-  // Pitch action
+  // Saved loop slots (cue type: 'loop', indices 0-7)
+  saveLoopSlot: (index: number) => Promise<void>
+  jumpToLoopSlot: (index: number) => void
+  clearLoopSlot: (index: number) => Promise<void>
+  // Beat jump
+  beatJump: (beats: number) => void
+  // Pitch
   setPlaybackRate: (rate: number) => void
+  setPitchRange: (range: number) => void
+  toggleKeylock: () => void
+  // Performance mode toggles
+  toggleQuantize: () => void
+  toggleSlipMode: () => void
   // Quantiser
   quantiseCurrentTrack: () => Promise<void>
   _engine: AudioEngine
+}
+
+// ── Beat / quantise helpers ───────────────────────────────────────────────────
+
+/** Snap a time (seconds) to the nearest beat in the track's beatgrid. */
+function snapToBeat(timeSeconds: number, track: Track | null): number {
+  if (!track) return timeSeconds
+  const posMs = timeSeconds * 1000
+
+  // Prefer v2 beatgrid beat positions
+  const beats = track.analysedBeatgrid?.beats
+  if (beats && beats.length > 0) {
+    let nearest = beats[0].positionMs
+    let minDist = Math.abs(posMs - nearest)
+    for (const b of beats) {
+      if (b.positionMs > posMs + 2000) break
+      const d = Math.abs(posMs - b.positionMs)
+      if (d < minDist) { minDist = d; nearest = b.positionMs }
+    }
+    return nearest / 1000
+  }
+
+  // Fall back: BPM-based uniform grid
+  const bpm = track.bpm ?? 128
+  if (!bpm) return timeSeconds
+  const beatLen = 60 / bpm
+  return Math.round(timeSeconds / beatLen) * beatLen
 }
 
 function createDeckStore(deckId: 'A' | 'B') {
@@ -79,6 +123,15 @@ function createDeckStore(deckId: 'A' | 'B') {
   // Previous track ID on this deck — used to populate mixedFrom in play events
   let _prevTrackId: string | null = null
 
+  // Slip mode — wall-clock tracking of "true" position under loops
+  let _slipStartPos   = 0
+  let _slipStartClock = 0
+
+  function _getSlipPosition(playbackRate: number): number {
+    const elapsedSecs = (Date.now() - _slipStartClock) / 1000
+    return _slipStartPos + elapsedSecs * playbackRate
+  }
+
   return create<DeckStore>((set, get) => {
     engine.onTimeUpdate((t) => set({ currentTime: t }))
     engine.onEnded(() => set({ isPlaying: false, currentTime: 0 }))
@@ -99,14 +152,18 @@ function createDeckStore(deckId: 'A' | 'B') {
       loopEnd: null,
       isLooping: false,
       playbackRate: 1.0,
+      pitchRange: 8,
+      keylockEnabled: false,
       eqHigh: 0,
       eqMid:  0,
       eqLow:  0,
+      isQuantized: false,
+      slipMode: false,
       analysisState: 'idle' as AnalysisState,
       _engine: engine,
 
       loadTrack: async (track) => {
-        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, eqHigh: 0, eqMid: 0, eqLow: 0, analysisState: 'idle' })
+        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, eqHigh: 0, eqMid: 0, eqLow: 0, analysisState: 'idle', keylockEnabled: false })
         try {
           const ab = await window.api.audio.readFile(track.filePath)
           const { peaks, detailPeaks, lowPeaks, midPeaks, highPeaks, duration } = await engine.load(ab)
@@ -132,6 +189,18 @@ function createDeckStore(deckId: 'A' | 'B') {
           }
           // Silently upgrade legacy beatgrid to v2 on first play
           get().quantiseCurrentTrack()
+
+          // Auto-gain: apply per-track gain correction if enabled and gainDb is stored
+          try {
+            const { useWaveformStore } = await import('./waveformStore')
+            if (useWaveformStore.getState().autoGainEnabled && track.gainDb != null) {
+              // gainDb is the correction needed to reach −14 dBFS
+              // Engine volume is linear [0, 1]; we apply a multiplicative correction
+              const correctionFactor = Math.pow(10, track.gainDb / 20)
+              const baseVolume = engine.volume
+              engine.volume = Math.max(0, Math.min(1, baseVolume * correctionFactor))
+            }
+          } catch { /* non-fatal */ }
         } catch (err) {
           console.error(`Deck ${deckId}: failed to load`, err)
           set({ isLoading: false })
@@ -177,12 +246,13 @@ function createDeckStore(deckId: 'A' | 'B') {
       },
 
       setCue: async (index) => {
-        const { currentTrack, currentTime } = get()
+        const { currentTrack, currentTime, isQuantized } = get()
         if (!currentTrack) return
+        const snappedTime = isQuantized ? snapToBeat(currentTime, currentTrack) : currentTime
         const newCue: CuePoint = {
           index,
           type: 'hotcue',
-          positionMs: Math.round(currentTime * 1000),
+          positionMs: Math.round(snappedTime * 1000),
           color: HOT_CUE_COLORS[index] ?? '#ff8c00',
           label: HOT_CUE_LABELS[index] ?? String(index + 1)
         }
@@ -206,34 +276,38 @@ function createDeckStore(deckId: 'A' | 'B') {
 
       // ── Loop ──────────────────────────────────────────────────────────
       setLoopIn: () => {
-        const { currentTime } = get()
-        set({ loopStart: currentTime })
-        // If we already have a loopEnd past this point, activate immediately
+        const { currentTime, currentTrack, isQuantized, slipMode } = get()
+        const t = isQuantized ? snapToBeat(currentTime, currentTrack) : currentTime
+        set({ loopStart: t })
         const { loopEnd } = get()
-        if (loopEnd !== null && loopEnd > currentTime) {
-          engine.setLoop(currentTime, loopEnd)
+        if (loopEnd !== null && loopEnd > t) {
+          if (slipMode) { _slipStartPos = t; _slipStartClock = Date.now() }
+          engine.setLoop(t, loopEnd)
           set({ isLooping: true })
         }
       },
 
       setLoopOut: () => {
-        const { currentTime, loopStart } = get()
-        set({ loopEnd: currentTime })
-        if (loopStart !== null && loopStart < currentTime) {
-          engine.setLoop(loopStart, currentTime)
+        const { currentTime, currentTrack, loopStart, isQuantized, slipMode } = get()
+        const t = isQuantized ? snapToBeat(currentTime, currentTrack) : currentTime
+        set({ loopEnd: t })
+        if (loopStart !== null && loopStart < t) {
+          if (slipMode) { _slipStartPos = loopStart; _slipStartClock = Date.now() }
+          engine.setLoop(loopStart, t)
           set({ isLooping: true })
         }
       },
 
       beatLoop: (bars: number) => {
-        const { currentTime, currentTrack } = get()
+        const { currentTime, currentTrack, isQuantized, slipMode } = get()
         const bpm = currentTrack?.bpm ?? 128
         const barDuration = (60 / bpm) * 4
         const loopLen = bars * barDuration
-        const start = currentTime
-        const end = currentTime + loopLen
+        const rawStart = isQuantized ? snapToBeat(currentTime, currentTrack) : currentTime
+        const start = rawStart
+        const end = start + loopLen
+        if (slipMode) { _slipStartPos = start; _slipStartClock = Date.now() }
         engine.setLoop(start, end)
-        // If not playing, start playback from loop start
         if (!engine.isPlaying) {
           engine.play(start)
           set({ isPlaying: true })
@@ -241,20 +315,96 @@ function createDeckStore(deckId: 'A' | 'B') {
         set({ loopStart: start, loopEnd: end, isLooping: true })
       },
 
+      loopRoll: (bars: number) => {
+        // slip-enabled beat loop: engage slip + loop; clearLoop will exit to slip pos
+        const { currentTime, currentTrack, isQuantized } = get()
+        const bpm = currentTrack?.bpm ?? 128
+        const barDuration = (60 / bpm) * 4
+        const loopLen = bars * barDuration
+        const start = isQuantized ? snapToBeat(currentTime, currentTrack) : currentTime
+        const end = start + loopLen
+        _slipStartPos = start
+        _slipStartClock = Date.now()
+        engine.setLoop(start, end)
+        if (!engine.isPlaying) { engine.play(start); set({ isPlaying: true }) }
+        set({ loopStart: start, loopEnd: end, isLooping: true, slipMode: true })
+      },
+
       toggleLoop: () => {
-        const { loopStart, loopEnd, isLooping } = get()
+        const { loopStart, loopEnd, isLooping, slipMode, playbackRate } = get()
         if (isLooping) {
           engine.clearLoop()
+          if (slipMode && loopStart !== null) {
+            const slipPos = _getSlipPosition(playbackRate)
+            engine.seek(Math.max(0, slipPos))
+          }
           set({ isLooping: false })
         } else if (loopStart !== null && loopEnd !== null && loopEnd > loopStart) {
+          if (slipMode) { _slipStartPos = loopStart; _slipStartClock = Date.now() }
           engine.setLoop(loopStart, loopEnd)
           set({ isLooping: true })
         }
       },
 
       clearLoop: () => {
+        const { isLooping, slipMode, playbackRate } = get()
         engine.clearLoop()
+        if (isLooping && slipMode) {
+          const slipPos = _getSlipPosition(playbackRate)
+          engine.seek(Math.max(0, slipPos))
+        }
         set({ loopStart: null, loopEnd: null, isLooping: false })
+      },
+
+      // ── Saved loop slots (CuePoint type:'loop', indices 0-7) ──────────
+      saveLoopSlot: async (index: number) => {
+        const { currentTrack, loopStart, loopEnd } = get()
+        if (!currentTrack || loopStart === null || loopEnd === null) return
+        const newCue: CuePoint = {
+          index,
+          type: 'loop',
+          positionMs: Math.round(loopStart * 1000),
+          endMs: Math.round(loopEnd * 1000),
+          color: HOT_CUE_COLORS[index] ?? '#3CA8A1',
+          label: `Loop ${index + 1}`,
+        }
+        const rest = currentTrack.cuePoints.filter((c) => !(c.type === 'loop' && c.index === index))
+        await patchTrackCues([...rest, newCue].sort((a, b) => a.positionMs - b.positionMs), get, set)
+      },
+
+      jumpToLoopSlot: (index: number) => {
+        const { currentTrack, slipMode } = get()
+        const slot = currentTrack?.cuePoints.find((c) => c.type === 'loop' && c.index === index)
+        if (!slot) return
+        const start = slot.positionMs / 1000
+        const end = (slot.endMs ?? slot.positionMs + 2000) / 1000
+        if (slipMode) { _slipStartPos = start; _slipStartClock = Date.now() }
+        engine.setLoop(start, end)
+        engine.seek(start)
+        if (!engine.isPlaying) { engine.play(start); set({ isPlaying: true }) }
+        set({ loopStart: start, loopEnd: end, isLooping: true })
+      },
+
+      clearLoopSlot: async (index: number) => {
+        const { currentTrack } = get()
+        if (!currentTrack) return
+        await patchTrackCues(
+          currentTrack.cuePoints.filter((c) => !(c.type === 'loop' && c.index === index)),
+          get, set
+        )
+      },
+
+      // ── Beat Jump ─────────────────────────────────────────────────────
+      beatJump: (beats: number) => {
+        const { currentTime, currentTrack, duration, isQuantized } = get()
+        if (!currentTrack) return
+        const bpm = currentTrack.bpm ?? 128
+        const beatLen = 60 / bpm
+        const raw = currentTime + beats * beatLen
+        const clamped = Math.max(0, Math.min(duration, raw))
+        const target = isQuantized ? snapToBeat(clamped, currentTrack) : clamped
+        engine.seek(target)
+        set({ currentTime: target })
       },
 
       // ── Analysis ──────────────────────────────────────────────────────
@@ -317,9 +467,26 @@ function createDeckStore(deckId: 'A' | 'B') {
 
       // ── Pitch ─────────────────────────────────────────────────────────
       setPlaybackRate: (rate: number) => {
-        engine.playbackRate = rate
-        set({ playbackRate: rate })
+        const { pitchRange } = get()
+        const limit = pitchRange / 100
+        const clamped = Math.max(1 - limit, Math.min(1 + limit, rate))
+        engine.playbackRate = clamped
+        set({ playbackRate: clamped })
       },
+      setPitchRange: (range: number) => {
+        set({ pitchRange: range })
+        // Re-clamp current rate to new range
+        const { playbackRate } = get()
+        const limit = range / 100
+        const clamped = Math.max(1 - limit, Math.min(1 + limit, playbackRate))
+        if (clamped !== playbackRate) {
+          engine.playbackRate = clamped
+          set({ playbackRate: clamped })
+        }
+      },
+      toggleKeylock: () => set((s) => ({ keylockEnabled: !s.keylockEnabled })),
+      toggleQuantize: () => set((s) => ({ isQuantized: !s.isQuantized })),
+      toggleSlipMode: () => set((s) => ({ slipMode: !s.slipMode })),
 
       setMemoryCue: async () => {
         const { currentTrack, currentTime } = get()

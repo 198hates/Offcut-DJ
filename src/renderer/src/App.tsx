@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { midiEngine } from './lib/midiEngine'
+import { useRecordingStore } from './store/recordingStore'
 import { LibraryPage } from './pages/Library'
 import { AnalysePage } from './pages/Analyse'
 import { HealthPage } from './pages/Health'
@@ -31,6 +33,9 @@ export default function App(): JSX.Element {
   const [detailTrackId, setDetailTrackId] = useState<string | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
+
+  // MIDI engine — initialise once on mount
+  useEffect(() => { midiEngine.init() }, [])
 
   useEffect(() => { loadLibrary() }, [loadLibrary])
 
@@ -97,9 +102,12 @@ export default function App(): JSX.Element {
       {/* Colophon */}
       <div className="shrink-0 flex items-center justify-between px-4 border-t border-border/20 bg-chassis-soft"
            style={{ height: 16 }}>
-        <span className="font-mono text-[7.5px] tracking-[0.18em] uppercase text-muted/50">
-          offcut · od·01 / firmware 1.0.0 · build 0001
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[7.5px] tracking-[0.18em] uppercase text-muted/50">
+            offcut · od·01 / firmware 1.0.0 · build 0001
+          </span>
+          <RecordingButton />
+        </div>
         <span className="text-muted/40" style={{
           fontFamily: "'Fraunces', serif",
           fontStyle: 'italic',
@@ -170,5 +178,50 @@ export default function App(): JSX.Element {
         </div>
       )}
     </div>
+  )
+}
+
+// ── RecordingButton ────────────────────────────────────────────────────────────
+
+function RecordingButton(): JSX.Element {
+  const { state, durationSeconds, startRecording, stopRecording } = useRecordingStore()
+
+  const fmtDur = (s: number): string => {
+    const m = Math.floor(s / 60)
+    const sec = s % 60
+    return `${m}:${sec.toString().padStart(2, '0')}`
+  }
+
+  if (state === 'idle') {
+    return (
+      <button
+        onClick={startRecording}
+        title="Record mix to .webm"
+        className="flex items-center gap-1 font-mono text-[7.5px] uppercase tracking-[0.18em] text-muted/40 hover:text-red-500/70 transition-colors"
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-muted/25 group-hover:bg-red-500/40" />
+        REC
+      </button>
+    )
+  }
+
+  if (state === 'recording') {
+    return (
+      <button
+        onClick={() => stopRecording()}
+        title="Stop recording and save"
+        className="flex items-center gap-1 font-mono text-[7.5px] uppercase tracking-[0.18em] text-red-500 animate-pulse hover:animate-none transition-colors"
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+        {fmtDur(durationSeconds)}
+      </button>
+    )
+  }
+
+  return (
+    <span className="flex items-center gap-1 font-mono text-[7.5px] uppercase tracking-[0.18em] text-muted/50">
+      <span className="w-1.5 h-1.5 rounded-full bg-muted/30" />
+      saving…
+    </span>
   )
 }

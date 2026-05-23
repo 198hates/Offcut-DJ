@@ -55,11 +55,19 @@ const COL_MAP: Record<string, string> = {
   filePath: 'file_path',
   durationSeconds: 'duration_seconds',
   dateAdded: 'date_added',
+  updatedAt: 'updated_at',
   sourceIds: 'source_ids',
   cuePoints: 'cue_points',
   customTags: 'custom_tags',
   analysedBeatgrid: 'analysed_beatgrid',
-  editLineage: 'edit_lineage'
+  editLineage: 'edit_lineage',
+  fileSize: 'file_size',
+  fileType: 'file_type',
+  sampleRate: 'sample_rate',
+  bitDepth: 'bit_depth',
+  gainDb: 'gain_db',
+  lastPlayedAt: 'last_played_at',
+  playCount: 'play_count',
 }
 
 export function registerLibraryHandlers(): void {
@@ -698,6 +706,174 @@ ${rows}
     if (res.canceled || !res.filePath) return { saved: false }
     writeFileSync(res.filePath, pdfBuf)
     return { saved: true, path: res.filePath }
+  })
+
+  // ── Session history playlists ────────────────────────────────────────────────
+  // Returns (or creates) a playlist named "History — YYYY-MM-DD" for today.
+  ipcMain.handle('library:getOrCreateSessionPlaylist', (): Playlist => {
+    const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+    const name = `History — ${today}`
+    let row = db.prepare("SELECT * FROM playlists WHERE name = ? AND is_history = 1 LIMIT 1").get(name) as Record<string, unknown> | undefined
+    if (!row) {
+      const id = randomUUID()
+      db.prepare(
+        "INSERT INTO playlists (id, name, is_folder, is_smart, is_history, sort_order, source_ids) VALUES (?, ?, 0, 0, 1, 0, '{}')"
+      ).run(id, name)
+      row = db.prepare('SELECT * FROM playlists WHERE id = ?').get(id) as Record<string, unknown>
+    }
+    const trackRows = db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order').all(row.id as string) as { track_id: string }[]
+    return rowToPlaylist(row, trackRows.map((r) => r.track_id))
+  })
+
+  ipcMain.handle('library:getHistoryPlaylists', (): Playlist[] => {
+    const rows = db.prepare('SELECT * FROM playlists WHERE is_history = 1 ORDER BY name DESC').all() as Record<string, unknown>[]
+    return rows.map((pl) => {
+      const trackRows = db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order').all(pl.id as string) as { track_id: string }[]
+      return rowToPlaylist(pl, trackRows.map((r) => r.track_id))
+    })
+  })
+
+  // ── Cue Sheet export (.cue format) ──────────────────────────────────────────
+  ipcMain.handle('library:exportCueSheet', async (_e, playlistId: string): Promise<{ saved: boolean; path?: string }> => {
+    const pl = db.prepare('SELECT * FROM playlists WHERE id = ?').get(playlistId) as Record<string, unknown> | undefined
+    if (!pl) return { saved: false }
+    const trackRows = db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order').all(playlistId) as { track_id: string }[]
+    const tracks = trackRows.map((r) => rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(r.track_id) as Record<string, unknown>))
+
+    const res = await dialog.showSaveDialog({
+      title: 'Export Cue Sheet',
+      defaultPath: `${String(pl.name).replace(/[^a-zA-Z0-9 ]/g, '').trim()}.cue`,
+      filters: [{ name: 'Cue Sheet', extensions: ['cue'] }]
+    })
+    if (res.canceled || !res.filePath) return { saved: false }
+
+    // Build .cue file — timestamps in mm:ss:ff (75 fps)
+    const toMmSsFf = (secs: number): string => {
+      const s = Math.max(0, Math.floor(secs))
+      const mm = String(Math.floor(s / 60)).padStart(2, '0')
+      const ss = String(s % 60).padStart(2, '0')
+      const ff = String(Math.round((secs % 1) * 75)).padStart(2, '0')
+      return `${mm}:${ss}:${ff}`
+    }
+
+    let offset = 0
+    const lines: string[] = [
+      `TITLE "${pl.name}"`,
+      'FILE "mix.wav" WAVE',
+    ]
+    tracks.forEach((t, i) => {
+      lines.push(`  TRACK ${String(i + 1).padStart(2, '0')} AUDIO`)
+      lines.push(`    TITLE "${t.title.replace(/"/g, "'")}"`)
+      lines.push(`    PERFORMER "${t.artist.replace(/"/g, "'")}"`)
+      lines.push(`    INDEX 01 ${toMmSsFf(offset)}`)
+      offset += t.durationSeconds ?? 240
+    })
+
+    writeFileSync(res.filePath, lines.join('\n'), 'utf8')
+    return { saved: true, path: res.filePath }
+  })
+
+  // ── Playlist tools: merge, shuffle, diff ────────────────────────────────────
+  ipcMain.handle('library:mergePlaylists', (_e, sourceIds: string[], targetName: string): Playlist => {
+    const seen = new Set<string>()
+    const merged: string[] = []
+    for (const plId of sourceIds) {
+      const rows = db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order').all(plId) as { track_id: string }[]
+      for (const r of rows) {
+        if (!seen.has(r.track_id)) { seen.add(r.track_id); merged.push(r.track_id) }
+      }
+    }
+    const id = randomUUID()
+    db.prepare("INSERT INTO playlists (id, name, is_folder, sort_order, source_ids) VALUES (?, ?, 0, 0, '{}')").run(id, targetName)
+    const insertPt = db.prepare('INSERT INTO playlist_tracks (playlist_id, track_id, sort_order) VALUES (?, ?, ?)')
+    const tx = db.transaction(() => merged.forEach((tid, i) => insertPt.run(id, tid, i)))
+    tx()
+    const row = db.prepare('SELECT * FROM playlists WHERE id = ?').get(id) as Record<string, unknown>
+    return rowToPlaylist(row, merged)
+  })
+
+  ipcMain.handle('library:shufflePlaylist', (_e, playlistId: string): void => {
+    const rows = db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ?').all(playlistId) as { track_id: string }[]
+    const ids = rows.map((r) => r.track_id)
+    // Fisher-Yates
+    for (let i = ids.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [ids[i], ids[j]] = [ids[j], ids[i]]
+    }
+    const update = db.prepare('UPDATE playlist_tracks SET sort_order = ? WHERE playlist_id = ? AND track_id = ?')
+    const tx = db.transaction(() => ids.forEach((tid, i) => update.run(i, playlistId, tid)))
+    tx()
+  })
+
+  ipcMain.handle('library:diffPlaylists', (_e, playlistAId: string, playlistBId: string): string[] => {
+    const aRows = db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ?').all(playlistAId) as { track_id: string }[]
+    const bRows = db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ?').all(playlistBId) as { track_id: string }[]
+    const bSet = new Set(bRows.map((r) => r.track_id))
+    return aRows.filter((r) => !bSet.has(r.track_id)).map((r) => r.track_id)
+  })
+
+  // ── Discogs metadata fetch ───────────────────────────────────────────────────
+  ipcMain.handle('library:fetchDiscogsMetadata', async (_e, trackId: string): Promise<{ ok: boolean; updated?: Track; error?: string }> => {
+    const track = rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>)
+    const query = [track.artist, track.title].filter(Boolean).join(' ')
+    if (!query) return { ok: false, error: 'No artist or title to search' }
+
+    try {
+      const url = `https://api.discogs.com/database/search?q=${encodeURIComponent(query)}&type=release&per_page=3`
+      const res = await fetch(url, { headers: { 'User-Agent': 'Crate/1.0 +https://github.com/example/crate' } })
+      if (!res.ok) return { ok: false, error: `Discogs API error: ${res.status}` }
+      const json = await res.json() as { results?: { year?: string; genre?: string[]; label?: string[]; catno?: string }[] }
+      const hit = json.results?.[0]
+      if (!hit) return { ok: false, error: 'No results found' }
+
+      const patch: Partial<Track> & { id: string } = { id: trackId }
+      if (!track.year && hit.year) patch.year = parseInt(hit.year) || null
+      if (!track.genre && hit.genre?.[0]) patch.genre = hit.genre[0]
+      if (!track.label && hit.label?.[0]) patch.label = hit.label[0]
+
+      if (Object.keys(patch).length <= 1) return { ok: true } // nothing new
+
+      const setClauses = Object.keys(patch).filter((k) => k !== 'id').map((k) => `${COL_MAP[k] ?? k} = @${k}`).join(', ')
+      db.prepare(`UPDATE tracks SET ${setClauses}, updated_at = datetime('now') WHERE id = @id`).run(patch)
+      const updated = rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>)
+      return { ok: true, updated }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  // ── AcoustID / MusicBrainz fingerprint lookup ────────────────────────────────
+  ipcMain.handle('library:lookupAcoustId', async (_e, trackId: string, fingerprint: string, durationSecs: number): Promise<{ ok: boolean; updated?: Track; error?: string }> => {
+    const track = rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>)
+    try {
+      // AcoustID API — free service, no auth needed for basic lookup
+      const url = `https://api.acoustid.org/v2/lookup?client=yVHjbHFuM7&duration=${Math.round(durationSecs)}&fingerprint=${fingerprint}&meta=recordings+releasegroups+compress`
+      const res = await fetch(url)
+      if (!res.ok) return { ok: false, error: `AcoustID error: ${res.status}` }
+      const json = await res.json() as {
+        status: string
+        results?: Array<{ score: number; recordings?: Array<{ title?: string; artists?: Array<{ name: string }>; releasegroups?: Array<{ title?: string; secondarytypes?: string[] }> }> }>
+      }
+      if (json.status !== 'ok' || !json.results?.length) return { ok: false, error: 'No match found' }
+
+      const best = json.results.sort((a, b) => b.score - a.score)[0]
+      const rec = best?.recordings?.[0]
+      if (!rec) return { ok: false, error: 'No recording data' }
+
+      const patch: Partial<Track> & { id: string } = { id: trackId }
+      if (!track.title && rec.title) patch.title = rec.title
+      if (!track.artist && rec.artists?.[0]?.name) patch.artist = rec.artists[0].name
+      if (!track.album && rec.releasegroups?.[0]?.title) patch.album = rec.releasegroups[0].title
+
+      if (Object.keys(patch).length <= 1) return { ok: true }
+
+      const setClauses = Object.keys(patch).filter((k) => k !== 'id').map((k) => `${COL_MAP[k] ?? k} = @${k}`).join(', ')
+      db.prepare(`UPDATE tracks SET ${setClauses}, updated_at = datetime('now') WHERE id = @id`).run(patch)
+      const updated = rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>)
+      return { ok: true, updated }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
   })
 
   // ── Pioneer USB history ──────────────────────────────────────────────────────

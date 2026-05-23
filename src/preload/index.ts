@@ -82,6 +82,22 @@ const api = {
       ipcRenderer.invoke('library:deleteRunningOrder', id),
     exportOrderPDF: (id: string) =>
       ipcRenderer.invoke('library:exportOrderPDF', id) as Promise<{ saved: boolean; path?: string }>,
+    getOrCreateSessionPlaylist: (): Promise<import('../shared/types').Playlist> =>
+      ipcRenderer.invoke('library:getOrCreateSessionPlaylist'),
+    getHistoryPlaylists: (): Promise<import('../shared/types').Playlist[]> =>
+      ipcRenderer.invoke('library:getHistoryPlaylists'),
+    exportCueSheet: (playlistId: string): Promise<{ saved: boolean; path?: string }> =>
+      ipcRenderer.invoke('library:exportCueSheet', playlistId),
+    mergePlaylists: (sourceIds: string[], targetName: string): Promise<import('../shared/types').Playlist> =>
+      ipcRenderer.invoke('library:mergePlaylists', sourceIds, targetName),
+    shufflePlaylist: (playlistId: string): Promise<void> =>
+      ipcRenderer.invoke('library:shufflePlaylist', playlistId),
+    diffPlaylists: (playlistAId: string, playlistBId: string): Promise<string[]> =>
+      ipcRenderer.invoke('library:diffPlaylists', playlistAId, playlistBId),
+    fetchDiscogsMetadata: (trackId: string): Promise<{ ok: boolean; updated?: import('../shared/types').Track; error?: string }> =>
+      ipcRenderer.invoke('library:fetchDiscogsMetadata', trackId),
+    lookupAcoustId: (trackId: string, fingerprint: string, durationSecs: number): Promise<{ ok: boolean; updated?: import('../shared/types').Track; error?: string }> =>
+      ipcRenderer.invoke('library:lookupAcoustId', trackId, fingerprint, durationSecs),
     findPioneerUsb: (): Promise<string | null> =>
       ipcRenderer.invoke('library:findPioneerUsb'),
     browseForUsb: (): Promise<string | null> =>

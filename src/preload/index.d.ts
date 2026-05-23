@@ -67,6 +67,14 @@ declare global {
         updateRunningOrder: (id: string, patch: Partial<RunningOrder>) => Promise<RunningOrder>
         deleteRunningOrder: (id: string) => Promise<void>
         exportOrderPDF: (id: string) => Promise<{ saved: boolean; path?: string }>
+        getOrCreateSessionPlaylist: () => Promise<Playlist>
+        getHistoryPlaylists: () => Promise<Playlist[]>
+        exportCueSheet: (playlistId: string) => Promise<{ saved: boolean; path?: string }>
+        mergePlaylists: (sourceIds: string[], targetName: string) => Promise<Playlist>
+        shufflePlaylist: (playlistId: string) => Promise<void>
+        diffPlaylists: (playlistAId: string, playlistBId: string) => Promise<string[]>
+        fetchDiscogsMetadata: (trackId: string) => Promise<{ ok: boolean; updated?: Track; error?: string }>
+        lookupAcoustId: (trackId: string, fingerprint: string, durationSecs: number) => Promise<{ ok: boolean; updated?: Track; error?: string }>
         findPioneerUsb: () => Promise<string | null>
         browseForUsb: () => Promise<string | null>
         readUsbHistory: (usbRoot: string) => Promise<UsbPlayedSet[]>

@@ -1,6 +1,6 @@
 import chokidar, { type FSWatcher } from 'chokidar'
 import { parseBuffer } from 'music-metadata'
-import { readFile } from 'fs/promises'
+import { readFile, stat } from 'fs/promises'
 import { randomUUID } from 'crypto'
 import { basename, extname } from 'path'
 import { BrowserWindow } from 'electron'
@@ -16,10 +16,13 @@ async function importFile(filePath: string): Promise<void> {
   if (db.prepare('SELECT id FROM tracks WHERE file_path = ?').get(filePath)) return
 
   try {
-    const buf = await readFile(filePath)
+    const [buf, fileStat] = await Promise.all([readFile(filePath), stat(filePath)])
     const meta = await parseBuffer(buf)
     const c = meta.common
     const f = meta.format
+
+    const ext = extname(filePath).toLowerCase().replace('.', '')
+    const fileType = ext === 'aif' ? 'aiff' : ext || null
 
     const track: Track = {
       id: randomUUID(),
@@ -37,25 +40,36 @@ async function importFile(filePath: string): Promise<void> {
       color: '',
       energy: null,
       danceability: null,
-          mood: null,
-          analysedBeatgrid: null,
-          editLineage: null,
+      mood: null,
+      analysedBeatgrid: null,
+      editLineage: null,
       playCount: 0,
       lastPlayedAt: null,
+      updatedAt: null,
       dateAdded: new Date().toISOString(),
       comment: (c.comment as { text: string }[] | undefined)?.[0]?.text ?? '',
       tags: [],
       customTags: {},
       cuePoints: [],
       beatgrid: [],
-      sourceIds: {}
+      sourceIds: {},
+      // ── File-level metadata ──────────────────────────────────────────────
+      fileSize:   fileStat.size,
+      fileType,
+      sampleRate: f.sampleRate ?? null,
+      bitDepth:   f.bitsPerSample ?? null,
+      gainDb:     null,
+      phrases:    null,
     }
 
     insertOrUpdateTrack(db, track)
 
-    BrowserWindow.getAllWindows().forEach((win) =>
-      win.webContents.send('library:watchFolderAdded')
-    )
+    // Notify renderer — passes the new track ID so it can trigger auto-analysis
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send('library:watchFolderAdded', track.id)
+      }
+    })
   } catch (err) {
     console.error(`[watch-folder] failed to import ${filePath}:`, err)
   }

@@ -50,7 +50,14 @@ export function rowToTrack(row: Record<string, unknown>): Track {
     editLineage: row.edit_lineage
       ? JSON.parse(row.edit_lineage as string)
       : null,
-    sourceIds: JSON.parse(row.source_ids as string)
+    sourceIds: JSON.parse(row.source_ids as string),
+    updatedAt: (row.updated_at as string | null) ?? null,
+    fileSize:   (row.file_size   as number | null) ?? null,
+    fileType:   (row.file_type   as string | null) ?? null,
+    sampleRate: (row.sample_rate as number | null) ?? null,
+    bitDepth:   (row.bit_depth   as number | null) ?? null,
+    gainDb:     (row.gain_db     as number | null) ?? null,
+    phrases:    row.phrases ? JSON.parse(row.phrases as string) : null,
   }
 }
 
@@ -78,11 +85,13 @@ export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
     INSERT INTO tracks (
       id, file_path, title, artist, album, genre, year, label, bpm, key,
       duration_seconds, rating, energy, danceability, date_added, comment,
-      tags, cue_points, beatgrid, source_ids
+      tags, cue_points, beatgrid, source_ids,
+      file_size, file_type, sample_rate, bit_depth
     ) VALUES (
       @id, @filePath, @title, @artist, @album, @genre, @year, @label, @bpm, @key,
       @durationSeconds, @rating, @energy, @danceability, @dateAdded, @comment,
-      @tags, @cuePoints, @beatgrid, @sourceIds
+      @tags, @cuePoints, @beatgrid, @sourceIds,
+      @fileSize, @fileType, @sampleRate, @bitDepth
     )
     ON CONFLICT(id) DO UPDATE SET
       file_path = excluded.file_path,
@@ -107,6 +116,11 @@ export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
       cue_points = excluded.cue_points,
       beatgrid = excluded.beatgrid,
       source_ids = excluded.source_ids,
+      /* file info: fill in if not yet set */
+      file_size   = COALESCE(file_size,   excluded.file_size),
+      file_type   = COALESCE(file_type,   excluded.file_type),
+      sample_rate = COALESCE(sample_rate, excluded.sample_rate),
+      bit_depth   = COALESCE(bit_depth,   excluded.bit_depth),
       updated_at = datetime('now')
   `).run({
     id: track.id,
@@ -128,6 +142,10 @@ export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
     tags: JSON.stringify(track.tags),
     cuePoints: JSON.stringify(track.cuePoints),
     beatgrid: JSON.stringify(track.beatgrid),
-    sourceIds: JSON.stringify(track.sourceIds)
+    sourceIds: JSON.stringify(track.sourceIds),
+    fileSize: track.fileSize ?? null,
+    fileType: track.fileType ?? null,
+    sampleRate: track.sampleRate ?? null,
+    bitDepth: track.bitDepth ?? null,
   })
 }

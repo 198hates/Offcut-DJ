@@ -25,6 +25,11 @@ class AudioEngine {
   private analyser:     AnalyserNode | null = null
   private analyserBuf:  Float32Array        = new Float32Array(256)
 
+  // Recording output node — connect to MediaRecorder stream
+  private _recordDest: MediaStreamAudioDestinationNode | null = null
+  // Pre-listen output node — connect to a second AudioContext for cue output
+  private _preListenGain: GainNode | null = null
+
   // Playback tracking
   private startPos = 0
   private startedAt = 0
@@ -80,11 +85,20 @@ class AudioEngine {
       this.analyser.smoothingTimeConstant = 0.65
       this.analyserBuf = new Float32Array(this.analyser.fftSize)
 
-      // Chain: EQ → gain → analyser → speakers
+      // Pre-listen gain (starts at 0 — only raised when cue is enabled)
+      this._preListenGain = this.ctx.createGain()
+      this._preListenGain.gain.value = 0
+
+      // Recording destination (MediaRecorder can attach its stream here)
+      this._recordDest = this.ctx.createMediaStreamDestination()
+
+      // Chain: EQ → gain → analyser → speakers + record dest
       this.eqLow.connect(this.eqMid)
       this.eqMid.connect(this.eqHigh)
       this.eqHigh.connect(this.gainNode)
       this.gainNode.connect(this.analyser)
+      this.gainNode.connect(this._preListenGain)
+      this.gainNode.connect(this._recordDest)
       this.analyser.connect(this.ctx.destination)
     }
     if (this.ctx.state === 'suspended') this.ctx.resume()
@@ -250,6 +264,21 @@ class AudioEngine {
     if (this.gainNode) this.gainNode.gain.value = this._volume
   }
   get volume(): number { return this._volume }
+
+  /** Set pre-listen (cue) gain (0 = off, 1 = full) */
+  set preListenGain(v: number) {
+    if (this._preListenGain) this._preListenGain.gain.value = Math.max(0, Math.min(1, v))
+  }
+
+  /** Connect a pre-listen destination node (e.g. from a second AudioContext) */
+  connectPreListen(dest: AudioNode): void {
+    this._preListenGain?.connect(dest)
+  }
+
+  /** The MediaStream for recording this deck's output */
+  get recordingStream(): MediaStream | null {
+    return this._recordDest?.stream ?? null
+  }
 
   // ── Time ─────────────────────────────────────────────────────────────────
 

@@ -140,7 +140,20 @@ export function applySchema(db: import('better-sqlite3').Database): void {
        created_at  TEXT NOT NULL DEFAULT (datetime('now')),
        updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
      )`,
-    "CREATE INDEX IF NOT EXISTS idx_running_orders_catalog ON running_orders(catalog_num)"
+    "CREATE INDEX IF NOT EXISTS idx_running_orders_catalog ON running_orders(catalog_num)",
+    // File-level metadata
+    "ALTER TABLE tracks ADD COLUMN file_size INTEGER",
+    "ALTER TABLE tracks ADD COLUMN file_type TEXT",
+    "ALTER TABLE tracks ADD COLUMN sample_rate INTEGER",
+    "ALTER TABLE tracks ADD COLUMN bit_depth INTEGER",
+    // Per-track gain trim (LUFS-based auto-gain)
+    "ALTER TABLE tracks ADD COLUMN gain_db REAL",
+    // Phrase / song structure
+    "ALTER TABLE tracks ADD COLUMN phrases TEXT",
+    // Date last modified (tag write-back timestamp)
+    "ALTER TABLE tracks ADD COLUMN updated_at TEXT",
+    // Session history playlist type
+    "ALTER TABLE playlists ADD COLUMN is_history INTEGER NOT NULL DEFAULT 0"
   ]) {
     try { db.exec(stmt) } catch { /* column already exists */ }
   }

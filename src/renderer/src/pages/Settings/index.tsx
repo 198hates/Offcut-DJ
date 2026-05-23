@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import type { AppSettings } from '@shared/types'
-import { useWaveformStore, type WaveformStyle } from '../../store/waveformStore'
+import { useWaveformStore, type WaveformStyle, type KeyNotation } from '../../store/waveformStore'
 import { useThemeStore } from '../../store/themeStore'
+import { MidiSettings } from '../../components/MidiSettings'
 
 type SettingsPatch = Partial<AppSettings>
 
@@ -22,7 +23,11 @@ const WAVEFORM_STYLES: { value: WaveformStyle; label: string; desc: string }[] =
 
 export function SettingsPage(): JSX.Element {
   const [settings, setSettings] = useState<AppSettings | null>(null)
-  const { style: waveformStyle, setStyle: setWaveformStyle } = useWaveformStore()
+  const {
+    style: waveformStyle, setStyle: setWaveformStyle,
+    keyNotation, setKeyNotation,
+    autoGainEnabled, setAutoGainEnabled,
+  } = useWaveformStore()
   const { theme: currentTheme, toggleTheme } = useThemeStore()
   const [detected, setDetected] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -217,6 +222,32 @@ export function SettingsPage(): JSX.Element {
           </div>
           <p className="font-mono text-[9px] text-muted/60">takes effect next time a track is loaded</p>
         </div>
+
+        {/* Key notation */}
+        <div className="space-y-2">
+          <p className="font-mono text-[9.5px] text-muted uppercase tracking-[0.12em]">key notation</p>
+          <div className="flex gap-2">
+            {([
+              { value: 'camelot',  label: 'Camelot', example: '8A' },
+              { value: 'openkey',  label: 'Open Key', example: '8m' },
+              { value: 'standard', label: 'Standard', example: 'Bbm' },
+            ] as { value: KeyNotation; label: string; example: string }[]).map(({ value, label, example }) => (
+              <button
+                key={value}
+                onClick={() => setKeyNotation(value)}
+                className={`flex-1 text-center px-3 py-2.5 rounded border transition-colors ${
+                  keyNotation === value
+                    ? 'border-accent bg-accent/8 text-ink'
+                    : 'border-border/40 text-muted hover:border-border hover:text-ink-soft'
+                }`}
+              >
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em]">{label}</p>
+                <p className="font-mono text-[9px] text-muted mt-0.5">{example}</p>
+              </button>
+            ))}
+          </div>
+          <p className="font-mono text-[9px] text-muted/60">how keys are displayed in the library and deck headers</p>
+        </div>
       </Section>
 
       {/* Preferences */}
@@ -241,6 +272,20 @@ export function SettingsPage(): JSX.Element {
             <p className="font-mono text-[9.5px] text-muted/60 mt-1">'system' follows your OS light/dark preference</p>
           </div>
 
+          {/* Auto-gain */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-mono text-[10.5px] text-ink">auto-gain normalisation</p>
+              <p className="font-mono text-[9.5px] text-muted mt-0.5">apply per-track gain trim on deck load to match loudness · requires gain_db to be analysed</p>
+            </div>
+            <button
+              onClick={() => setAutoGainEnabled(!autoGainEnabled)}
+              className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ${autoGainEnabled ? 'bg-accent' : 'bg-border/60'}`}
+            >
+              <span className={`absolute top-1 w-4 h-4 rounded-full bg-paper shadow transition-all ${autoGainEnabled ? 'left-5' : 'left-1'}`} />
+            </button>
+          </div>
+
           {/* Welcome screen */}
           <div className="flex items-center justify-between">
             <div>
@@ -257,6 +302,11 @@ export function SettingsPage(): JSX.Element {
         </div>
       </Section>
 
+      {/* Pre-listen / Headphone cue */}
+      <Section title="Pre-listen (Cue)" icon="🎧">
+        <PreListenSettings />
+      </Section>
+
       {/* Watch Folders */}
       <Section title="Watch Folders" icon="⊙">
         <WatchFoldersTool />
@@ -265,6 +315,11 @@ export function SettingsPage(): JSX.Element {
       {/* Path Mappings */}
       <Section title="Path Mappings" icon="⇄">
         <PathMappingTool />
+      </Section>
+
+      {/* MIDI Controllers */}
+      <Section title="MIDI Controllers" icon="◈">
+        <MidiSettings />
       </Section>
 
       {/* Quick import shortcuts using saved paths */}
@@ -498,6 +553,86 @@ function WatchFoldersTool(): JSX.Element {
       >
         + add folder
       </button>
+    </div>
+  )
+}
+
+// ── PreListenSettings ─────────────────────────────────────────────────────────
+// Lets the user pick a secondary audio output device for headphone cue monitoring
+
+function PreListenSettings(): JSX.Element {
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
+  const [selectedId, setSelectedId] = useState<string>(() =>
+    localStorage.getItem('crate-prelisten-device') ?? ''
+  )
+  const [permissionDenied, setPermissionDenied] = useState(false)
+
+  // Enumerate audio output devices
+  const loadDevices = useCallback(async () => {
+    try {
+      const list = await navigator.mediaDevices.enumerateDevices()
+      setDevices(list.filter((d) => d.kind === 'audiooutput' && d.deviceId !== ''))
+    } catch { setPermissionDenied(true) }
+  }, [])
+
+  useEffect(() => { loadDevices() }, [loadDevices])
+
+  const selectDevice = (deviceId: string): void => {
+    setSelectedId(deviceId)
+    localStorage.setItem('crate-prelisten-device', deviceId)
+  }
+
+  if (permissionDenied) {
+    return (
+      <p className="font-mono text-[9.5px] text-muted/70">
+        Audio device access was denied. Grant permission in System Settings → Privacy → Microphone.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="font-mono text-[9.5px] text-muted/80 leading-relaxed">
+        Select the audio output used for headphone pre-listen (CUE). Use the CUE button on each deck to route that deck to this output.
+      </p>
+      {devices.length === 0 ? (
+        <p className="font-mono text-[9.5px] text-muted/50 italic">No additional audio outputs detected.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {/* Default system output */}
+          <label className="flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors hover:border-border/60 border-border/30">
+            <input
+              type="radio" name="prelisten" value=""
+              checked={selectedId === ''}
+              onChange={() => selectDevice('')}
+              className="accent-accent"
+            />
+            <span className="font-mono text-[10px] text-ink-soft">System default</span>
+          </label>
+          {devices.map((d) => (
+            <label key={d.deviceId} className="flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors hover:border-border/60 border-border/30">
+              <input
+                type="radio" name="prelisten" value={d.deviceId}
+                checked={selectedId === d.deviceId}
+                onChange={() => selectDevice(d.deviceId)}
+                className="accent-accent"
+              />
+              <span className="font-mono text-[10px] text-ink-soft truncate flex-1">
+                {d.label || `Output ${d.deviceId.slice(0, 8)}`}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+      <button
+        onClick={loadDevices}
+        className="font-mono text-[9px] text-muted hover:text-ink transition-colors uppercase tracking-[0.1em]"
+      >
+        refresh devices
+      </button>
+      <p className="font-mono text-[9px] text-muted/60">
+        requires a second audio output device (e.g. USB audio interface, bluetooth headphones) · setSinkId routing applied at playback
+      </p>
     </div>
   )
 }

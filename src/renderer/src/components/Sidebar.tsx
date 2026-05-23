@@ -1,9 +1,16 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useMemo } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { useToastStore } from '../store/toastStore'
 import { ContextMenu } from './ContextMenu'
 import { SmartPlaylistEditor } from './SmartPlaylistEditor'
 import type { Playlist, SmartRule, Track } from '@shared/types'
+
+function fmtPlaylistDuration(secs: number): string {
+  if (secs < 60) return '<1m'
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  return h > 0 ? `${h}h${m}m` : `${m}m`
+}
 
 const BLIP_COLORS = [
   '#6E8059', '#4E7090', '#B07A4E', '#C9A02C',
@@ -86,9 +93,21 @@ export function Sidebar(): JSX.Element {
     setSmartEditorPlaylist(undefined)
   }
 
-  const regular   = playlists.filter((p) => !p.parentId && !p.isFolder && !p.isSmart && !p.isAutoGroup)
-  const smart     = playlists.filter((p) => !p.parentId && !p.isFolder && p.isSmart)
-  const folders   = playlists.filter((p) => !p.parentId && p.isFolder && !p.isAutoGroup)
+  // Track-level data for duration sums
+  const tracks = useLibraryStore((s) => s.tracks)
+  const durMap = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const t of tracks) {
+      if (t.durationSeconds) m.set(t.id, t.durationSeconds)
+    }
+    return m
+  }, [tracks])
+  const playlistDuration = useCallback((ids: string[]): number =>
+    ids.reduce((s, id) => s + (durMap.get(id) ?? 0), 0), [durMap])
+
+  const regular    = playlists.filter((p) => !p.parentId && !p.isFolder && !p.isSmart && !p.isAutoGroup)
+  const smart      = playlists.filter((p) => !p.parentId && !p.isFolder && p.isSmart)
+  const folders    = playlists.filter((p) => !p.parentId && p.isFolder && !p.isAutoGroup)
   const autoGroups = playlists.filter((p) => !p.isFolder && p.isAutoGroup)
 
   return (
@@ -180,6 +199,7 @@ export function Sidebar(): JSX.Element {
                 <PlaylistItem
                   key={pl.id}
                   playlist={pl}
+                  totalDurationSeconds={playlistDuration(pl.trackIds)}
                   isActive={activePlaylistId === pl.id}
                   isRenaming={renamingId === pl.id}
                   renameValue={renameValue}
@@ -210,6 +230,7 @@ export function Sidebar(): JSX.Element {
                     <PlaylistItem
                       key={pl.id}
                       playlist={pl}
+                      totalDurationSeconds={playlistDuration(pl.trackIds)}
                       isActive={activePlaylistId === pl.id}
                       isRenaming={renamingId === pl.id}
                       renameValue={renameValue}
@@ -267,6 +288,7 @@ export function Sidebar(): JSX.Element {
 
 interface PlaylistItemProps {
   playlist: Playlist
+  totalDurationSeconds?: number
   isActive: boolean
   isRenaming: boolean
   renameValue: string
@@ -279,7 +301,7 @@ interface PlaylistItemProps {
 }
 
 function PlaylistItem({
-  playlist, isActive, isRenaming, renameValue,
+  playlist, totalDurationSeconds, isActive, isRenaming, renameValue,
   onRenameChange, onRenameCommit, onClick, onStartRename, onDelete, onEditSmart
 }: PlaylistItemProps): JSX.Element {
   const [hovered, setHovered] = useState(false)
@@ -427,18 +449,25 @@ function PlaylistItem({
       <button
         onClick={onClick}
         onDoubleClick={playlist.isSmart ? onEditSmart : onStartRename}
-        className={`flex-1 text-left py-1.5 pr-1 font-mono text-[10.5px] truncate transition-colors ${
+        className={`flex-1 text-left py-1 pr-1 font-mono text-[10.5px] transition-colors min-w-0 overflow-hidden ${
           isActive ? 'text-ink font-bold' : 'text-ink-soft'
         }`}
         title={playlist.isSmart
           ? `${playlist.name} · smart · ${playlist.trackIds.length} tracks`
           : `${playlist.name} · ${playlist.trackIds.length} tracks · dbl-click to rename`}
       >
-        {playlist.isSmart && <span className="mr-1 text-accent opacity-80">⚡</span>}
-        {playlist.name}
-        <span className={`ml-1 font-mono text-[9px] ${isActive ? 'text-muted' : 'opacity-0 group-hover:opacity-40'}`}>
-          {playlist.trackIds.length}
-        </span>
+        <div className="truncate">
+          {playlist.isSmart && <span className="mr-1 text-accent opacity-80">⚡</span>}
+          {playlist.name}
+        </div>
+        <div className="flex items-center gap-1 mt-0.5">
+          <span className="font-mono text-[8px] text-muted tabular-nums">
+            {playlist.trackIds.length} trk{playlist.trackIds.length !== 1 ? 's' : ''}
+          </span>
+          {totalDurationSeconds != null && totalDurationSeconds > 0 && (
+            <span className="font-mono text-[8px] text-muted/60">· {fmtPlaylistDuration(totalDurationSeconds)}</span>
+          )}
+        </div>
       </button>
 
       {hovered && !isDragOver && (

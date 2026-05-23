@@ -66,3 +66,32 @@ function toMono(buffer: AudioBuffer): Float32Array {
   for (let i = 0; i < out.length; i++) out[i] *= inv
   return out
 }
+
+/**
+ * RMS-based loudness analysis.
+ * Returns the gain (in dB) needed to normalise this track to `targetLufs` dBFS.
+ * Uses a simplified RMS approach — not full ITU-R BS.1770 LUFS but close enough
+ * for auto-gain normalisation in a DJ context (±1 dB accuracy).
+ *
+ * @param buffer     Decoded audio buffer
+ * @param targetLufs Target loudness in dBFS (default −14 dBFS = streaming standard)
+ * @returns gainDb — positive means boost, negative means cut; 0 if signal is silent
+ */
+export function computeRmsGainDb(buffer: AudioBuffer, targetLufs = -14): number {
+  const mono = toMono(buffer)
+  let sum = 0
+  // Skip first + last 0.5s to avoid DC offsets and fade-outs affecting the reading
+  const skip = Math.floor(buffer.sampleRate * 0.5)
+  const start = Math.min(skip, Math.floor(mono.length * 0.05))
+  const end   = Math.max(mono.length - skip, Math.floor(mono.length * 0.95))
+  let count   = 0
+  for (let i = start; i < end; i++) {
+    sum += mono[i] * mono[i]
+    count++
+  }
+  if (count === 0 || sum === 0) return 0
+  const rms  = Math.sqrt(sum / count)
+  const dbFs = 20 * Math.log10(rms)
+  // Clamp gainDb to ±12 dB to prevent extreme corrections
+  return Math.max(-12, Math.min(12, targetLufs - dbFs))
+}

@@ -8,8 +8,9 @@
  *  • App design tokens throughout (--accent-rgb, --border-rgb, --panel-deep)
  *  • Indicator-only knobs — no decorative arcs, position speaks for itself
  */
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { useDeckAStore, useDeckBStore } from '../store/playerStore'
+import { useMixerStore } from '../store/mixerStore'
 import type { AudioEngine } from '../lib/audioEngine'
 
 // ── EQ Knob ──────────────────────────────────────────────────────────────────
@@ -349,9 +350,7 @@ function Crossfader({ value, onChange }: { value: number; onChange: (v: number) 
 // ── Mixer ─────────────────────────────────────────────────────────────────────
 
 export function Mixer(): JSX.Element {
-  const [xfade, setXfade] = useState(0.5)
-  const [volA,  setVolA]  = useState(0.8)
-  const [volB,  setVolB]  = useState(0.8)
+  const { volA, volB, xfade, setVolA, setVolB, setXfade } = useMixerStore()
 
   const setVolumeA = useDeckAStore((s) => s.setVolume)
   const setEqA     = useDeckAStore((s) => s.setEq)

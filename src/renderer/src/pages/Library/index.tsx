@@ -10,6 +10,7 @@ import { analyzeAudio } from '../../lib/analyzer'
 import { magicSort, compatibilityScore, generateBeatgrid } from '../../lib/compatibility'
 import { usePreview } from '../../hooks/usePreview'
 import { useToastStore } from '../../store/toastStore'
+import { useWaveformStore, displayKey } from '../../store/waveformStore'
 import type { Track } from '@shared/types'
 
 async function writeTags(ids: string[], showToast: (msg: string, type: 'success' | 'info' | 'error') => void): Promise<void> {
@@ -32,22 +33,55 @@ const ROW_HEIGHT    = 32
 const HEADER_HEIGHT = 30
 const OVERSCAN      = 8
 
-const COLUMNS: { key: keyof Track; label: string; width: string }[] = [
-  { key: 'title',           label: 'Title',  width: 'auto' },
-  { key: 'artist',          label: 'Artist', width: '110px'},
-  { key: 'genre',           label: 'Genre',  width: '80px' },
-  { key: 'label',           label: 'Label',  width: '80px' },
-  { key: 'year',            label: 'Year',   width: '44px' },
-  { key: 'bpm',             label: 'BPM',    width: '52px' },
-  { key: 'key',             label: 'Key',    width: '40px' },
-  { key: 'energy',          label: 'Nrg',    width: '56px' },
-  { key: 'mood',            label: 'Mood',   width: '52px' },
-  { key: 'rating',          label: '★',      width: '52px' },
-  { key: 'durationSeconds', label: 'Time',   width: '54px' }
+interface ColumnDef {
+  id: string
+  sortKey: keyof Track
+  label: string
+  width: string
+  defaultVisible: boolean
+}
+
+const COLUMN_DEFS: ColumnDef[] = [
+  { id: 'title',           sortKey: 'title',           label: 'Title',    width: 'auto',  defaultVisible: true  },
+  { id: 'artist',          sortKey: 'artist',          label: 'Artist',   width: '110px', defaultVisible: true  },
+  { id: 'genre',           sortKey: 'genre',           label: 'Genre',    width: '80px',  defaultVisible: true  },
+  { id: 'label',           sortKey: 'label',           label: 'Label',    width: '80px',  defaultVisible: true  },
+  { id: 'year',            sortKey: 'year',            label: 'Year',     width: '44px',  defaultVisible: true  },
+  { id: 'bpm',             sortKey: 'bpm',             label: 'BPM',      width: '52px',  defaultVisible: true  },
+  { id: 'key',             sortKey: 'key',             label: 'Key',      width: '40px',  defaultVisible: true  },
+  { id: 'energy',          sortKey: 'energy',          label: 'Nrg',      width: '56px',  defaultVisible: true  },
+  { id: 'mood',            sortKey: 'mood',            label: 'Mood',     width: '52px',  defaultVisible: true  },
+  { id: 'rating',          sortKey: 'rating',          label: '★',        width: '52px',  defaultVisible: true  },
+  { id: 'durationSeconds', sortKey: 'durationSeconds', label: 'Time',     width: '54px',  defaultVisible: true  },
+  { id: 'fileType',        sortKey: 'fileType',        label: 'Fmt',      width: '38px',  defaultVisible: false },
+  { id: 'fileSize',        sortKey: 'fileSize',        label: 'Size',     width: '52px',  defaultVisible: false },
+  { id: 'bitDepth',        sortKey: 'bitDepth',        label: 'Bits',     width: '42px',  defaultVisible: false },
+  { id: 'sampleRate',      sortKey: 'sampleRate',      label: 'Hz',       width: '52px',  defaultVisible: false },
+  { id: 'updatedAt',       sortKey: 'updatedAt',       label: 'Modified', width: '72px',  defaultVisible: false },
 ]
 
 type SortKey = keyof Track
 type SortDir = 'asc' | 'desc'
+interface SortLevel { key: SortKey; dir: SortDir }
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+function formatFileSize(bytes: number | null): string {
+  if (!bytes) return '—'
+  return bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+    : `${Math.round(bytes / 1024)}KB`
+}
+function formatSampleRate(hz: number | null): string {
+  if (!hz) return '—'
+  return `${(hz / 1000).toFixed(1)}k`
+}
+function formatModified(iso: string | null): string {
+  if (!iso) return '—'
+  try {
+    const d = new Date(iso)
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  } catch { return '—' }
+}
 
 export function LibraryPage(): JSX.Element {
   const { isLoading, selectedTrackIds, setSelectedTrackIds, setDragging, clearDragging, activePlaylistId, playlists, deleteTracks, addTracksToPlaylist, updateTrack, reorderPlaylistTracks } = useLibraryStore()
@@ -60,10 +94,29 @@ export function LibraryPage(): JSX.Element {
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; trackId: string } | null>(null)
   const [showSuggest, setShowSuggest] = useState(false)
+  const [showColPicker, setShowColPicker] = useState(false)
 
-  const [sortKey, setSortKey] = useState<SortKey>('artist')
-  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [sortSpec, setSortSpec] = useState<SortLevel[]>([{ key: 'artist', dir: 'asc' }])
   const [lastClickedId, setLastClickedId] = useState<string | null>(null)
+
+  // Column visibility — persisted to localStorage
+  const [visibleColIds, setVisibleColIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('crate-col-visibility')
+      if (stored) return new Set(JSON.parse(stored) as string[])
+    } catch { /* ignore */ }
+    return new Set(COLUMN_DEFS.filter((c) => c.defaultVisible).map((c) => c.id))
+  })
+  const toggleCol = useCallback((id: string) => {
+    setVisibleColIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      try { localStorage.setItem('crate-col-visibility', JSON.stringify([...next])) } catch { /* ignore */ }
+      return next
+    })
+  }, [])
+
+  const visibleCols = COLUMN_DEFS.filter((c) => visibleColIds.has(c.id))
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop]       = useState(0)
@@ -88,17 +141,45 @@ export function LibraryPage(): JSX.Element {
 
   const sorted = useMemo(() => {
     return [...filteredTracks].sort((a, b) => {
-      const av = a[sortKey] ?? ''
-      const bv = b[sortKey] ?? ''
-      const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true })
-      return sortDir === 'asc' ? cmp : -cmp
+      for (const { key, dir } of sortSpec) {
+        const av = a[key] ?? ''
+        const bv = b[key] ?? ''
+        const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true })
+        if (cmp !== 0) return dir === 'asc' ? cmp : -cmp
+      }
+      return 0
     })
-  }, [filteredTracks, sortKey, sortDir])
+  }, [filteredTracks, sortSpec])
 
-  const handleSort = useCallback((key: SortKey) => {
-    if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortKey(key); setSortDir('asc') }
-  }, [sortKey])
+  const handleSort = useCallback((key: SortKey, e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      // Add / toggle secondary sort level
+      setSortSpec((prev) => {
+        const idx = prev.findIndex((s) => s.key === key)
+        if (idx === 0) {
+          // Toggle primary direction
+          return [{ key, dir: prev[0].dir === 'asc' ? 'desc' : 'asc' }, ...prev.slice(1)]
+        }
+        if (idx > 0) {
+          // Toggle existing secondary
+          const updated = [...prev]
+          updated[idx] = { key, dir: updated[idx].dir === 'asc' ? 'desc' : 'asc' }
+          return updated
+        }
+        // Append as secondary (cap at 3 levels)
+        return [...prev.slice(0, 2), { key, dir: 'asc' }]
+      })
+    } else {
+      // Primary sort
+      setSortSpec((prev) => {
+        const existing = prev.find((s) => s.key === key)
+        if (existing && prev[0].key === key) {
+          return [{ key, dir: existing.dir === 'asc' ? 'desc' : 'asc' }]
+        }
+        return [{ key, dir: 'asc' }]
+      })
+    }
+  }, [])
 
   const start     = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
   const end       = Math.min(sorted.length, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN)
@@ -384,7 +465,7 @@ export function LibraryPage(): JSX.Element {
       )}
 
       {!showBulkBar && (
-        <div className="flex items-center gap-1.5 px-3 py-1 border-b border-border/20 shrink-0">
+        <div className="relative flex items-center gap-1.5 px-3 py-1 border-b border-border/20 shrink-0">
           <span className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
             <span className="text-accent mr-1">02</span>
             {activePlaylist ? activePlaylist.name : 'all tracks'}
@@ -420,6 +501,41 @@ export function LibraryPage(): JSX.Element {
               suggest
             </button>
           )}
+          {/* Column picker toggle */}
+          <button
+            onClick={() => setShowColPicker((v) => !v)}
+            title="Show / hide columns"
+            className={`ml-1 px-1.5 py-0.5 rounded font-mono text-[9px] transition-colors ${showColPicker ? 'bg-accent/10 text-accent' : 'text-muted hover:text-accent hover:bg-accent/10'}`}
+          >
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" aria-hidden="true">
+              <circle cx="5" cy="5" r="1.5"/>
+              <circle cx="5" cy="5" r="4" strokeDasharray="2 2"/>
+            </svg>
+          </button>
+
+          {/* Column picker dropdown */}
+          {showColPicker && (
+            <div
+              className="absolute right-0 top-full z-30 mt-1 rounded border border-border/40 bg-chassis-soft shadow-lg p-2 min-w-[140px]"
+              onMouseLeave={() => setShowColPicker(false)}
+            >
+              <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-muted mb-1.5 px-1">columns</p>
+              {COLUMN_DEFS.map((col) => (
+                <label key={col.id} className="flex items-center gap-1.5 px-1 py-0.5 rounded cursor-pointer hover:bg-ink/[0.06] transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={visibleColIds.has(col.id)}
+                    onChange={() => toggleCol(col.id)}
+                    className="accent-accent"
+                  />
+                  <span className="font-mono text-[9px] text-ink-soft">{col.label}</span>
+                  {!col.defaultVisible && (
+                    <span className="ml-auto font-mono text-[7px] text-muted/50 uppercase">+</span>
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -449,7 +565,7 @@ export function LibraryPage(): JSX.Element {
             <col style={{ width: 28 }} />   {/* checkbox */}
             <col style={{ width: 14 }} />   {/* blip */}
             <col style={{ width: 16 }} />   {/* status */}
-            {COLUMNS.map((col) => <col key={col.key} style={{ width: col.width }} />)}
+            {visibleCols.map((col) => <col key={col.id} style={{ width: col.width }} />)}
           </colgroup>
 
           <thead className="sticky top-0 z-10 bg-chassis-soft">
@@ -464,28 +580,36 @@ export function LibraryPage(): JSX.Element {
               </th>
               <th className="border-b border-border/30" />
               <th className="border-b border-border/30" />
-              {COLUMNS.map((col) => (
-                <th
-                  key={col.key}
-                  onClick={() => handleSort(col.key)}
-                  className="text-left px-2 text-[9px] font-mono font-bold uppercase tracking-[0.18em] text-muted cursor-pointer hover:text-ink transition-colors select-none border-b border-border/30 truncate"
-                >
-                  {col.label}
-                  {sortKey === col.key && (
-                    <span className="ml-1 text-accent">{sortDir === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                </th>
-              ))}
+              {visibleCols.map((col) => {
+                const sortIdx = sortSpec.findIndex((s) => s.key === col.sortKey)
+                const sortLevel = sortIdx >= 0 ? sortSpec[sortIdx] : null
+                return (
+                  <th
+                    key={col.id}
+                    onClick={(e) => handleSort(col.sortKey, e)}
+                    title={sortSpec.length > 1 ? 'Click: primary sort · Shift+click: add/toggle secondary sort' : 'Click to sort · Shift+click to add secondary sort'}
+                    className="text-left px-2 text-[9px] font-mono font-bold uppercase tracking-[0.18em] text-muted cursor-pointer hover:text-ink transition-colors select-none border-b border-border/30 truncate"
+                  >
+                    {col.label}
+                    {sortLevel && (
+                      <span className="ml-0.5 text-accent text-[8px]">
+                        {sortSpec.length > 1 && sortIdx > 0 && <span style={{ opacity: 0.6 }}>{sortIdx + 1}</span>}
+                        {sortLevel.dir === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
 
           <tbody>
             {isLoading && (
-              <tr><td colSpan={COLUMNS.length + 3} className="text-center py-16 text-muted text-xs font-mono">loading library…</td></tr>
+              <tr><td colSpan={visibleCols.length + 3} className="text-center py-16 text-muted text-xs font-mono">loading library…</td></tr>
             )}
             {!isLoading && sorted.length === 0 && (
               <tr>
-                <td colSpan={COLUMNS.length + 3} className="text-center py-16">
+                <td colSpan={visibleCols.length + 3} className="text-center py-16">
                   <div className="space-y-2">
                     <p className="text-muted text-xs font-mono">no tracks found</p>
                     <p className="text-[10px] font-mono text-muted/60">try adjusting your search or import a library from the sidebar</p>
@@ -495,7 +619,7 @@ export function LibraryPage(): JSX.Element {
             )}
 
             {topPad > 0 && (
-              <tr aria-hidden="true"><td colSpan={COLUMNS.length + 3} style={{ height: topPad, padding: 0 }} /></tr>
+              <tr aria-hidden="true"><td colSpan={visibleCols.length + 3} style={{ height: topPad, padding: 0 }} /></tr>
             )}
 
             {visible.map((track) => (
@@ -503,6 +627,7 @@ export function LibraryPage(): JSX.Element {
                 key={track.id}
                 track={track}
                 isSelected={selectedTrackIds.has(track.id)}
+                visibleColIds={visibleColIds}
                 onClick={handleRowClick}
                 onDoubleClick={(t, e) => e.shiftKey ? loadTrackB(t) : loadTrackA(t)}
                 onContextMenu={handleContextMenu}
@@ -517,7 +642,7 @@ export function LibraryPage(): JSX.Element {
             ))}
 
             {bottomPad > 0 && (
-              <tr aria-hidden="true"><td colSpan={COLUMNS.length + 3} style={{ height: bottomPad, padding: 0 }} /></tr>
+              <tr aria-hidden="true"><td colSpan={visibleCols.length + 3} style={{ height: bottomPad, padding: 0 }} /></tr>
             )}
           </tbody>
         </table>
@@ -658,6 +783,7 @@ export function LibraryPage(): JSX.Element {
 interface TrackRowProps {
   track: Track
   isSelected: boolean
+  visibleColIds: Set<string>
   onClick: (e: React.MouseEvent, id: string) => void
   onDoubleClick: (track: Track, e: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent, track: Track) => void
@@ -666,8 +792,10 @@ interface TrackRowProps {
   onDragEnd: () => void
 }
 
-function TrackRow({ track, isSelected, onClick, onDoubleClick, onContextMenu, onCheckbox, onDragStart, onDragEnd }: TrackRowProps): JSX.Element {
-  const blipColor = keyBlipColor(track.key)
+function TrackRow({ track, isSelected, visibleColIds, onClick, onDoubleClick, onContextMenu, onCheckbox, onDragStart, onDragEnd }: TrackRowProps): JSX.Element {
+  const blipColor   = keyBlipColor(track.key)
+  const keyNotation = useWaveformStore((s) => s.keyNotation)
+  const show = (id: string): boolean => visibleColIds.has(id)
 
   return (
     <tr
@@ -791,82 +919,131 @@ function TrackRow({ track, isSelected, onClick, onDoubleClick, onContextMenu, on
         </div>
       </td>
 
-      {/* Title + album — H5: Fraunces italic title, uppercase mono album */}
-      <td className="px-2 max-w-0 overflow-hidden">
-        <div className="truncate flex items-baseline gap-1.5 overflow-hidden">
-          <span
-            className={`italic shrink-0 truncate ${!track.title ? 'not-italic' : ''}`}
-            style={{
-              fontFamily: "'Fraunces', serif",
-              fontSize: 13.5,
-              fontWeight: 400,
-              color: isSelected ? 'rgb(var(--ink-rgb))' : 'rgb(var(--ink-soft-rgb))',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxWidth: '60%',
-            }}
-          >
-            {track.title || 'Unknown Title'}
-          </span>
-          {track.album && (
+      {/* Title + album */}
+      {show('title') && (
+        <td className="px-2 max-w-0 overflow-hidden">
+          <div className="truncate flex items-baseline gap-1.5 overflow-hidden">
             <span
-              className="font-mono text-muted shrink overflow-hidden"
-              style={{ fontSize: 8.5, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-            >{track.album}</span>
-          )}
-        </div>
-      </td>
+              className={`italic shrink-0 truncate ${!track.title ? 'not-italic' : ''}`}
+              style={{
+                fontFamily: "'Fraunces', serif",
+                fontSize: 13.5,
+                fontWeight: 400,
+                color: isSelected ? 'rgb(var(--ink-rgb))' : 'rgb(var(--ink-soft-rgb))',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '60%',
+              }}
+            >
+              {track.title || 'Unknown Title'}
+            </span>
+            {track.album && (
+              <span
+                className="font-mono text-muted shrink overflow-hidden"
+                style={{ fontSize: 8.5, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+              >{track.album}</span>
+            )}
+          </div>
+        </td>
+      )}
 
       {/* Artist */}
-      <td className="px-2 max-w-0 overflow-hidden">
-        <span className="truncate block font-mono text-[10px] text-ink-soft">{track.artist || '—'}</span>
-      </td>
+      {show('artist') && (
+        <td className="px-2 max-w-0 overflow-hidden">
+          <span className="truncate block font-mono text-[10px] text-ink-soft">{track.artist || '—'}</span>
+        </td>
+      )}
 
       {/* Genre */}
-      <td className="px-2 max-w-0 overflow-hidden">
-        <span className="truncate block font-mono text-[9px] text-muted">{track.genre || '—'}</span>
-      </td>
+      {show('genre') && (
+        <td className="px-2 max-w-0 overflow-hidden">
+          <span className="truncate block font-mono text-[9px] text-muted">{track.genre || '—'}</span>
+        </td>
+      )}
 
       {/* Label */}
-      <td className="px-2 max-w-0 overflow-hidden">
-        <span className="truncate block font-mono text-[9px] text-muted">{track.label || '—'}</span>
-      </td>
+      {show('label') && (
+        <td className="px-2 max-w-0 overflow-hidden">
+          <span className="truncate block font-mono text-[9px] text-muted">{track.label || '—'}</span>
+        </td>
+      )}
 
       {/* Year */}
-      <td className="px-2 font-mono text-[9px] text-muted tabular-nums">
-        {track.year ?? '—'}
-      </td>
+      {show('year') && (
+        <td className="px-2 font-mono text-[9px] text-muted tabular-nums">{track.year ?? '—'}</td>
+      )}
 
       {/* BPM */}
-      <td className="px-2 font-mono text-[10px] text-ink-soft tabular-nums">
-        {track.bpm ? track.bpm.toFixed(1) : '—'}
-      </td>
+      {show('bpm') && (
+        <td className="px-2 font-mono text-[10px] text-ink-soft tabular-nums">
+          {track.bpm ? track.bpm.toFixed(1) : '—'}
+        </td>
+      )}
 
       {/* Key */}
-      <td className="px-2 font-mono text-[10px] font-bold tabular-nums" style={{ color: blipColor }}>
-        {track.key || '—'}
-      </td>
+      {show('key') && (
+        <td className="px-2 font-mono text-[10px] font-bold tabular-nums" style={{ color: blipColor }}>
+          {displayKey(track.key, keyNotation) || '—'}
+        </td>
+      )}
 
       {/* Energy bars */}
-      <td className="px-2">
-        <EnergyBar energy={track.energy} />
-      </td>
+      {show('energy') && (
+        <td className="px-2"><EnergyBar energy={track.energy} /></td>
+      )}
 
       {/* Mood pip */}
-      <td className="px-2">
-        <MoodPip mood={track.mood} />
-      </td>
+      {show('mood') && (
+        <td className="px-2"><MoodPip mood={track.mood} /></td>
+      )}
 
       {/* Rating */}
-      <td className="px-2">
-        <StarRating rating={track.rating} />
-      </td>
+      {show('rating') && (
+        <td className="px-2"><StarRating rating={track.rating} /></td>
+      )}
 
       {/* Duration */}
-      <td className="px-2 font-mono text-[10px] text-muted tabular-nums">
-        {formatDuration(track.durationSeconds)}
-      </td>
+      {show('durationSeconds') && (
+        <td className="px-2 font-mono text-[10px] text-muted tabular-nums">
+          {formatDuration(track.durationSeconds)}
+        </td>
+      )}
+
+      {/* File format */}
+      {show('fileType') && (
+        <td className="px-2 font-mono text-[9px] text-muted uppercase">
+          {track.fileType?.replace('.', '') || '—'}
+        </td>
+      )}
+
+      {/* File size */}
+      {show('fileSize') && (
+        <td className="px-2 font-mono text-[9px] text-muted tabular-nums">
+          {formatFileSize(track.fileSize)}
+        </td>
+      )}
+
+      {/* Bit depth */}
+      {show('bitDepth') && (
+        <td className="px-2 font-mono text-[9px] text-muted tabular-nums">
+          {track.bitDepth ? `${track.bitDepth}b` : '—'}
+        </td>
+      )}
+
+      {/* Sample rate */}
+      {show('sampleRate') && (
+        <td className="px-2 font-mono text-[9px] text-muted tabular-nums">
+          {formatSampleRate(track.sampleRate)}
+        </td>
+      )}
+
+      {/* Date modified */}
+      {show('updatedAt') && (
+        <td className="px-2 font-mono text-[9px] text-muted tabular-nums">
+          {formatModified(track.updatedAt)}
+        </td>
+      )}
     </tr>
   )
 }

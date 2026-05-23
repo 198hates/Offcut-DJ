@@ -35,11 +35,14 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
   const {
     currentTrack, isPlaying, currentTime, duration,
     waveformPeaks, detailPeaks, lowPeaks, midPeaks, highPeaks, isLoading, mainCueTime,
-    loopStart, loopEnd, isLooping, playbackRate, analysisState,
+    loopStart, loopEnd, isLooping, playbackRate, pitchRange, keylockEnabled,
+    isQuantized, slipMode, analysisState,
     loadTrack, togglePlay, seek, pressCue,
     setCue, clearCue, jumpToCue, setMemoryCue,
-    setLoopIn, setLoopOut, beatLoop, toggleLoop, clearLoop, setPlaybackRate,
-    analyzeCurrentTrack
+    setLoopIn, setLoopOut, beatLoop, loopRoll, toggleLoop, clearLoop, setPlaybackRate, setPitchRange,
+    toggleKeylock, toggleQuantize, toggleSlipMode,
+    saveLoopSlot, jumpToLoopSlot, clearLoopSlot,
+    beatJump, analyzeCurrentTrack
   } = useStore()
 
   const updateTrack = useLibraryStore((s) => s.updateTrack)
@@ -251,6 +254,10 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
     color: HOT_CUE_COLORS[i]
   }))
   const memoryCues = currentTrack?.cuePoints.filter((c) => c.type === 'memory') ?? []
+  // Saved loop slots (CuePoint type:'loop' at fixed indices 0-7)
+  const loopSlots = Array.from({ length: 8 }, (_, i) =>
+    currentTrack?.cuePoints.find((c) => c.type === 'loop' && c.index === i) ?? null
+  )
   const remaining = duration - currentTime
 
   // Deck-zone colour helpers (always dark — not Tailwind theme aware)
@@ -401,7 +408,7 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
 
       {/* ── Loop controls + pitch ─────────────────────────────────────── */}
       <div
-        className={`flex items-center gap-1 px-2 py-0.5 border-t ${isRight ? 'flex-row-reverse' : ''}`}
+        className={`flex items-center gap-1 px-2 py-0.5 border-t flex-wrap ${isRight ? 'flex-row-reverse' : ''}`}
         style={{ borderColor: dkRule2 }}
       >
         {/* Beat loop buttons */}
@@ -412,6 +419,22 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
             disabled={!currentTrack}
             title={`${bars} bar loop`}
             className="deck-btn h-6 px-1.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-25"
+          >
+            {bars < 1 ? '½' : bars}
+          </button>
+        ))}
+
+        <div className="w-px h-4 mx-0.5 shrink-0" style={{ background: 'var(--deck-rule)' }} />
+
+        {/* Loop Roll buttons */}
+        {[0.5, 1, 2, 4].map((bars) => (
+          <button
+            key={bars}
+            onClick={() => loopRoll(bars)}
+            disabled={!currentTrack}
+            title={`${bars === 0.5 ? '½' : bars} bar loop roll (slip)`}
+            className="h-6 px-1.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-25"
+            style={{ borderColor: 'rgba(139,92,246,0.4)', color: 'rgba(139,92,246,0.8)' }}
           >
             {bars < 1 ? '½' : bars}
           </button>
@@ -438,6 +461,32 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
 
         <div className="flex-1" />
 
+        {/* QUANT / SLIP / KEY mode buttons */}
+        <button
+          onClick={toggleQuantize}
+          disabled={!currentTrack}
+          title="Quantize — cues and loops snap to nearest beat"
+          className={`h-6 px-1.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-25 ${isQuantized ? 'deck-btn-active' : 'deck-btn'}`}
+        >
+          QUANT
+        </button>
+        <button
+          onClick={toggleSlipMode}
+          disabled={!currentTrack}
+          title="Slip mode — playhead advances under loops; exits to real position"
+          className={`h-6 px-1.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-25 ${slipMode ? 'deck-btn-active' : 'deck-btn'}`}
+        >
+          SLIP
+        </button>
+        <button
+          onClick={toggleKeylock}
+          disabled={!currentTrack}
+          title="Key lock — maintain key when changing tempo"
+          className={`h-6 px-1.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-25 ${keylockEnabled ? 'deck-btn-active' : 'deck-btn'}`}
+        >
+          KEY
+        </button>
+
         {/* Beatgrid edit toggle */}
         <button
           onClick={() => setGridEditMode((v) => !v)}
@@ -450,13 +499,16 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
 
         <div className="w-px h-4 mx-0.5 shrink-0" style={{ background: 'var(--deck-rule)' }} />
 
-        {/* Pitch */}
+        {/* Pitch range selector + slider */}
         <div className={`flex items-center gap-1 ${isRight ? 'flex-row-reverse' : ''}`}>
           <span className="text-[9px] tabular-nums w-9 text-center" style={{ color: 'var(--deck-mute)' }}>
             {playbackRate === 1 ? '±0%' : `${playbackRate > 1 ? '+' : ''}${((playbackRate - 1) * 100).toFixed(1)}%`}
           </span>
           <input
-            type="range" min={0.92} max={1.08} step={0.001}
+            type="range"
+            min={1 - pitchRange / 100}
+            max={1 + pitchRange / 100}
+            step={0.001}
             value={playbackRate}
             onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
             onDoubleClick={() => setPlaybackRate(1.0)}
@@ -465,8 +517,64 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
             style={{ accentColor: 'var(--deck-spot)' }}
             title="Pitch/tempo — double-click to reset"
           />
-          <span className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--deck-mute)' }}>Pitch</span>
+          <select
+            value={pitchRange}
+            onChange={(e) => setPitchRange(Number(e.target.value))}
+            disabled={!currentTrack}
+            className="h-5 rounded text-[9px] border cursor-pointer disabled:opacity-25"
+            style={{ background: 'var(--deck-panel)', borderColor: 'var(--deck-rule)', color: 'var(--deck-mute)', paddingLeft: 2 }}
+            title="Pitch range"
+          >
+            {[4, 8, 16, 50].map((r) => (
+              <option key={r} value={r}>±{r}%</option>
+            ))}
+          </select>
         </div>
+      </div>
+
+      {/* ── Beat jump ─────────────────────────────────────────────────────── */}
+      <div
+        className={`flex items-center gap-1 px-2 py-0.5 border-t ${isRight ? 'flex-row-reverse' : ''}`}
+        style={{ borderColor: dkRule2 }}
+      >
+        <span className="text-[8px] uppercase tracking-[0.15em] shrink-0 mr-0.5" style={{ color: 'var(--deck-mute)' }}>Jump</span>
+        {[-32, -16, -8, -4, -2, -1].map((b) => (
+          <button
+            key={b}
+            onClick={() => beatJump(b)}
+            disabled={!currentTrack}
+            title={`Beat jump ${b}`}
+            className="deck-btn h-6 px-1.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-25"
+          >
+            {b}
+          </button>
+        ))}
+        {[1, 2, 4, 8, 16, 32].map((b) => (
+          <button
+            key={b}
+            onClick={() => beatJump(b)}
+            disabled={!currentTrack}
+            title={`Beat jump +${b}`}
+            className="deck-btn h-6 px-1.5 rounded text-[10px] font-bold border transition-colors disabled:opacity-25"
+          >
+            +{b}
+          </button>
+        ))}
+
+        <div className="flex-1" />
+
+        {/* Saved loop slots — 8 pads */}
+        {loopSlots.map((slot, i) => (
+          <SavedLoopPad
+            key={i}
+            index={i}
+            slot={slot}
+            disabled={!currentTrack}
+            onJump={() => jumpToLoopSlot(i)}
+            onSave={() => saveLoopSlot(i)}
+            onClear={() => clearLoopSlot(i)}
+          />
+        ))}
       </div>
 
       {/* ── Transport + hotcue pads ───────────────────────────────────── */}
@@ -692,6 +800,50 @@ function BeatgridEditPanel({
         >SAVE GRID</button>
       </div>
     </div>
+  )
+}
+
+// ── SavedLoopPad ──────────────────────────────────────────────────────────────
+
+interface SavedLoopPadProps {
+  index: number
+  slot: CuePoint | null
+  disabled: boolean
+  onJump: () => void
+  onSave: () => void
+  onClear: () => void
+}
+
+function SavedLoopPad({ index, slot, disabled, onJump, onSave, onClear }: SavedLoopPadProps): JSX.Element {
+  const hasSlot = slot !== null
+  const loopLen = slot && slot.endMs != null
+    ? fmt((slot.endMs - slot.positionMs) / 1000)
+    : null
+
+  return (
+    <button
+      onClick={hasSlot ? onJump : onSave}
+      onContextMenu={(e) => { e.preventDefault(); hasSlot ? onClear() : onSave() }}
+      disabled={disabled}
+      title={
+        hasSlot
+          ? `Loop ${index + 1}: ${fmt(slot!.positionMs / 1000)} (${loopLen}) — click to jump · right-click clear`
+          : `Loop ${index + 1}: click to save current loop`
+      }
+      className="relative h-7 w-8 rounded text-[9px] font-bold transition-all disabled:opacity-25 disabled:cursor-default"
+      style={
+        hasSlot
+          ? { background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.6)', color: 'rgba(139,92,246,0.9)', boxShadow: '0 0 4px rgba(139,92,246,0.2)' }
+          : { background: 'rgba(42,36,28,0.4)', border: '1px solid rgba(42,36,28,0.8)', color: 'rgba(110,101,83,0.5)' }
+      }
+    >
+      {index + 1}
+      {hasSlot && loopLen && (
+        <span className="absolute bottom-0.5 left-0 right-0 text-center font-normal leading-none" style={{ fontSize: 6, color: 'rgba(139,92,246,0.7)' }}>
+          {loopLen}
+        </span>
+      )}
+    </button>
   )
 }
 

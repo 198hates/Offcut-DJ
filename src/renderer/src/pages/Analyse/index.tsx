@@ -6,7 +6,7 @@
  */
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
-import { analyzeAudio, generateCuesForFile } from '../../lib/analyzer'
+import { analyzeAudio, generateCuesForFile, computeRmsGainDb } from '../../lib/analyzer'
 import { generateBeatgrid } from '../../lib/compatibility'
 import { getQuantiser, initQuantiser } from '../../lib/quantiser'
 import { batchInferGenres } from '../../lib/genreInference'
@@ -679,6 +679,104 @@ function GenreSection(): JSX.Element {
   )
 }
 
+// ── GainSection ───────────────────────────────────────────────────────────────
+
+function GainSection(): JSX.Element {
+  const { tracks, updateTrack } = useLibraryStore()
+  const [running, setRunning]   = useState(false)
+  const [progress, setProgress] = useState({ current: 0, total: 0, label: '' })
+  const [done, setDone]         = useState(false)
+  const cancelRef = useRef(false)
+
+  const unanalysed = tracks.filter((t) => t.gainDb == null)
+
+  const run = useCallback(async () => {
+    cancelRef.current = false
+    setRunning(true)
+    setDone(false)
+    const ctx = new AudioContext()
+    const toProcess = tracks.filter((t) => t.gainDb == null)
+    setProgress({ current: 0, total: toProcess.length, label: '' })
+
+    for (let i = 0; i < toProcess.length; i++) {
+      if (cancelRef.current) break
+      const t = toProcess[i]
+      const label = t.title || t.filePath.split('/').pop() || t.id
+      setProgress({ current: i + 1, total: toProcess.length, label })
+      try {
+        const ab  = await window.api.audio.readFile(t.filePath)
+        const buf = await ctx.decodeAudioData(ab)
+        const gainDb = computeRmsGainDb(buf)
+        await updateTrack({ id: t.id, gainDb })
+      } catch { /* skip unreadable */ }
+    }
+    await ctx.close()
+    setRunning(false)
+    setDone(true)
+    setProgress({ current: 0, total: 0, label: '' })
+  }, [tracks, updateTrack])
+
+  const analysedCount = tracks.filter((t) => t.gainDb != null).length
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
+            <span className="text-accent mr-1.5">05</span>auto-gain (RMS normalisation)
+          </h2>
+          <p className="font-mono text-[10px] text-muted mt-0.5">
+            measures per-track loudness · stores gain_db correction to −14 dBFS target
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {running && (
+            <button onClick={() => { cancelRef.current = true }}
+              className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
+              cancel
+            </button>
+          )}
+          {!running && (
+            <button
+              onClick={run}
+              disabled={unanalysed.length === 0}
+              className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors"
+            >
+              {done ? 're-analyse' : `analyse ${unanalysed.length} track${unanalysed.length !== 1 ? 's' : ''}`}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="analysed" value={analysedCount.toLocaleString()} sub={`of ${tracks.length.toLocaleString()} tracks`} accent={analysedCount > 0} />
+        <StatCard label="pending" value={unanalysed.length.toLocaleString()} />
+      </div>
+
+      {running && progress.total > 0 && (
+        <ProgressBar
+          current={progress.current}
+          total={progress.total}
+          label="gain analysis"
+          title={progress.label}
+        />
+      )}
+
+      {done && !running && (
+        <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+          <span>✓</span> gain_db stored · enable auto-gain in Settings → Preferences to apply on deck load
+        </p>
+      )}
+
+      {unanalysed.length === 0 && !running && tracks.length > 0 && (
+        <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+          <span>✓</span> all tracks have gain data
+        </p>
+      )}
+    </section>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function AnalysePage(): JSX.Element {
@@ -688,7 +786,7 @@ export function AnalysePage(): JSX.Element {
         <h1 className="text-base font-mono font-bold uppercase tracking-[0.12em] text-ink mb-0.5">
           <span className="text-accent mr-2">→</span>analyse
         </h1>
-        <p className="font-mono text-xs text-muted">automated batch processing — bpm, keys, beat grids, cue points</p>
+        <p className="font-mono text-xs text-muted">automated batch processing — bpm, keys, beat grids, cue points, gain</p>
       </div>
 
       <BpmKeySection />
@@ -698,6 +796,8 @@ export function AnalysePage(): JSX.Element {
       <AutoCueSection />
       <div className="border-t border-border/20" />
       <GenreSection />
+      <div className="border-t border-border/20" />
+      <GainSection />
     </div>
   )
 }
