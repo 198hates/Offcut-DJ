@@ -5,6 +5,7 @@ import { autoUpdater } from 'electron-updater'
 import { registerLibraryHandlers } from './ipc/library'
 import { registerSettingsHandlers } from './ipc/settings'
 import { registerAudioHandlers } from './ipc/audio'
+import { registerProLinkHandlers } from './ipc/prolink'
 import { warmModel } from './integrations/beat-analysis'
 import { startWatcher } from './integrations/watch-folder'
 import { loadSettings, saveSettings } from './settings'
@@ -76,6 +77,7 @@ app.whenReady().then(() => {
   registerLibraryHandlers()
   registerSettingsHandlers()
   registerAudioHandlers()
+  registerProLinkHandlers()
   setupAutoUpdater()
   createWindow()
   warmModel() // preload beat model into memory if installed

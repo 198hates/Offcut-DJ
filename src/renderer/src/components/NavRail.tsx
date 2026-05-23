@@ -1,4 +1,4 @@
-export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'compass' | 'orders' | 'search' | 'settings'
+export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'compass' | 'orders' | 'search' | 'prolink' | 'settings'
 
 interface Props {
   active: Section
@@ -116,6 +116,25 @@ function CompassIcon() {
   )
 }
 
+/** ProLink — broadcast tower: live ProLink network capture */
+function ProLinkIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {/* Tower mast */}
+      <line x1="8" y1="5" x2="8" y2="14.5"/>
+      {/* Base legs */}
+      <line x1="8" y1="14.5" x2="5" y2="14.5"/>
+      <line x1="8" y1="14.5" x2="11" y2="14.5"/>
+      {/* Signal arcs — inner */}
+      <path d="M5.6 7.4 A3.4 3.4 0 0 1 10.4 7.4" strokeLinecap="round"/>
+      {/* Signal arcs — outer */}
+      <path d="M3.4 5.0 A6.1 6.1 0 0 1 12.6 5.0" strokeLinecap="round"/>
+      {/* Tip dot */}
+      <circle cx="8" cy="4" r="1" fill="currentColor" stroke="none"/>
+    </svg>
+  )
+}
+
 function GearIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -133,8 +152,9 @@ const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; l
   { id: 'fixes',   Icon: FixesIcon,   label: 'Smart Fixes'     },
   { id: 'builder', Icon: BuilderIcon, label: 'Set Builder'     },
   { id: 'search',  Icon: SearchIcon,  label: 'Advanced Search' },
-  { id: 'orders',  Icon: OrdersIcon,  label: 'Running Orders'  },
-  { id: 'compass', Icon: CompassIcon, label: 'Library Compass' },
+  { id: 'orders',  Icon: OrdersIcon,   label: 'Running Orders'  },
+  { id: 'compass', Icon: CompassIcon,  label: 'Library Compass' },
+  { id: 'prolink', Icon: ProLinkIcon,  label: 'ProLink Capture' },
 ]
 
 export function NavRail({ active, onNavigate }: Props): JSX.Element {

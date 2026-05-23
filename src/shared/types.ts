@@ -236,3 +236,57 @@ export interface AppSettings {
   lastImportedAt: string | null
   windowBounds: { x: number; y: number; width: number; height: number } | null
 }
+
+// ── ProLink B2B Capture ───────────────────────────────────────────────────────
+
+/** Play state of a CDJ on the network */
+export type ProLinkPlayState = 'empty' | 'loading' | 'playing' | 'paused' | 'cued' | 'looping' | 'ended' | 'unknown'
+
+/** Live status of a single CDJ/XDJ player on the network */
+export interface PlayerStatus {
+  deviceId: number
+  playState: ProLinkPlayState
+  isOnAir: boolean
+  isMaster: boolean
+  isSync: boolean
+  trackBPM: number | null
+  beat: number         // beat within measure, 1–4 (0 when no track)
+  trackId: number      // 0 = empty
+  title: string | null
+  artist: string | null
+  album: string | null
+  label: string | null
+  genre: string | null
+  key: string | null
+  year: number | null
+  lastUpdated: string  // ISO timestamp
+}
+
+/** A track that was captured as "played" during a ProLink session */
+export interface CapturedTrack {
+  id: string
+  player: number
+  capturedAt: string   // ISO timestamp
+  title: string
+  artist: string
+  album: string
+  label: string
+  genre: string
+  key: string | null
+  bpm: number | null
+  year: number | null
+  durationSeconds: number | null
+  inLibrary: boolean       // true = matched to a track already in OD-01 library
+  localTrackId: string | null
+  sourcedFrom: 'prolink'
+}
+
+/** State of the ProLink capture session */
+export type ProLinkSessionState = 'idle' | 'connecting' | 'active' | 'error' | 'stopping'
+
+export interface ProLinkNetworkIface {
+  name: string
+  address: string
+  netmask: string
+  mac: string
+}

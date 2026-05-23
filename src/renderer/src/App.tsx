@@ -9,6 +9,7 @@ import { SetBuilderPage } from './pages/SetBuilder'
 import { CompassPage } from './pages/Compass'
 import { OrdersPage } from './pages/Orders'
 import { SearchPage } from './pages/Search'
+import { ProLinkPage } from './pages/ProLink'
 import { Sidebar } from './components/Sidebar'
 import { NavRail } from './components/NavRail'
 import type { Section } from './components/NavRail'
@@ -80,6 +81,7 @@ export default function App(): JSX.Element {
             {activePage === 'search'  && <ErrorBoundary name="search"><SearchPage /></ErrorBoundary>}
             {activePage === 'orders'  && <ErrorBoundary name="orders"><OrdersPage /></ErrorBoundary>}
             {activePage === 'compass' && <ErrorBoundary name="compass"><CompassPage /></ErrorBoundary>}
+            {activePage === 'prolink' && <ErrorBoundary name="prolink"><ProLinkPage /></ErrorBoundary>}
             {activePage === 'settings'&& <ErrorBoundary name="settings"><SettingsPage /></ErrorBoundary>}
           </div>
           {activePage === 'library' && detailTrackId && (

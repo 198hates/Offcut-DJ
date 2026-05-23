@@ -1,7 +1,8 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type {
   Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId,
-  AppSettings, SmartRule, RunningOrder, EditLineage, CutHistory
+  AppSettings, SmartRule, RunningOrder, EditLineage, CutHistory,
+  PlayerStatus, CapturedTrack, ProLinkNetworkIface, ProLinkSessionState,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -85,6 +86,16 @@ declare global {
         getDetectedPaths: () => Promise<Record<string, string>>
         choosePath: (title: string, isDirectory: boolean) => Promise<string | null>
         openInFinder: (path: string) => Promise<void>
+      }
+      prolink: {
+        getNetworkInterfaces: () => Promise<ProLinkNetworkIface[]>
+        getSessionState: () => Promise<{ state: ProLinkSessionState; playerStatuses: PlayerStatus[]; capturedTracks: CapturedTrack[] }>
+        start: (ifaceAddress?: string) => Promise<{ ok: boolean; error?: string }>
+        stop: () => Promise<{ ok: boolean; capturedTracks: CapturedTrack[] }>
+        onStatusUpdate: (cb: (_e: unknown, statuses: PlayerStatus[]) => void) => () => void
+        onTrackCaptured: (cb: (_e: unknown, track: CapturedTrack) => void) => () => void
+        onError: (cb: (_e: unknown, message: string) => void) => () => void
+        onSessionState: (cb: (_e: unknown, payload: { state: ProLinkSessionState; playerStatuses: PlayerStatus[]; capturedTracks: CapturedTrack[] }) => void) => () => void
       }
     }
   }
