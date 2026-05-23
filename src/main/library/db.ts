@@ -26,6 +26,8 @@ export function rowToTrack(row: Record<string, unknown>): Track {
     artist: row.artist as string,
     album: row.album as string,
     genre: row.genre as string,
+    year: (row.year as number | null) ?? null,
+    label: (row.label as string) || '',
     bpm: row.bpm as number | null,
     key: row.key as string | null,
     durationSeconds: row.duration_seconds as number | null,
@@ -74,11 +76,11 @@ export function rowToPlaylist(
 export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
   db.prepare(`
     INSERT INTO tracks (
-      id, file_path, title, artist, album, genre, bpm, key,
+      id, file_path, title, artist, album, genre, year, label, bpm, key,
       duration_seconds, rating, energy, danceability, date_added, comment,
       tags, cue_points, beatgrid, source_ids
     ) VALUES (
-      @id, @filePath, @title, @artist, @album, @genre, @bpm, @key,
+      @id, @filePath, @title, @artist, @album, @genre, @year, @label, @bpm, @key,
       @durationSeconds, @rating, @energy, @danceability, @dateAdded, @comment,
       @tags, @cuePoints, @beatgrid, @sourceIds
     )
@@ -88,6 +90,9 @@ export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
       artist = excluded.artist,
       album = excluded.album,
       genre = excluded.genre,
+      /* year + label: update if we now have a value and didn't before */
+      year  = COALESCE(year,  excluded.year),
+      label = CASE WHEN label = '' THEN excluded.label ELSE label END,
       bpm = excluded.bpm,
       key = excluded.key,
       duration_seconds = excluded.duration_seconds,
@@ -110,6 +115,8 @@ export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
     artist: track.artist,
     album: track.album,
     genre: track.genre,
+    year: track.year,
+    label: track.label,
     bpm: track.bpm,
     key: track.key,
     durationSeconds: track.durationSeconds,

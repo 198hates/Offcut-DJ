@@ -57,6 +57,8 @@ export function importFromIntegration(db: Database.Database, nmlPath: string): I
         artist: String(e['@_ARTIST'] ?? ''),
         album: String(info['@_ALBUM'] ?? ''),
         genre: String(info['@_GENRE'] ?? ''),
+        year: info['@_YEAR'] ? Number(info['@_YEAR']) : null,
+        label: String(info['@_LABEL'] ?? ''),
         bpm: tempo['@_BPM'] ? Number(tempo['@_BPM']) : null,
         key: traktorKeyToName(musicalKey['@_VALUE'] as number | undefined),
         durationSeconds: info['@_PLAYTIME'] ? Number(info['@_PLAYTIME']) : null,

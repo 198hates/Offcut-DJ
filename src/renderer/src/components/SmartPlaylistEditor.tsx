@@ -6,6 +6,8 @@ const FIELDS: { value: SmartRuleField; label: string; type: 'text' | 'numeric' |
   { value: 'artist',          label: 'artist',         type: 'text'    },
   { value: 'album',           label: 'album',          type: 'text'    },
   { value: 'genre',           label: 'genre',          type: 'text'    },
+  { value: 'label',           label: 'label',          type: 'text'    },
+  { value: 'year',            label: 'year',           type: 'numeric' },
   { value: 'key',             label: 'key',            type: 'text'    },
   { value: 'comment',         label: 'comment',        type: 'text'    },
   { value: 'bpm',             label: 'bpm',            type: 'numeric' },

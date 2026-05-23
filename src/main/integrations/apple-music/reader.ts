@@ -50,6 +50,8 @@ export function importFromIntegration(db: Database.Database, xmlPath: string): I
         artist: String(t['Artist'] ?? ''),
         album: String(t['Album'] ?? ''),
         genre: String(t['Genre'] ?? ''),
+        year: t['Year'] ? Number(t['Year']) : null,
+        label: '',
         bpm: t['BPM'] ? Number(t['BPM']) : null,
         key: null,
         durationSeconds: t['Total Time'] ? Number(t['Total Time']) / 1000 : null,

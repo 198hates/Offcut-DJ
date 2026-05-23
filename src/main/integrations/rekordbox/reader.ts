@@ -56,6 +56,8 @@ export function importFromIntegration(appDb: Database.Database, xmlPath: string)
         artist: String(t['@_Artist'] ?? ''),
         album: String(t['@_Album'] ?? ''),
         genre: String(t['@_Genre'] ?? ''),
+        year: t['@_Year'] ? Number(t['@_Year']) : null,
+        label: String(t['@_Label'] ?? ''),
         bpm: t['@_AverageBpm'] ? Number(t['@_AverageBpm']) : null,
         key: String(t['@_Tonality'] ?? '') || null,
         durationSeconds: t['@_TotalTime'] ? Number(t['@_TotalTime']) : null,

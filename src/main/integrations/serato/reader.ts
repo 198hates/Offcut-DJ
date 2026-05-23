@@ -47,6 +47,8 @@ export function importFromIntegration(appDb: Database.Database, seratoDir: strin
             artist: '',
             album: '',
             genre: '',
+            year: null,
+            label: '',
             bpm: geob.bpm,
             key: null,
             durationSeconds: null,

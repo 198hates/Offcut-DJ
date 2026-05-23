@@ -28,6 +28,8 @@ async function importFile(filePath: string): Promise<void> {
       artist: c.artist || '',
       album: c.album || '',
       genre: c.genre?.[0] || '',
+      year: c.year ?? null,
+      label: c.label?.[0] || '',
       bpm: c.bpm ?? null,
       key: c.key ?? null,
       durationSeconds: f.duration ?? null,

@@ -293,6 +293,8 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
         <MoodBar mood={draft.mood} />
         <Spec label="Last played" value={draft.lastPlayedAt ? new Date(draft.lastPlayedAt).toLocaleDateString() : '—'} />
         <Spec label="Genre" value={draft.genre || '—'} />
+        {draft.label && <Spec label="Label" value={draft.label} />}
+        {draft.year  && <Spec label="Year"  value={String(draft.year)} />}
         <Spec label="Rating" value={draft.rating ? '★'.repeat(draft.rating) + (draft.rating < 5 ? '☆'.repeat(5 - draft.rating) : '') : '—'} />
         {draft.album && <Spec label="Album" value={draft.album} />}
         <Spec label="Added" value={draft.dateAdded ? new Date(draft.dateAdded).toLocaleDateString() : '—'} />
@@ -763,6 +765,18 @@ function EditTab({ draft, set }: { draft: Track; set: <K extends keyof Track>(ke
         <input value={draft.genre} list="genre-list" onChange={(e) => set('genre', e.target.value)} className={INPUT} />
         <datalist id="genre-list">{GENRE_SUGGESTIONS.map((g) => <option key={g} value={g} />)}</datalist>
       </Field>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Year">
+          <input type="number" min="1900" max="2099" step="1"
+            value={draft.year ?? ''} onChange={(e) => set('year', e.target.value ? Number(e.target.value) : null)}
+            placeholder="e.g. 2024" className={INPUT + ' tabular-nums'} />
+        </Field>
+        <Field label="Label">
+          <input value={draft.label} onChange={(e) => set('label', e.target.value)}
+            placeholder="record label…" className={INPUT} />
+        </Field>
+      </div>
 
       <div className="grid grid-cols-2 gap-2">
         <Field label="BPM">

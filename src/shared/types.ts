@@ -155,6 +155,8 @@ export interface Track {
   artist: string
   album: string
   genre: string
+  year: number | null     // release year, e.g. 2023
+  label: string           // record label, e.g. "Drumcode"
   bpm: number | null
   key: string | null
   durationSeconds: number | null
@@ -178,7 +180,7 @@ export interface Track {
   sourceIds: Partial<Record<IntegrationId, string>>
 }
 
-export type SmartRuleField = 'bpm' | 'key' | 'genre' | 'artist' | 'album' | 'rating' | 'title' | 'comment' | 'durationSeconds' | 'dateAdded' | 'playCount' | 'lastPlayedAt' | 'energy' | 'danceability' | 'mood' | 'tags' | 'customTag'
+export type SmartRuleField = 'bpm' | 'key' | 'genre' | 'artist' | 'album' | 'year' | 'label' | 'rating' | 'title' | 'comment' | 'durationSeconds' | 'dateAdded' | 'playCount' | 'lastPlayedAt' | 'energy' | 'danceability' | 'mood' | 'tags' | 'customTag'
 export type SmartRuleOp = 'is' | 'is_not' | 'contains' | 'not_contains' | 'greater_than' | 'less_than' | 'between' | 'in_last_days'
 
 export interface SmartRule {

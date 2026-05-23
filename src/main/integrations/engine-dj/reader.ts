@@ -34,7 +34,8 @@ export function importFromIntegration(appDb: Database.Database, dbPath: string):
   try {
     const tracks = eng.prepare(`
       SELECT id, path, filename, title, artist, album, genre, comment,
-             bpm, key, rating, length, bitrate, dateAdded, label, composer
+             bpm, key, rating, length, bitrate, dateAdded, label, composer,
+             year
       FROM Track
       WHERE path IS NOT NULL
     `).all() as Record<string, unknown>[]
@@ -54,6 +55,8 @@ export function importFromIntegration(appDb: Database.Database, dbPath: string):
           artist: String(row.artist ?? ''),
           album: String(row.album ?? ''),
           genre: String(row.genre ?? ''),
+          year: row.year != null ? Number(row.year) : null,
+          label: String(row.label ?? ''),
           bpm: row.bpm != null ? Number(row.bpm) : null,
           key: engineKeyToName(row.key as number | null),
           durationSeconds: row.length != null ? Number(row.length) : null,

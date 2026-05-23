@@ -63,6 +63,12 @@ export async function writeTagsToFile(track: Track): Promise<WriteTagsResult> {
     tag('genre',       track.genre   || null)
     tag('comment',     track.comment || null)
 
+    // Year — TDRC (ID3v2.4) / DATE (Vorbis) / (c) year (M4A) — ffmpeg maps 'date'
+    if (track.year != null) tag('date', String(track.year))
+
+    // Label — TPUB (ID3) / ORGANIZATION (Vorbis) — ffmpeg maps 'publisher'
+    if (track.label) tag('publisher', track.label)
+
     // BPM — mapped to TBPM (MP3/ID3), BPM (FLAC Vorbis), tMPO (M4A) by ffmpeg
     if (track.bpm != null) tag('BPM', Math.round(track.bpm).toString())
 

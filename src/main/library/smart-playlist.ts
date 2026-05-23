@@ -119,6 +119,8 @@ const COL_MAP: Partial<Record<string, string>> = {
   artist: 'artist',
   album: 'album',
   genre: 'genre',
+  year: 'year',
+  label: 'label',
   key: 'key',
   comment: 'comment',
   energy: 'energy',

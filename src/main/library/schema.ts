@@ -127,6 +127,9 @@ export function applySchema(db: import('better-sqlite3').Database): void {
     "ALTER TABLE play_history ADD COLUMN deck_id   TEXT",
     // Edit lineage — stored on the track
     "ALTER TABLE tracks ADD COLUMN edit_lineage TEXT",
+    // Release year and record label
+    "ALTER TABLE tracks ADD COLUMN year INTEGER",
+    "ALTER TABLE tracks ADD COLUMN label TEXT NOT NULL DEFAULT ''",
     // Running orders — editorial programme documents
     `CREATE TABLE IF NOT EXISTS running_orders (
        id          TEXT PRIMARY KEY,

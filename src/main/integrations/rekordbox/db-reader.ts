@@ -81,12 +81,15 @@ export function importFromRekordboxDb(
                al.Name  AS AlbumName,
                g.Name   AS GenreName,
                k.ScaleName AS Tonality,
-               c.BPM, c.StockDate, c.Rating, c.Commnt, c.Length
+               lb.Name  AS LabelName,
+               c.BPM, c.StockDate, c.Rating, c.Commnt, c.Length,
+               c.Year
         FROM djmdContent c
         LEFT JOIN djmdArtist ar ON ar.ID = c.ArtistID
         LEFT JOIN djmdAlbum  al ON al.ID = c.AlbumID
         LEFT JOIN djmdGenre  g  ON g.ID  = c.GenreID
         LEFT JOIN djmdKey    k  ON k.ID  = c.KeyID
+        LEFT JOIN djmdLabel  lb ON lb.ID = c.LabelID
         WHERE c.FolderPath IS NOT NULL AND c.FolderPath != ''
       `)
       .all() as Record<string, unknown>[]
@@ -114,6 +117,8 @@ export function importFromRekordboxDb(
           artist: String(row.ArtistName ?? ''),
           album: String(row.AlbumName ?? ''),
           genre: String(row.GenreName ?? ''),
+          year: row.Year != null ? Number(row.Year) : null,
+          label: String(row.LabelName ?? ''),
           bpm: row.BPM != null ? Number(row.BPM) / 100 : null,
           key: rbKeyToName(row.Tonality as string | null),
           durationSeconds: row.Length != null ? Number(row.Length) : null,

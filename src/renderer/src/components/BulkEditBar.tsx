@@ -64,6 +64,8 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
       else if (field === 'genre') patch.genre = value
       else if (field === 'artist') patch.artist = value
       else if (field === 'album') patch.album = value
+      else if (field === 'label') patch.label = value
+      else if (field === 'year') patch.year = Number(value) || null
       else return
       await bulkUpdateTracks(selectedIds, patch)
       show(`updated ${n} track${n !== 1 ? 's' : ''}`, 'success')
@@ -100,6 +102,8 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
           <option value="genre">genre</option>
           <option value="artist">artist</option>
           <option value="album">album</option>
+          <option value="label">label</option>
+          <option value="year">year</option>
           <option value="key">key</option>
           <option value="bpm">bpm</option>
           <option value="rating">rating</option>

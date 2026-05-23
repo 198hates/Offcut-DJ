@@ -36,6 +36,8 @@ const COLUMNS: { key: keyof Track; label: string; width: string }[] = [
   { key: 'title',           label: 'Title',  width: 'auto' },
   { key: 'artist',          label: 'Artist', width: '110px'},
   { key: 'genre',           label: 'Genre',  width: '80px' },
+  { key: 'label',           label: 'Label',  width: '80px' },
+  { key: 'year',            label: 'Year',   width: '44px' },
   { key: 'bpm',             label: 'BPM',    width: '52px' },
   { key: 'key',             label: 'Key',    width: '40px' },
   { key: 'energy',          label: 'Nrg',    width: '56px' },
@@ -824,6 +826,16 @@ function TrackRow({ track, isSelected, onClick, onDoubleClick, onContextMenu, on
       {/* Genre */}
       <td className="px-2 max-w-0 overflow-hidden">
         <span className="truncate block font-mono text-[9px] text-muted">{track.genre || '—'}</span>
+      </td>
+
+      {/* Label */}
+      <td className="px-2 max-w-0 overflow-hidden">
+        <span className="truncate block font-mono text-[9px] text-muted">{track.label || '—'}</span>
+      </td>
+
+      {/* Year */}
+      <td className="px-2 font-mono text-[9px] text-muted tabular-nums">
+        {track.year ?? '—'}
       </td>
 
       {/* BPM */}
