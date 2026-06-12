@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback } from 'react'
 import { useThemeStore } from '../store/themeStore'
 import type { Track } from '@shared/types'
 import { keyBlipColor } from './CamelotWheel'
+import { formatHoursMinutes } from '../lib/format'
 
 interface Props {
   tracks: Track[]       // ordered playlist tracks
@@ -123,7 +124,7 @@ export function SetTimeline({ tracks, onSeekToTrack }: Props): JSX.Element {
     return { id: t.id, left, w, color }
   })
 
-  const durationStr = `${Math.floor(totalDuration / 60)}h ${String(Math.floor(totalDuration % 60)).padStart(2, '0')}m`
+  const durationStr = formatHoursMinutes(totalDuration)
   const avgBpm = tracksWithBpm.length
     ? (tracksWithBpm.reduce((s, t) => s + t.bpm!, 0) / tracksWithBpm.length).toFixed(1)
     : null

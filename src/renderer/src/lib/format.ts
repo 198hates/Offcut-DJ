@@ -15,6 +15,15 @@ export function formatDuration(
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+/** Seconds → "Xh YYm" (or "Ym" under an hour) for set-length summaries. */
+export function formatHoursMinutes(seconds: number | null | undefined): string {
+  if (seconds == null || !isFinite(seconds) || seconds < 0) return '—'
+  const total = Math.floor(seconds)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  return h > 0 ? `${h}h ${m.toString().padStart(2, '0')}m` : `${m}m`
+}
+
 /** Seconds → "m:ss.t" with tenths (deck/transport readouts). */
 export function formatTime(seconds: number | null | undefined, dash = '0:00.0'): string {
   if (seconds == null || !isFinite(seconds) || seconds < 0) return dash
