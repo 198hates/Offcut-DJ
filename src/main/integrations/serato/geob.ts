@@ -49,8 +49,11 @@ function parseID3Serato(buf: Buffer): ParsedSeratoData {
   // Find ID3v2 header
   if (buf.slice(0, 3).toString('ascii') !== 'ID3') return result
 
+  // Byte 3 is the ID3v2 major version. v2.4 encodes frame sizes as synchsafe
+  // integers (7 bits/byte); v2.3 (and earlier) use a plain big-endian uint32.
+  const majorVersion = buf[3]
   const id3Size = decodeID3Size(buf.slice(6, 10))
-  const frames = parseID3Frames(buf.slice(10, 10 + id3Size))
+  const frames = parseID3Frames(buf.slice(10, 10 + id3Size), majorVersion)
 
   const markers2 = frames.get('Serato Markers2')
   if (markers2) result.cuePoints = parseMarkers2(markers2)
@@ -69,7 +72,18 @@ function decodeID3Size(buf: Buffer): number {
   return ((buf[0] & 0x7f) << 21) | ((buf[1] & 0x7f) << 14) | ((buf[2] & 0x7f) << 7) | (buf[3] & 0x7f)
 }
 
-function parseID3Frames(buf: Buffer): Map<string, Buffer> {
+// Read a 4-byte ID3v2 frame size. v2.4 uses synchsafe integers (top bit of each
+// byte cleared, 7 significant bits); v2.3 and earlier use a plain big-endian
+// uint32. Reading a synchsafe size as a plain uint32 mis-locates every frame
+// after the first one >127 bytes, hiding Serato's GEOB frames entirely.
+function readFrameSize(buf: Buffer, offset: number, majorVersion: number): number {
+  if (majorVersion >= 4) {
+    return decodeID3Size(buf.slice(offset, offset + FRAME_SIZE))
+  }
+  return buf.readUInt32BE(offset)
+}
+
+export function parseID3Frames(buf: Buffer, majorVersion: number): Map<string, Buffer> {
   const frames = new Map<string, Buffer>()
   let offset = 0
 
@@ -77,7 +91,7 @@ function parseID3Frames(buf: Buffer): Map<string, Buffer> {
     const id = buf.slice(offset, offset + FRAME_SIZE).toString('ascii').replace(/\0/g, '')
     if (!id || id[0] < 'A' || id[0] > 'Z') break
 
-    const size = buf.readUInt32BE(offset + FRAME_SIZE)
+    const size = readFrameSize(buf, offset + FRAME_SIZE, majorVersion)
     const dataStart = offset + 10
     const dataEnd = dataStart + size
 
