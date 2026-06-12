@@ -79,6 +79,17 @@ app launches with `[NativeEngine] loaded`.
 - [x] **VU stuck on pause** — silent callback paths now zero the level.
 - Verified: 11/11 Rust tests, clippy clean, both tsc projects clean, release `.node` rebuilt.
 
+## 🎯 Analysis correctness 2026-06-12 (audit Phase 4) — commit dd714e5
+
+Beat This! preprocessing now matches upstream exactly (slaney mel/1024 FFT/
+magnitude/log1p/centered — was out-of-distribution + a +23 ms shift); sigmoid
+on logits; chunked 1500-frame inference; sub-frame beat positions everywhere
+(parabolic peaks, fractional phase fold); always-on DP tempo-continuity;
+full-track decode (8-min cap gone, ffmpeg failures loud); structure cues use
+the full energy curve; analyseBpm no longer clobbers existing grids;
+AudioContext leaks fixed. **Re-analyse the library to regenerate grids** —
+old grids carry the old errors.
+
 ## 🚌 Master-bus architecture 2026-06-12 (audit Phase 3)
 
 - [x] **One output stream for everything** — decks no longer own cpal streams; a
