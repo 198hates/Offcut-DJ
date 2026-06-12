@@ -21,6 +21,8 @@ let _recorder: MediaRecorder | null = null
 let _chunks: Blob[] = []
 let _startTime = 0
 let _tickId = 0
+/** Web-fallback mixing context — kept so stopRecording can close it (else it leaks). */
+let _webCtx: AudioContext | null = null
 /** True while the active recording runs through the native master-bus tap. */
 let _nativeRec = false
 
@@ -28,11 +30,15 @@ const toast = (msg: string, kind: 'success' | 'error'): void => {
   void import('./toastStore').then(({ useToastStore }) => useToastStore.getState().show(msg, kind))
 }
 
-export const useRecordingStore = create<RecordingStore>((set) => ({
+export const useRecordingStore = create<RecordingStore>((set, get) => ({
   state: 'idle',
   durationSeconds: 0,
 
   startRecording: () => {
+    // Re-entry guard: a fast double-trigger would otherwise overwrite _tickId
+    // (leaking the first interval) and start a second recorder.
+    if (get().state !== 'idle') return
+
     const engineA = useDeckAStore.getState()._engine
     const engineB = useDeckBStore.getState()._engine
 
@@ -62,6 +68,7 @@ export const useRecordingStore = create<RecordingStore>((set) => ({
 
     // Merge both streams using AudioContext + MediaStreamDestination
     const ctx = new AudioContext()
+    _webCtx = ctx
     const dest = ctx.createMediaStreamDestination()
 
     const srcA = ctx.createMediaStreamSource(streamA)
@@ -118,6 +125,9 @@ export const useRecordingStore = create<RecordingStore>((set) => ({
     const blob = new Blob(_chunks, { type: _recorder.mimeType || 'audio/webm' })
     _chunks = []
     _recorder = null
+    // Release the mixing context — it would otherwise leak for the session.
+    await _webCtx?.close().catch(() => {})
+    _webCtx = null
 
     // Offer download
     const url = URL.createObjectURL(blob)
