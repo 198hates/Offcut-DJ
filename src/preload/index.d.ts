@@ -131,6 +131,7 @@ declare global {
         onSessionState: (cb: (_e: unknown, payload: { state: ProLinkSessionState; playerStatuses: PlayerStatus[]; capturedTracks: CapturedTrack[] }) => void) => () => void
         onTrackUpdated: (cb: (_e: unknown, track: CapturedTrack) => void) => () => void
         importUnownedTrack: (capturedId: string) => Promise<{ ok: boolean; localTrackId?: string; error?: string }>
+        saveSession: (name?: string) => Promise<{ ok: boolean; playlist?: Playlist; error?: string }>
       }
       /** Lineage — library expansion / crate-digging engine bridge. */
       lineage: {

@@ -8,8 +8,8 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import { ProLinkCapture, listNetworkInterfaces } from '../integrations/prolink/capture'
-import { getLibraryDb, insertOrUpdateTrack } from '../library/db'
-import type { PlayerStatus, CapturedTrack, Track } from '../../shared/types'
+import { getLibraryDb, insertOrUpdateTrack, rowToPlaylist } from '../library/db'
+import type { PlayerStatus, CapturedTrack, Track, Playlist } from '../../shared/types'
 
 let capture: ProLinkCapture | null = null
 let sessionState: 'idle' | 'connecting' | 'active' | 'error' | 'stopping' = 'idle'
@@ -78,6 +78,68 @@ function lookupInLibrary(title: string, artist: string): { id: string } | null {
       return la.includes(na) || na.includes(la)
     })
     return titleMatch ? { id: titleMatch.id } : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Resolve a captured track to a library track id. If it's already owned, return
+ * its localTrackId; otherwise create (or reuse) a stub library entry under a
+ * synthetic `prolink://` path so the track can be referenced in a saved set and
+ * acquired later. De-duped by the synthetic path. Returns the id, or null.
+ */
+function resolveCapturedTrackId(
+  db: ReturnType<typeof getLibraryDb>,
+  ct: CapturedTrack
+): string | null {
+  if (ct.inLibrary && ct.localTrackId) return ct.localTrackId
+  try {
+    const syntheticPath = `prolink://player${ct.player}/${encodeURIComponent(ct.title)}__${encodeURIComponent(ct.artist)}`
+    const existing = db
+      .prepare('SELECT id FROM tracks WHERE file_path = ? LIMIT 1')
+      .get(syntheticPath) as { id: string } | undefined
+    if (existing) return existing.id
+
+    const trackId = randomUUID()
+    const track: Track = {
+      id: trackId,
+      filePath: syntheticPath,
+      title: ct.title,
+      artist: ct.artist,
+      album: ct.album,
+      genre: ct.genre,
+      year: ct.year,
+      label: ct.label,
+      bpm: ct.bpm,
+      key: ct.key,
+      durationSeconds: ct.durationSeconds,
+      rating: 0,
+      dateAdded: new Date().toISOString(),
+      comment: `Captured via ProLink from player ${ct.player} — file not yet in library`,
+      tags: ['prolink-discovery'],
+      customTags: {},
+      cuePoints: [],
+      beatgrid: [],
+      energy: null,
+      danceability: null,
+      mood: null,
+      analysedBeatgrid: null,
+      editLineage: null,
+      color: '',
+      playCount: 0,
+      lastPlayedAt: null,
+      updatedAt: null,
+      fileSize: null,
+      fileType: null,
+      sampleRate: null,
+      bitDepth: null,
+      gainDb: null,
+      phrases: null,
+      sourceIds: { prolink: `player${ct.player}` }
+    }
+    insertOrUpdateTrack(db, track)
+    return trackId
   } catch {
     return null
   }
@@ -185,68 +247,68 @@ export function registerProLinkHandlers(): void {
     if (!ct) return { ok: false, error: 'Captured track not found' }
     if (ct.inLibrary && ct.localTrackId) return { ok: true, localTrackId: ct.localTrackId }
 
+    const trackId = resolveCapturedTrackId(getLibraryDb(), ct)
+    if (!trackId) return { ok: false, error: 'Could not import captured track' }
+
+    // Update the in-memory captured track so the UI reflects the change.
+    const idx = capturedTracks.findIndex((t) => t.id === capturedId)
+    if (idx !== -1) {
+      capturedTracks[idx] = { ...capturedTracks[idx], inLibrary: true, localTrackId: trackId }
+      pushToRenderer('prolink:trackUpdated', capturedTracks[idx])
+    }
+    return { ok: true, localTrackId: trackId }
+  })
+
+  // ── saveSession ───────────────────────────────────────────────────────────
+  // Persist the captured tracks (in capture order) as a history playlist so the
+  // set survives the session. Unowned tracks are stub-imported first so they
+  // appear in the saved set. Works during or after a session (captures aren't
+  // cleared until the next start). A track played more than once appears once
+  // (playlist_tracks is unique per track).
+  ipcMain.handle('prolink:saveSession', (_e, name?: string):
+    { ok: true; playlist: Playlist } | { ok: false; error: string } => {
+    if (capturedTracks.length === 0) return { ok: false, error: 'No captured tracks to save' }
     try {
       const db = getLibraryDb()
 
-      // Synthetic path — unique, clearly not a real file path
-      const syntheticPath = `prolink://player${ct.player}/${encodeURIComponent(ct.title)}__${encodeURIComponent(ct.artist)}`
-
-      // Check if we already have a stub for this track (re-import guard)
-      const existing = db.prepare(
-        'SELECT id FROM tracks WHERE file_path = ? LIMIT 1'
-      ).get(syntheticPath) as { id: string } | undefined
-
-      const trackId = existing?.id ?? randomUUID()
-
-      if (!existing) {
-        const track: Track = {
-          id:              trackId,
-          filePath:        syntheticPath,
-          title:           ct.title,
-          artist:          ct.artist,
-          album:           ct.album,
-          genre:           ct.genre,
-          year:            ct.year,
-          label:           ct.label,
-          bpm:             ct.bpm,
-          key:             ct.key,
-          durationSeconds: ct.durationSeconds,
-          rating:          0,
-          dateAdded:       new Date().toISOString(),
-          comment:         `Captured via ProLink from player ${ct.player} — file not yet in library`,
-          tags:            ['prolink-discovery'],
-          customTags:      {},
-          cuePoints:       [],
-          beatgrid:        [],
-          energy:          null,
-          danceability:    null,
-          mood:            null,
-          analysedBeatgrid: null,
-          editLineage:     null,
-          color:           '',
-          playCount:       0,
-          lastPlayedAt:    null,
-          updatedAt:       null,
-          fileSize:        null,
-          fileType:        null,
-          sampleRate:      null,
-          bitDepth:        null,
-          gainDb:          null,
-          phrases:         null,
-          sourceIds:       { prolink: `player${ct.player}` },
+      const trackIds: string[] = []
+      const freshlyOwned: CapturedTrack[] = []
+      for (const ct of capturedTracks) {
+        const id = resolveCapturedTrackId(db, ct)
+        if (!id) continue
+        trackIds.push(id)
+        if (!ct.inLibrary || ct.localTrackId !== id) {
+          freshlyOwned.push({ ...ct, inLibrary: true, localTrackId: id })
         }
-        insertOrUpdateTrack(db, track)
+      }
+      if (trackIds.length === 0) return { ok: false, error: 'No tracks could be saved' }
+
+      const playlistId = randomUUID()
+      const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
+      const playlistName = name?.trim() || `Captured — ${stamp}`
+
+      const save = db.transaction(() => {
+        db.prepare(
+          "INSERT INTO playlists (id, name, is_folder, is_smart, is_history, sort_order, source_ids) VALUES (?, ?, 0, 0, 1, 0, ?)"
+        ).run(playlistId, playlistName, JSON.stringify({ prolink: randomUUID() }))
+        const ins = db.prepare(
+          'INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, sort_order) VALUES (?, ?, ?)'
+        )
+        trackIds.forEach((tid, i) => ins.run(playlistId, tid, i))
+      })
+      save()
+
+      // Reflect any freshly stub-imported tracks in the in-memory list + UI.
+      for (const u of freshlyOwned) {
+        const idx = capturedTracks.findIndex((t) => t.id === u.id)
+        if (idx !== -1) {
+          capturedTracks[idx] = u
+          pushToRenderer('prolink:trackUpdated', u)
+        }
       }
 
-      // Update the in-memory captured track list so the UI reflects the change
-      const idx = capturedTracks.findIndex((t) => t.id === capturedId)
-      if (idx !== -1) {
-        capturedTracks[idx] = { ...capturedTracks[idx], inLibrary: true, localTrackId: trackId }
-        // Push the updated list so the renderer can refresh
-        pushToRenderer('prolink:trackUpdated', capturedTracks[idx])
-      }
-
-      return { ok: true, localTrackId: trackId }
+      const row = db.prepare('SELECT * FROM playlists WHERE id = ?').get(playlistId) as Record<string, unknown>
+      return { ok: true, playlist: rowToPlaylist(row, trackIds) }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }

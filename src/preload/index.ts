@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport } from '../shared/types'
+import type { Track, Playlist, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport } from '../shared/types'
 
 const api = {
   library: {
@@ -279,6 +279,8 @@ const api = {
     },
     importUnownedTrack: (capturedId: string): Promise<{ ok: boolean; localTrackId?: string; error?: string }> =>
       ipcRenderer.invoke('prolink:importUnownedTrack', capturedId),
+    saveSession: (name?: string): Promise<{ ok: boolean; playlist?: Playlist; error?: string }> =>
+      ipcRenderer.invoke('prolink:saveSession', name),
   },
   lineage: {
     status: (): Promise<LineageStatus> => ipcRenderer.invoke('lineage:status'),

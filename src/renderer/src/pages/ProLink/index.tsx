@@ -12,6 +12,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { PlayerStatus, CapturedTrack, ProLinkNetworkIface, ProLinkSessionState } from '@shared/types'
+import { useToastStore } from '../../store/toastStore'
+import { useLibraryStore } from '../../store/libraryStore'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -200,6 +202,7 @@ export function ProLinkPage(): JSX.Element {
   const [ifaces, setIfaces] = useState<ProLinkNetworkIface[]>([])
   const [selectedIface, setSelectedIface] = useState<string>('')
   const [importingId, setImportingId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const capturedEndRef = useRef<HTMLDivElement>(null)
 
   // Load initial state + register push listeners on mount
@@ -274,6 +277,26 @@ export function ProLinkPage(): JSX.Element {
     }
   }
 
+  const handleSaveSession = async (): Promise<void> => {
+    if (capturedTracks.length === 0 || saving) return
+    setSaving(true)
+    try {
+      const result = await window.api.prolink.saveSession()
+      if (result.ok && result.playlist) {
+        // Refresh so the new history set + any stub-imported tracks appear app-wide.
+        await useLibraryStore.getState().loadLibrary()
+        useToastStore.getState().show(
+          `Set saved: ${result.playlist.name} · ${result.playlist.trackIds.length} tracks`,
+          'success'
+        )
+      } else {
+        useToastStore.getState().show(result.error ?? 'Could not save set', 'error')
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const isConnecting = sessionState === 'connecting'
   const isActive     = sessionState === 'active'
   const isStopping   = sessionState === 'stopping'
@@ -309,6 +332,16 @@ export function ProLinkPage(): JSX.Element {
                 <span className="text-amber-400/80"> · {discoveryTracks.length} new</span>
               )}
             </span>
+          )}
+          {capturedTracks.length > 0 && (
+            <button
+              onClick={handleSaveSession}
+              disabled={saving}
+              title="Save the captured tracks as a history set"
+              className="px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] bg-accent/15 border border-accent/30 text-accent hover:bg-accent/25 rounded transition-colors disabled:opacity-50"
+            >
+              {saving ? 'saving…' : 'save as set'}
+            </button>
           )}
           {isActive ? (
             <button
