@@ -145,14 +145,26 @@ function estimateTempo(odf: Float32Array, hopMs: number, bpmHint?: number): numb
 
   let bestLag  = minLag
   let bestCorr = -Infinity
+  const corrs = new Float32Array(maxLag + 1)
 
   for (let lag = minLag; lag <= maxLag && lag < useN; lag++) {
     let corr = 0
     for (let i = 0; i < useN - lag; i++) corr += odf[i] * odf[i + lag]
+    corrs[lag] = corr
     if (corr > bestCorr) { bestCorr = corr; bestLag = lag }
   }
 
-  let bpm = 60000 / (bestLag * hopMs)
+  // Parabolic refinement of the autocorrelation peak — integer lags at a
+  // 23 ms hop are ~5% BPM granularity near 128, which made detectedBpm and
+  // medianBpm visibly wrong whenever no tag hint rescued them.
+  let lag = bestLag
+  if (bestLag > minLag && bestLag < Math.min(maxLag, useN - 1)) {
+    const a = corrs[bestLag - 1], b = corrs[bestLag], c = corrs[bestLag + 1]
+    const denom = a - 2 * b + c
+    if (denom < 0) lag += Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / denom))
+  }
+
+  let bpm = 60000 / (lag * hopMs)
 
   // Octave / double-tempo correction to keep result in 80–160 BPM range
   if (bpm < 80 && bpm * 2 <= MAX_BPM) bpm *= 2
@@ -206,7 +218,10 @@ function dpBeatTracker(odf: Float32Array, hopMs: number, bpm: number): number[] 
       if (score[j] <= -Infinity) continue
       const dev = (i - j - idealPrev) / sigma
       const g   = Math.exp(-0.5 * dev * dev)
-      const s   = score[j] + odf[i] * (1 + g)  // onset + transition bonus
+      // Onset term + an ALWAYS-ON tempo-continuity term (Ellis-style). The old
+      // odf[i]*(1+g) multiplied the deviation penalty away wherever odf≈0, so
+      // the grid wandered freely through breakdowns and silent intros.
+      const s   = score[j] + odf[i] + 0.5 * g
       if (s > bestS) { bestS = s; bestJ = j }
     }
 
@@ -256,15 +271,27 @@ function buildMarkers(
   }
   const downbeatPhase = phaseScore.indexOf(Math.max(...phaseScore))
 
+  // Sub-frame beat positions: parabolic fit on the ODF around each beat frame
+  // (integer frames carry ±11.6 ms of jitter and quantize the local BPM to
+  // discrete steps like 123.1/129.3 around a true 128).
+  const refine = (f: number): number => {
+    if (f <= 0 || f >= odf.length - 1) return f
+    const a = odf[f - 1], b = odf[f], c = odf[f + 1]
+    const denom = a - 2 * b + c
+    if (denom >= 0) return f
+    return f + Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / denom))
+  }
+  const refined = beatFrames.map(refine)
+
   return beatFrames.map((f, i) => {
-    const posMs = f * hopMs
-    const nextF = beatFrames[i + 1]
-    const intervalMs = nextF != null ? (nextF - f) * hopMs : 60000 / bpm
+    const pos = refined[i]
+    const next = i + 1 < refined.length ? refined[i + 1] : null
+    const intervalMs = next != null ? (next - pos) * hopMs : 60000 / bpm
     const localBpm   = intervalMs > 0 ? 60000 / intervalMs : bpm
 
     return {
-      positionMs: Math.round(posMs),
-      bpm:        Math.round(localBpm * 10) / 10,
+      positionMs: Math.round(pos * hopMs * 10) / 10,
+      bpm:        Math.round(localBpm * 100) / 100,
       isDownbeat: (i - downbeatPhase + beatFrames.length * 4) % 4 === 0,
       confidence: Math.min(1, (odf[f] ?? 0) * 2)  // odf is normalised [0,1]
     }

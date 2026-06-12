@@ -258,9 +258,16 @@ export class EssentiaQuantiser implements Quantiser {
     const ab  = await window.api.audio.readFile(track.filePath)
     onProgress?.(0.10)
 
-    const ctx    = new AudioContext()
-    const buffer = await ctx.decodeAudioData(ab)
-    await ctx.close()
+    // try/finally — a decode failure must still close the context (Chromium
+    // caps live AudioContexts; leaking them broke analysis + preview playback
+    // after enough corrupt files in a batch).
+    const ctx = new AudioContext()
+    let buffer: AudioBuffer
+    try {
+      buffer = await ctx.decodeAudioData(ab)
+    } finally {
+      void ctx.close()
+    }
     onProgress?.(0.20)
 
     // Mix to mono Float32Array

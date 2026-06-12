@@ -78,39 +78,94 @@ export async function runBeatAnalysis(
   modelPath?: string
 ): Promise<BeatgridMarker[]> {
   const session = await getSession(modelPath)
+  const nMels = MEL_CONFIG.nMels
 
-  let results: Awaited<ReturnType<typeof session.run>>
+  // Chunked inference, matching upstream split_predict_aggregate: the model is
+  // trained on 1500-frame (30 s) excerpts, so long tracks are processed in
+  // 1500-frame windows with a 6-frame border discarded on each side
+  // (fill-once = upstream's keep_first). Feeding a whole track as one tensor
+  // is out-of-distribution and blows up attention memory on long files.
+  const CHUNK = 1500
+  const BORDER = 6
+  const STRIDE = CHUNK - 2 * BORDER
+
+  const logBeat     = new Float32Array(numFrames)
+  const logDownbeat = new Float32Array(numFrames)
+  const written     = new Uint8Array(numFrames)
+
+  const chunkBuf = new Float32Array(CHUNK * nMels)
   try {
-    // Input tensor: [1, numFrames, nMels]
-    const tensor = new ort.Tensor('float32', spectrogramData, [1, numFrames, MEL_CONFIG.nMels])
-    results = await session.run({ [INPUT_NAME]: tensor })
+    for (let start = -BORDER; start < numFrames; start += STRIDE) {
+      chunkBuf.fill(0)
+      const from = Math.max(0, start)
+      const to   = Math.min(numFrames, start + CHUNK)
+      chunkBuf.set(
+        spectrogramData.subarray(from * nMels, to * nMels),
+        (from - start) * nMels
+      )
+
+      const tensor = new ort.Tensor('float32', chunkBuf, [1, CHUNK, nMels])
+      const results = await session.run({ [INPUT_NAME]: tensor })
+      const beatOut     = results[BEAT_OUT].data     as Float32Array
+      const downbeatOut = results[DOWNBEAT_OUT].data as Float32Array
+
+      const validFrom = Math.max(0, start + BORDER)
+      const validTo   = Math.min(numFrames, start + CHUNK - BORDER)
+      for (let g = validFrom; g < validTo; g++) {
+        if (!written[g]) {
+          logBeat[g]     = beatOut[g - start]
+          logDownbeat[g] = downbeatOut[g - start]
+          written[g] = 1
+        }
+      }
+      if (start + CHUNK >= numFrames + BORDER) break
+    }
   } catch (err) {
     _session = null   // force re-init on next call in case the session is corrupted
     throw err
   }
 
-  // Model outputs log-probabilities — convert to probabilities before peak picking
-  const logBeat     = results[BEAT_OUT].data     as Float32Array
-  const logDownbeat = results[DOWNBEAT_OUT].data as Float32Array
-  const beatAct     = logBeat.map(Math.exp)
-  const downbeatAct = logDownbeat.map(Math.exp)
+  // Model outputs raw LOGITS (the export wraps the bare BeatThis module) —
+  // squash with sigmoid so thresholds and stored confidences are true
+  // probabilities in [0, 1]. (exp() of a +5 logit was 148, not 0.99.)
+  const sigmoid = (x: number): number => 1 / (1 + Math.exp(-x))
+  const beatAct     = logBeat.map(sigmoid)
+  const downbeatAct = logDownbeat.map(sigmoid)
 
   const beatFrames     = peakPick(beatAct,     BEAT_THRESHOLD,     PEAK_WINDOW_FRAMES)
-  const downbeatFrames = new Set(peakPick(downbeatAct, DOWNBEAT_THRESHOLD, PEAK_WINDOW_FRAMES))
+  const downbeatFrames = peakPick(downbeatAct, DOWNBEAT_THRESHOLD, PEAK_WINDOW_FRAMES)
 
   const hopSec = MEL_CONFIG.hopLength / MEL_CONFIG.sampleRate
 
-  // Compute BPM at each beat from inter-beat interval to next beat
+  // Sub-frame refinement: a 3-point parabolic fit around each activation peak
+  // recovers beat positions well below the 20 ms hop, which otherwise puts
+  // ±10 ms of jitter on every beat and quantizes the per-beat BPM.
+  const refine = (frame: number, act: Float32Array): number => {
+    if (frame <= 0 || frame >= act.length - 1) return frame
+    const a = act[frame - 1], b = act[frame], c = act[frame + 1]
+    const denom = a - 2 * b + c
+    if (denom >= 0) return frame // not a strict maximum
+    const d = (0.5 * (a - c)) / denom
+    return frame + Math.max(-0.5, Math.min(0.5, d))
+  }
+  const refined = beatFrames.map((f) => refine(f, beatAct))
+
+  // A beat is a downbeat if a downbeat-head peak lands within ±2 frames —
+  // the two heads don't always peak on the identical frame.
+  const isDownbeatAt = (frame: number): boolean =>
+    downbeatFrames.some((d) => Math.abs(d - frame) <= 2)
+
+  // Compute BPM at each beat from the refined inter-beat interval
   const markers: BeatgridMarker[] = beatFrames.map((frame, i) => {
-    const posMs = frame * hopSec * 1000
-    const nextFrame = beatFrames[i + 1] ?? (frame + Math.round(0.5 / hopSec))
-    const intervalMs = (nextFrame - frame) * hopSec * 1000
+    const pos = refined[i]
+    const next = i + 1 < refined.length ? refined[i + 1] : pos + 0.5 / hopSec
+    const intervalMs = (next - pos) * hopSec * 1000
     const bpm = intervalMs > 0 ? 60000 / intervalMs : 120
 
     return {
-      positionMs: posMs,
-      bpm: Math.round(bpm * 10) / 10,
-      isDownbeat: downbeatFrames.has(frame),
+      positionMs: pos * hopSec * 1000,
+      bpm: Math.round(bpm * 100) / 100,
+      isDownbeat: isDownbeatAt(frame),
       confidence: Math.round(beatAct[frame] * 1000) / 1000,
     }
   })

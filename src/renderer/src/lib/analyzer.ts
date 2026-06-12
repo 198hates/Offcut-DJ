@@ -34,11 +34,17 @@ export async function analyzeAudio(buffer: AudioBuffer): Promise<AnalyzerResult>
  * @param existingBpm – if provided, used only as a hint; analysis always runs in full
  */
 export async function generateCuesForFile(filePath: string): Promise<CuePoint[]> {
-  const ab          = await window.api.audio.readFile(filePath)
-  const ctx         = new AudioContext()
-  const audioBuffer = await ctx.decodeAudioData(ab)
-  await ctx.close()
-  const result      = await analyzeAudio(audioBuffer)
+  const ab  = await window.api.audio.readFile(filePath)
+  const ctx = new AudioContext()
+  let audioBuffer: AudioBuffer
+  try {
+    audioBuffer = await ctx.decodeAudioData(ab)
+  } finally {
+    // Close even on decode failure — leaked AudioContexts eventually make
+    // `new AudioContext()` fail renderer-wide.
+    void ctx.close()
+  }
+  const result = await analyzeAudio(audioBuffer)
   return suggestedCuesToCuePoints(result.suggestedCues)
 }
 

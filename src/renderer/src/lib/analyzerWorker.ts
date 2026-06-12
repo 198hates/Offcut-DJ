@@ -78,22 +78,35 @@ function detectBPM(samples: Float32Array, sampleRate: number): number | null {
   // Use first 90 s max for speed
   const useN = Math.min(onset.length, Math.floor(90 / hopSec))
 
-  let bestBPM: number | null = null
+  // Full correlation curve so the peak can be refined to a fractional lag —
+  // integer lags at a ~10 ms hop give ~1.5% BPM error at 174 BPM, which
+  // drifts a constant grid audibly off the beat within minutes.
+  const corrs = new Float32Array(maxLag + 1)
+  let bestLag = 0
   let bestCorr = -Infinity
-
   for (let lag = minLag; lag <= maxLag; lag++) {
     let corr = 0
     for (let i = 0; i < useN - lag; i++) corr += onset[i] * onset[i + lag]
-    if (corr > bestCorr) { bestCorr = corr; bestBPM = 60 / (lag * hopSec) }
+    corrs[lag] = corr
+    if (corr > bestCorr) { bestCorr = corr; bestLag = lag }
   }
 
-  if (!bestBPM) return null
+  if (bestLag === 0) return null
 
-  // Check if half/double is a better "canonical" tempo (keep in 80–160 range)
-  const half = bestBPM / 2
-  const dbl = bestBPM * 2
-  if (half >= 80 && half <= 160) bestBPM = half
-  else if (dbl >= 80 && dbl <= 160) bestBPM = dbl
+  // 3-point parabolic interpolation around the autocorrelation peak.
+  let lag = bestLag
+  if (bestLag > minLag && bestLag < maxLag) {
+    const a = corrs[bestLag - 1], b = corrs[bestLag], c = corrs[bestLag + 1]
+    const denom = a - 2 * b + c
+    if (denom < 0) lag += Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / denom))
+  }
+
+  let bestBPM = 60 / (lag * hopSec)
+
+  // Fold into the canonical 80–160 range — only when actually OUTSIDE it
+  // (a track at exactly 80 or 160 BPM used to get folded to its octave).
+  if (bestBPM > 160 && bestBPM / 2 >= 80) bestBPM /= 2
+  else if (bestBPM < 80 && bestBPM * 2 <= 160) bestBPM *= 2
 
   return Math.round(bestBPM * 10) / 10
 }
@@ -229,18 +242,26 @@ function detectBeatPhase(samples: Float32Array, sampleRate: number, bpm: number)
   const onset = new Float32Array(nFrames)
   for (let i = 1; i < nFrames; i++) onset[i] = Math.max(0, energy[i] - energy[i - 1])
 
-  // Beat period in frames
+  // Beat period in frames — kept FRACTIONAL. Rounding to an integer period
+  // accumulated up to ~160 ms of drift across the fold window, smearing the
+  // histogram and biasing the chosen phase.
   const hopSec = hopN / actual
   const beatFrames = (60 / bpm) / hopSec
-  const period = Math.round(beatFrames)
-  if (period < 1) return 0
+  if (beatFrames < 1) return 0
 
-  // Score each integer phase p ∈ [0, period): sum onset at p, p+period, p+2*period, …
+  // Score sub-frame phases: walk the envelope at the exact fractional period
+  // (linear interpolation between frames), 4 phase steps per frame.
+  const steps = Math.max(1, Math.ceil(beatFrames * 4))
   let bestPhase = 0
   let bestScore = -1
-  for (let p = 0; p < period; p++) {
+  for (let s = 0; s < steps; s++) {
+    const p = (s / steps) * beatFrames
     let score = 0
-    for (let k = p; k < nFrames; k += period) score += onset[k]
+    for (let t = p; t < nFrames - 1; t += beatFrames) {
+      const i = Math.floor(t)
+      const fr = t - i
+      score += onset[i] * (1 - fr) + onset[i + 1] * fr
+    }
     if (score > bestScore) { bestScore = score; bestPhase = p }
   }
 
@@ -406,12 +427,13 @@ function detectStructuralCues(
 
   if (bars.length < 8) return []
 
-  // Downsample to ~4 kHz for fast energy computation
+  // Downsample to ~4 kHz for fast energy computation — over the FULL track.
+  // A 6-minute cap here put Break/Outro auto-cues in the wrong place on any
+  // longer track (the energy curve simply ended at 6:00).
   const TARGET = 4000
   const factor  = Math.max(1, Math.floor(sampleRate / TARGET))
   const actual  = sampleRate / factor
-  const maxSrc  = Math.min(samples.length, sampleRate * 360)  // 6 min max
-  const len     = Math.floor(maxSrc / factor)
+  const len     = Math.floor(samples.length / factor)
 
   const down = new Float32Array(len)
   for (let i = 0; i < len; i++) {

@@ -79,7 +79,10 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
           const buf = await ctx.decodeAudioData(ab)
           const result = await analyzeAudio(buf)
           const newBpm = result.bpm ?? current.bpm
-          const beatgrid = (newBpm && result.offsetMs != null)
+          // Never clobber an existing beatgrid: phase 2 also runs for tracks
+          // that only miss key/energy, and a regenerated uniform grid would
+          // silently replace a model-analysed or hand-edited one.
+          const beatgrid = (current.beatgrid.length === 0 && newBpm && result.offsetMs != null)
             ? generateBeatgrid(newBpm, result.offsetMs, buf.duration * 1000)
             : current.beatgrid
           const cuePoints = (current.cuePoints.length === 0 && result.suggestedCues.length > 0)
