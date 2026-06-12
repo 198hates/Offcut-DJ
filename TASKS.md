@@ -79,6 +79,22 @@ app launches with `[NativeEngine] loaded`.
 - [x] **VU stuck on pause** — silent callback paths now zero the level.
 - Verified: 11/11 Rust tests, clippy clean, both tsc projects clean, release `.node` rebuilt.
 
+## 🛡 Data safety 2026-06-12 (audit Phase 5)
+
+Corruption bugs: track edits no longer store the STRING 'null' when clearing a
+field (`typeof null === 'object'`); M3U/CSV playlist exports preserve playlist
+order (bare `IN()` returned table order). Hardening: update statements
+whitelist columns (no renderer keys in SQL); smart-playlist JSON paths quoted +
+one bad rule degrades to an empty playlist instead of killing the list; schema
+migrations only swallow "duplicate column"; re-import fills empty
+comment/tags/cues/grid instead of clobbering local edits; ProLink error path
+stops the leaked session + start reports failure, library matching normalises
+BOTH sides (custom SQLite fn); Demucs children killed on quit; LIKE wildcards
+escaped + path mapping replaces only the prefix; cue-sheet frames can't emit
+:75; AcoustID honours the configured key; lineage engine rebuilds close the
+old SQLite handle; updater events actually reach the renderer; deletes chunked
+past the 32k bound-param limit.
+
 ## 🎯 Analysis correctness 2026-06-12 (audit Phase 4) — commit dd714e5
 
 Beat This! preprocessing now matches upstream exactly (slaney mel/1024 FFT/

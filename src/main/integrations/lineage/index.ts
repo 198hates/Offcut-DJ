@@ -64,6 +64,8 @@ export interface LineageEngine {
   listSaved: () => StoredCandidate[]
   // export
   exportCrate: (finds: RekordboxFind[], name: string, outPath: string) => string
+  /** Release the underlying SQLite handle — call before rebuilding the engine. */
+  close: () => void
 }
 
 export function createLineageEngine(opts: LineageEngineConfig): LineageEngine {
@@ -129,6 +131,8 @@ export function createLineageEngine(opts: LineageEngineConfig): LineageEngine {
 
     // --- export ---
     exportCrate: (finds, name, outPath) =>
-      writeRekordboxPlaylist({ finds, playlistName: name, outPath })
+      writeRekordboxPlaylist({ finds, playlistName: name, outPath }),
+
+    close: () => store.close()
   }
 }

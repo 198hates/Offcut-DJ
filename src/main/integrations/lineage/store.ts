@@ -15,6 +15,11 @@ export function dedupKey(artist = '', title = ''): string {
 export class LineageStore {
   private db: Database.Database
 
+  /** Release the SQLite handle (engine rebuilds create a fresh store). */
+  close(): void {
+    try { this.db.close() } catch { /* already closed */ }
+  }
+
   constructor(dbPath: string) {
     this.db = new Database(dbPath)
     this.db.pragma('journal_mode = WAL')

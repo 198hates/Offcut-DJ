@@ -111,10 +111,13 @@ export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
       energy = COALESCE(energy, excluded.energy),
       danceability = COALESCE(danceability, excluded.danceability),
       /* color, play_count, last_played_at are user data — never overwritten */
-      comment = excluded.comment,
-      tags = excluded.tags,
-      cue_points = excluded.cue_points,
-      beatgrid = excluded.beatgrid,
+      /* comment / tags / cues / grid are ALSO user-editable: a re-import only
+         fills them when empty instead of clobbering local edits with whatever
+         the external library happens to hold */
+      comment = CASE WHEN comment IS NULL OR comment = '' THEN excluded.comment ELSE comment END,
+      tags = CASE WHEN tags IS NULL OR tags = '' OR tags = '[]' THEN excluded.tags ELSE tags END,
+      cue_points = CASE WHEN cue_points IS NULL OR cue_points = '' OR cue_points = '[]' THEN excluded.cue_points ELSE cue_points END,
+      beatgrid = CASE WHEN beatgrid IS NULL OR beatgrid = '' OR beatgrid = '[]' THEN excluded.beatgrid ELSE beatgrid END,
       source_ids = excluded.source_ids,
       /* file info: fill in if not yet set */
       file_size   = COALESCE(file_size,   excluded.file_size),

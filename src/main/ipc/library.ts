@@ -76,6 +76,56 @@ const COL_MAP: Record<string, string> = {
   playCount: 'play_count',
 }
 
+/** Identity-mapped Track columns the renderer may patch directly. Combined
+ *  with COL_MAP this forms the WHITELIST for update statements — renderer
+ *  object keys must never be interpolated into SQL unchecked. */
+const PLAIN_COLS = new Set([
+  'title', 'artist', 'album', 'genre', 'label', 'year', 'bpm', 'key',
+  'energy', 'danceability', 'mood', 'rating', 'comment', 'beatgrid', 'tags',
+])
+
+/** Resolve a renderer patch to safe (param, column) pairs; unknown keys throw. */
+function patchEntries(fields: Record<string, unknown>): [string, string][] {
+  return Object.keys(fields).map((k) => {
+    const col = COL_MAP[k] ?? (PLAIN_COLS.has(k) ? k : null)
+    if (!col) throw new Error(`updateTrack: unknown field "${k}"`)
+    return [k, col]
+  })
+}
+
+/** Bind-safe values: objects/arrays JSON-encoded, null stays SQL NULL —
+ *  `typeof null === 'object'` used to send the STRING 'null' to the DB,
+ *  poisoning numeric smart-playlist rules and crashing CSV export. */
+function patchParams(fields: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(fields).map(([k, v]) => [
+      k,
+      v === null || v === undefined ? null : typeof v === 'object' ? JSON.stringify(v) : v,
+    ])
+  )
+}
+
+/** SQLite bound-parameter headroom (hard limit 32766). */
+const ID_CHUNK = 900
+
+/**
+ * Fetch tracks by id PRESERVING the caller's order. A bare `IN (...)` SELECT
+ * returns rows in table order, which silently shuffled M3U/CSV playlist
+ * exports. Chunked so >32k selections can't blow the parameter limit.
+ */
+function fetchTracksInOrder(db: Database.Database, ids: string[]): Track[] {
+  const byId = new Map<string, Track>()
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const chunk = ids.slice(i, i + ID_CHUNK)
+    const ph = chunk.map(() => '?').join(',')
+    for (const row of db.prepare(`SELECT * FROM tracks WHERE id IN (${ph})`).all(...chunk) as Record<string, unknown>[]) {
+      const t = rowToTrack(row)
+      byId.set(t.id, t)
+    }
+  }
+  return ids.map((id) => byId.get(id)).filter((t): t is Track => t !== undefined)
+}
+
 export function registerLibraryHandlers(): void {
   const db = getLibraryDb()
 
@@ -88,9 +138,15 @@ export function registerLibraryHandlers(): void {
     const rows = db.prepare('SELECT * FROM playlists ORDER BY sort_order, name').all() as Record<string, unknown>[]
     return rows.map((pl) => {
       if (pl.is_smart) {
-        const rules: SmartRule[] = JSON.parse((pl.rules as string) || '[]')
-        const trackIds = resolveSmartPlaylist(db, rules)
-        return rowToPlaylist(pl, trackIds)
+        // One malformed rule must degrade to an empty playlist, not take down
+        // the whole playlist list.
+        try {
+          const rules: SmartRule[] = JSON.parse((pl.rules as string) || '[]')
+          return rowToPlaylist(pl, resolveSmartPlaylist(db, rules))
+        } catch (e) {
+          console.warn(`[library] smart playlist "${pl.name}" failed to resolve:`, (e as Error).message)
+          return rowToPlaylist(pl, [])
+        }
       }
       const trackRows = db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order').all(pl.id as string) as { track_id: string }[]
       return rowToPlaylist(pl, trackRows.map((r) => r.track_id))
@@ -106,9 +162,9 @@ export function registerLibraryHandlers(): void {
   ipcMain.handle('library:updateTrack', (_e, patch: Partial<Track> & { id: string }): Track => {
     const { id, ...fields } = patch
     if (Object.keys(fields).length > 0) {
-      const setClauses = Object.keys(fields).map((k) => `${COL_MAP[k] ?? k} = @${k}`).join(', ')
-      const params = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v]))
-      db.prepare(`UPDATE tracks SET ${setClauses}, updated_at = datetime('now') WHERE id = @id`).run({ ...params, id })
+      const setClauses = patchEntries(fields).map(([k, col]) => `${col} = @${k}`).join(', ')
+      db.prepare(`UPDATE tracks SET ${setClauses}, updated_at = datetime('now') WHERE id = @id`)
+        .run({ ...patchParams(fields), id })
     }
     return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown>)
   })
@@ -116,15 +172,15 @@ export function registerLibraryHandlers(): void {
   // ── Write: bulk update ────────────────────────────────────────────────────
   ipcMain.handle('library:bulkUpdateTracks', (_e, ids: string[], patch: Partial<Track>): Track[] => {
     if (!ids.length || !Object.keys(patch).length) return []
-    const setClauses = Object.keys(patch).map((k) => `${COL_MAP[k] ?? k} = @${k}`).join(', ')
-    const params = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v]))
+    const fields = patch as Record<string, unknown>
+    const setClauses = patchEntries(fields).map(([k, col]) => `${col} = @${k}`).join(', ')
+    const params = patchParams(fields)
     const stmt = db.prepare(`UPDATE tracks SET ${setClauses}, updated_at = datetime('now') WHERE id = @id`)
     const bulkUpdate = db.transaction(() => {
       for (const id of ids) stmt.run({ ...params, id })
     })
     bulkUpdate()
-    const placeholders = ids.map(() => '?').join(',')
-    return (db.prepare(`SELECT * FROM tracks WHERE id IN (${placeholders})`).all(...ids) as Record<string, unknown>[]).map(rowToTrack)
+    return fetchTracksInOrder(db, ids)
   })
 
   // ── Delete ────────────────────────────────────────────────────────────────
@@ -134,8 +190,13 @@ export function registerLibraryHandlers(): void {
 
   ipcMain.handle('library:deleteTracks', (_e, ids: string[]): void => {
     if (!ids.length) return
-    const ph = ids.map(() => '?').join(',')
-    db.prepare(`DELETE FROM tracks WHERE id IN (${ph})`).run(...ids)
+    const del = db.transaction(() => {
+      for (let i = 0; i < ids.length; i += ID_CHUNK) {
+        const chunk = ids.slice(i, i + ID_CHUNK)
+        db.prepare(`DELETE FROM tracks WHERE id IN (${chunk.map(() => '?').join(',')})`).run(...chunk)
+      }
+    })
+    del()
   })
 
   // ── Playlists ─────────────────────────────────────────────────────────────
@@ -400,9 +461,7 @@ export function registerLibraryHandlers(): void {
     const trackIds: string[] = pl.is_smart
       ? resolveSmartPlaylist(db, JSON.parse((pl.rules as string) || '[]'))
       : (db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order').all(playlistId) as { track_id: string }[]).map((r) => r.track_id)
-    const tracks = trackIds.length
-      ? (db.prepare(`SELECT * FROM tracks WHERE id IN (${trackIds.map(() => '?').join(',')})`).all(...trackIds) as Record<string, unknown>[]).map(rowToTrack)
-      : []
+    const tracks = fetchTracksInOrder(db, trackIds)
     const res = await dialog.showSaveDialog({
       title: 'Export playlist as M3U',
       defaultPath: `${pl.name as string}.m3u`,
@@ -423,9 +482,7 @@ export function registerLibraryHandlers(): void {
     const trackIds: string[] = pl.is_smart
       ? resolveSmartPlaylist(db, JSON.parse((pl.rules as string) || '[]'))
       : (db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order').all(playlistId) as { track_id: string }[]).map((r) => r.track_id)
-    const tracks = trackIds.length
-      ? (db.prepare(`SELECT * FROM tracks WHERE id IN (${trackIds.map(() => '?').join(',')})`).all(...trackIds) as Record<string, unknown>[]).map(rowToTrack)
-      : []
+    const tracks = fetchTracksInOrder(db, trackIds)
     const res = await dialog.showSaveDialog({
       title: 'Export playlist as CSV',
       defaultPath: `${pl.name as string}.csv`,
@@ -465,16 +522,20 @@ export function registerLibraryHandlers(): void {
   })
 
   // ── Path mapping ─────────────────────────────────────────────────────────
+  // Escape LIKE wildcards (paths with _ are common) and replace only the
+  // PREFIX — bare REPLACE() also rewrote matches mid-path.
+  const likePrefix = (from: string): string => from.replace(/[\\%_]/g, '\\$&') + '%'
+
   ipcMain.handle('library:previewPathMapping', (_e, from: string, to: string): number => {
     if (!from || !to) return 0
-    return ((db.prepare('SELECT COUNT(*) as c FROM tracks WHERE file_path LIKE ?').get(from + '%')) as { c: number }).c
+    return ((db.prepare("SELECT COUNT(*) as c FROM tracks WHERE file_path LIKE ? ESCAPE '\\'").get(likePrefix(from))) as { c: number }).c
   })
 
   ipcMain.handle('library:applyPathMapping', (_e, from: string, to: string): number => {
     if (!from || !to) return 0
     const result = db.prepare(
-      "UPDATE tracks SET file_path = REPLACE(file_path, ?, ?), updated_at = datetime('now') WHERE file_path LIKE ?"
-    ).run(from, to, from + '%')
+      "UPDATE tracks SET file_path = ? || substr(file_path, ?), updated_at = datetime('now') WHERE file_path LIKE ? ESCAPE '\\'"
+    ).run(to, from.length + 1, likePrefix(from))
     return result.changes
   })
 
@@ -650,9 +711,7 @@ export function registerLibraryHandlers(): void {
     if (!row) return { saved: false }
     const order = rowToOrder(row)
     const trackIds = order.entries.map((e) => e.trackId)
-    const tracks = trackIds.length
-      ? (db.prepare(`SELECT * FROM tracks WHERE id IN (${trackIds.map(() => '?').join(',')})`).all(...trackIds) as Record<string, unknown>[]).map(rowToTrack)
-      : []
+    const tracks = fetchTracksInOrder(db, trackIds)
     const trackMap = new Map(tracks.map((t) => [t.id, t]))
 
     const fmt = (s: number | null) => s ? `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}` : '—'
@@ -753,12 +812,13 @@ ${rows}
     })
     if (res.canceled || !res.filePath) return { saved: false }
 
-    // Build .cue file — timestamps in mm:ss:ff (75 fps)
+    // Build .cue file — timestamps in mm:ss:ff (75 fps). Derive all three
+    // fields from total frames so ff can never round up to the invalid 75.
     const toMmSsFf = (secs: number): string => {
-      const s = Math.max(0, Math.floor(secs))
-      const mm = String(Math.floor(s / 60)).padStart(2, '0')
-      const ss = String(s % 60).padStart(2, '0')
-      const ff = String(Math.round((secs % 1) * 75)).padStart(2, '0')
+      const totalFrames = Math.max(0, Math.round(secs * 75))
+      const mm = String(Math.floor(totalFrames / (60 * 75))).padStart(2, '0')
+      const ss = String(Math.floor(totalFrames / 75) % 60).padStart(2, '0')
+      const ff = String(totalFrames % 75).padStart(2, '0')
       return `${mm}:${ss}:${ff}`
     }
 
@@ -852,8 +912,9 @@ ${rows}
   ipcMain.handle('library:lookupAcoustId', async (_e, trackId: string, fingerprint: string, durationSecs: number): Promise<{ ok: boolean; updated?: Track; error?: string }> => {
     const track = rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>)
     try {
-      // AcoustID API — free service, no auth needed for basic lookup
-      const url = `https://api.acoustid.org/v2/lookup?client=yVHjbHFuM7&duration=${Math.round(durationSecs)}&fingerprint=${fingerprint}&meta=recordings+releasegroups+compress`
+      // AcoustID API — honour a user-configured key (Settings) over the shared default
+      const apiKey = loadSettings().acoustidKey?.trim() || 'yVHjbHFuM7'
+      const url = `https://api.acoustid.org/v2/lookup?client=${encodeURIComponent(apiKey)}&duration=${Math.round(durationSecs)}&fingerprint=${fingerprint}&meta=recordings+releasegroups+compress`
       const res = await fetch(url)
       if (!res.ok) return { ok: false, error: `AcoustID error: ${res.status}` }
       const json = await res.json() as {

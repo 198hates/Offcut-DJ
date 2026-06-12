@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -8,6 +8,7 @@ import { registerAudioHandlers } from './ipc/audio'
 import { registerProLinkHandlers } from './ipc/prolink'
 import { registerLineageHandlers } from './ipc/lineage'
 import { registerStemHandlers } from './ipc/stems'
+import { killAllSeparations } from './stems'
 import { loadNativeEngine, registerEngineHandlers } from './engine'
 import { warmModel } from './integrations/beat-analysis'
 import { startWatcher } from './integrations/watch-folder'
@@ -66,13 +67,15 @@ function setupAutoUpdater(): void {
     console.warn('[updater] check failed:', (err as Error)?.message ?? err)
   })
 
-  autoUpdater.on('update-available', () => {
-    ipcMain.emit('updater:update-available')
-  })
-
-  autoUpdater.on('update-downloaded', () => {
-    ipcMain.emit('updater:update-downloaded')
-  })
+  // Send to the renderer windows — `ipcMain.emit` only invokes main-process
+  // listeners, so these events used to vanish without reaching the UI.
+  const notifyRenderer = (channel: string): void => {
+    BrowserWindow.getAllWindows().forEach((w) => {
+      if (!w.isDestroyed()) w.webContents.send(channel)
+    })
+  }
+  autoUpdater.on('update-available',  () => notifyRenderer('updater:update-available'))
+  autoUpdater.on('update-downloaded', () => notifyRenderer('updater:update-downloaded'))
 }
 
 app.whenReady().then(() => {
@@ -104,4 +107,9 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  // Demucs separations run for minutes — never leave them orphaned.
+  killAllSeparations()
 })

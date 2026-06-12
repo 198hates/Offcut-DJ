@@ -57,6 +57,10 @@ function getEngine(): LineageEngine {
   ])
   if (_engine && _builtWithKey === key) return _engine
 
+  // Settings changed: release the previous engine's SQLite handle before
+  // replacing it (rebuilds used to leak one handle per settings change).
+  _engine?.close()
+
   _engine = createLineageEngine({
     discogsToken: token,
     acoustidKey,

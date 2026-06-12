@@ -19,7 +19,10 @@ export function resolveSmartPlaylist(db: Database.Database, rules: SmartRule[]):
     if (rule.field === 'customTag') {
       const key = rule.customTagKey?.trim() ?? ''
       if (!key) continue
-      const path = `$.${key}`
+      // Quote the JSON path key — a space or dot in a tag name produced an
+      // invalid path that threw at query time and took down loading of ALL
+      // playlists, not just this one.
+      const path = `$."${key.replace(/"/g, '""')}"`
       const val  = String(rule.value)
       switch (rule.op) {
         case 'is':

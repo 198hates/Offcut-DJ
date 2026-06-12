@@ -155,6 +155,13 @@ export function applySchema(db: import('better-sqlite3').Database): void {
     // Session history playlist type
     "ALTER TABLE playlists ADD COLUMN is_history INTEGER NOT NULL DEFAULT 0"
   ]) {
-    try { db.exec(stmt) } catch { /* column already exists */ }
+    try {
+      db.exec(stmt)
+    } catch (e) {
+      // Only "already exists" is expected — swallowing every error here let
+      // real migration failures (disk full, locked DB, syntax) pass silently
+      // and surface later as missing-column crashes.
+      if (!/duplicate column|already exists/i.test((e as Error).message)) throw e
+    }
   }
 }

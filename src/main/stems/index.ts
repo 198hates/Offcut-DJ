@@ -79,6 +79,18 @@ const inFlight = new Map<string, Promise<StemPaths>>()
  * Separate a track into four stems (cached). De-dupes concurrent requests for
  * the same track. `onProgress(percent 0..100, label)` streams Demucs progress.
  */
+/** Live Demucs children — killed on app quit so multi-minute separations
+ *  aren't orphaned eating CPU after the window closes. */
+const _liveProcs = new Set<import('child_process').ChildProcess>()
+
+/** Kill any in-flight separations (call from app 'before-quit'). */
+export function killAllSeparations(): void {
+  for (const p of _liveProcs) {
+    try { p.kill('SIGTERM') } catch { /* already gone */ }
+  }
+  _liveProcs.clear()
+}
+
 export function separateStems(
   trackId: string,
   filePath: string,
@@ -120,6 +132,8 @@ export function separateStems(
     // Point the bundled run at the shipped model weights (fully offline).
     const env = bundle ? { ...process.env, TORCH_HOME: bundle.torchHome } : process.env
     const proc = spawn(cmd, args, { cwd: outDir, env })
+    _liveProcs.add(proc)
+    proc.on('close', () => _liveProcs.delete(proc))
 
     let stderr = ''
     const handleChunk = (buf: Buffer): void => {

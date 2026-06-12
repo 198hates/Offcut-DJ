@@ -44,22 +44,32 @@ function normalise(s: string): string {
  * Look up a track in the local library by title + artist.
  * Returns `{ id }` on the first case-insensitive match, or `null`.
  */
+let _normRegistered = false
+
 function lookupInLibrary(title: string, artist: string): { id: string } | null {
   try {
     const db = getLibraryDb()
     const nt = normalise(title)
     const na = normalise(artist)
 
+    // Compare like-with-like: the DB side must apply the SAME normalisation —
+    // lower() alone left punctuation/whitespace in the row value, so
+    // normalised ProLink metadata almost never matched the library.
+    if (!_normRegistered) {
+      db.function('offcut_norm', { deterministic: true }, (s: unknown) => normalise(String(s ?? '')))
+      _normRegistered = true
+    }
+
     // Try exact normalised match first
     const rows = db.prepare(
-      'SELECT id, title, artist FROM tracks WHERE lower(title) = ? AND lower(artist) = ? LIMIT 5'
+      'SELECT id, title, artist FROM tracks WHERE offcut_norm(title) = ? AND offcut_norm(artist) = ? LIMIT 5'
     ).all(nt, na) as { id: string; title: string; artist: string }[]
 
     if (rows.length > 0) return { id: rows[0].id }
 
     // Fallback: just title match (useful when artist varies e.g. remix credits)
     const titleRows = db.prepare(
-      'SELECT id, title, artist FROM tracks WHERE lower(title) = ? LIMIT 3'
+      'SELECT id, title, artist FROM tracks WHERE offcut_norm(title) = ? LIMIT 3'
     ).all(nt) as { id: string; title: string; artist: string }[]
 
     // Only accept title-only match if the normalised artist is a substring
@@ -112,6 +122,9 @@ export function registerProLinkHandlers(): void {
       sessionState = 'error'
       pushToRenderer('prolink:error', message)
       pushSessionState()
+      // Tear the session down before dropping the reference — nulling it
+      // alone leaked the live network session (sockets stayed bound).
+      capture?.stop().catch(() => {})
       capture = null
     })
 
@@ -131,8 +144,10 @@ export function registerProLinkHandlers(): void {
       if (capture) {
         sessionState = 'active'
         pushSessionState()
+        return { ok: true }
       }
-      return { ok: true }
+      // onError already ran: report the failure instead of ok:true.
+      return { ok: false, error: 'ProLink services unavailable' }
     } catch (err) {
       sessionState = 'error'
       pushSessionState()
