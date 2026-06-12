@@ -16,7 +16,8 @@
     "engine:build": "cd native/audio-engine && cargo build --release && cd ../.. && node scripts/copy-engine.js",
     "engine:build:napi": "cd native/audio-engine && napi build --platform --release --output-dir ../../out/main",
     "engine:dev": "cd native/audio-engine && cargo build && cd ../.. && node scripts/copy-engine.js --debug",
-    "engine:check": "cd native/audio-engine && cargo check"
+    "engine:check": "cd native/audio-engine && cargo check",
+    "test": "vitest run"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",
@@ -52,7 +53,8 @@
     "react-dom": "^18.3.1",
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4",
-    "vite": "^5.4.2"
+    "vite": "^5.4.2",
+    "vitest": "^4.1.8"
   },
   "overrides": {
     "prolink-connect": {

@@ -347,14 +347,17 @@ export function addTrackToUsb(
   const { tracks } = parseExportPdb(original)
   const newId = tracks.reduce((m: number, t: UsbTrack) => Math.max(m, t.id), 0) + 1
 
+  const hex = newId.toString(16).toUpperCase().padStart(8, '0')
+
   // 1. Copy audio into /Contents/Offcut.
-  const fileName = basename(opts.audioFilePath)
-  const deviceFilePath = `/Contents/Offcut/${fileName}`
+  // Prefix with the hex track ID so two tracks with the same source filename
+  // don't overwrite each other (a CDJ would play the wrong audio otherwise).
+  const safeFileName = `${hex}_${basename(opts.audioFilePath)}`
+  const deviceFilePath = `/Contents/Offcut/${safeFileName}`
   mkdirSync(join(usbRoot, 'Contents', 'Offcut'), { recursive: true })
-  copyFileSync(opts.audioFilePath, join(usbRoot, 'Contents', 'Offcut', fileName))
+  copyFileSync(opts.audioFilePath, join(usbRoot, 'Contents', 'Offcut', safeFileName))
 
   // 2. Write the ANLZ .DAT.
-  const hex = newId.toString(16).toUpperCase().padStart(8, '0')
   const analyzePath = `/PIONEER/USBANLZ/OFCT/${hex}/ANLZ0000.DAT`
   mkdirSync(join(usbRoot, 'PIONEER', 'USBANLZ', 'OFCT', hex), { recursive: true })
   const beats: AnlzBeat[] = opts.beatgrid?.length
@@ -371,7 +374,7 @@ export function addTrackToUsb(
     id: newId,
     title: opts.title,
     filePath: deviceFilePath,
-    filename: fileName,
+    filename: safeFileName,
     analyzePath,
     bpm: opts.bpm,
     durationSec: opts.durationSec,
@@ -521,12 +524,11 @@ export function syncPlaylistToUsb(
       }
     }
 
-    const fileName = basename(t.audioFilePath)
-    const deviceFilePath = `/Contents/Offcut/${fileName}`
-    mkdirSync(join(usbRoot, 'Contents', 'Offcut'), { recursive: true })
-    copyFileSync(t.audioFilePath, join(usbRoot, 'Contents', 'Offcut', fileName))
-
     const hex = id.toString(16).toUpperCase().padStart(8, '0')
+    const safeFileName = `${hex}_${basename(t.audioFilePath)}`
+    const deviceFilePath = `/Contents/Offcut/${safeFileName}`
+    mkdirSync(join(usbRoot, 'Contents', 'Offcut'), { recursive: true })
+    copyFileSync(t.audioFilePath, join(usbRoot, 'Contents', 'Offcut', safeFileName))
     const analyzePath = `/PIONEER/USBANLZ/OFCT/${hex}/ANLZ0000.DAT`
     mkdirSync(join(usbRoot, 'PIONEER', 'USBANLZ', 'OFCT', hex), { recursive: true })
     const beats: AnlzBeat[] = t.beatgrid?.length
@@ -535,7 +537,7 @@ export function syncPlaylistToUsb(
     writeFileSync(join(usbRoot, analyzePath.replace(/^\//, '')), buildDatAnlz({ audioPath: deviceFilePath, beats }))
 
     buf = addTrackToExportPdb(buf, {
-      id, title: t.title, filePath: deviceFilePath, filename: fileName, analyzePath,
+      id, title: t.title, filePath: deviceFilePath, filename: safeFileName, analyzePath,
       bpm: t.bpm, durationSec: t.durationSec, bitrate: t.bitrate, year: t.year, fileSize, artistId
     })
     usbIndex.set(key, id)
@@ -543,7 +545,9 @@ export function syncPlaylistToUsb(
     added++
   }
 
-  if (!resolvedIds.length) throw new Error('No tracks could be synced')
+  if (!resolvedIds.length) {
+    return { pdbPath, backupPath, playlistId: 0, linked: 0, added: 0, skipped, updatedExisting: false, newEntries: 0 }
+  }
 
   // Incremental sync: if a playlist with this name already exists, add only the
   // tracks not already in it (Rekordbox-style update) instead of duplicating it.
