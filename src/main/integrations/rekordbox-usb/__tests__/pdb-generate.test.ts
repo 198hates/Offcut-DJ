@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   addArtistToExportPdb,
@@ -38,6 +38,8 @@ function buildExport(): Buffer {
 describe('export.pdb page-level validity', () => {
   it('no data page (rows > 0) is left at sequence 0', () => {
     const b = buildExport()
+    // Emit the artifact for offline structural diffing against a real stick.
+    if (process.env.PDB_DUMP) writeFileSync(process.env.PDB_DUMP, b)
     const offenders: number[] = []
     for (let i = 1; i < b.length / PAGE; i++) {
       const o = i * PAGE

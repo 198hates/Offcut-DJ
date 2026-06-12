@@ -35,15 +35,24 @@ const KEEP_VERBATIM = { has: (type) => !EMPTY_TYPES.has(type) }
 // An empty table in a real pdb is a single NON-DATA "index" page (flags 0x64,
 // 0 rows) — every table starts with one, and the players require it. (We used
 // to emit a 0x24 DATA page here, which a CDJ-2000NXS2 rejects → "NO DISK".)
+//
+// It must also match the exact "strange block" header a real first page carries
+// or the CDJ rejects the database ("rekordbox Database not found!"): free_size
+// and used_size both 0, transaction_row_count/index both 0x1fff, the 0x36 field
+// 1004, and a non-zero sequence. (Verified against a real stick — the tables we
+// copy verbatim, e.g. colors/columns, carry exactly these values.)
 function emptyPage(pageIndex, type, nextPage) {
   const p = Buffer.alloc(PAGE)
   p.writeUInt32LE(0, 0); p.writeUInt32LE(pageIndex >>> 0, 4); p.writeUInt32LE(type >>> 0, 8)
-  p.writeUInt32LE(nextPage >>> 0, 12); p.writeUInt32LE(0, 16); p.writeUInt32LE(0, 20)
+  p.writeUInt32LE(nextPage >>> 0, 12); p.writeUInt32LE(1, 16); p.writeUInt32LE(0, 20)
   p.writeUIntLE(0, 24, 3)        // num_row_offsets | num_rows = 0
   p.writeUInt8(0x64, 27)          // NON-DATA index page (bit 0x40 set), 0 rows
-  const cap = PAGE - HEADER - GROUP_STRIDE
-  p.writeUInt16LE(cap & 0xffff, 28) // free_size
-  p.writeUInt16LE(0, 30)            // used_size
+  p.writeUInt16LE(0, 28)          // free_size = 0 (real "strange block")
+  p.writeUInt16LE(0, 30)          // used_size = 0
+  p.writeUInt16LE(0x1fff, 32)     // transaction_row_count
+  p.writeUInt16LE(0x1fff, 34)     // transaction_row_index
+  p.writeUInt16LE(1004, 36)       // "1004 for strange blocks"
+  p.writeUInt16LE(0, 38)
   return p
 }
 
