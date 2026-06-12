@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { insertOrUpdateTrack } from '../../library/db'
 import { joinTraktorPath } from './path'
+import { traktorValueToCamelot } from '../key-notation'
 import type { Track, ImportResult, CuePoint } from '../../../shared/types'
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
@@ -61,7 +62,7 @@ export function importFromIntegration(db: Database.Database, nmlPath: string): I
         year: info['@_YEAR'] ? Number(info['@_YEAR']) : null,
         label: String(info['@_LABEL'] ?? ''),
         bpm: tempo['@_BPM'] ? Number(tempo['@_BPM']) : null,
-        key: traktorKeyToName(musicalKey['@_VALUE'] as number | undefined),
+        key: traktorValueToCamelot(musicalKey['@_VALUE'] != null ? Number(musicalKey['@_VALUE']) : null),
         durationSeconds: info['@_PLAYTIME'] ? Number(info['@_PLAYTIME']) : null,
         rating: ratingFromTraktor(info['@_RANKING'] as number | undefined),
         dateAdded: String(info['@_IMPORT_DATE'] ?? new Date().toISOString()),
@@ -170,15 +171,6 @@ function parseCuePoints(raw: unknown): CuePoint[] {
       label: String(cue['@_NAME'] ?? '')
     }
   })
-}
-
-function traktorKeyToName(value: number | undefined): string | null {
-  if (value === undefined) return null
-  const keys = [
-    '1d','8d','3d','10d','5d','12d','7d','2d','9d','4d','11d','6d',
-    '1m','8m','3m','10m','5m','12m','7m','2m','9m','4m','11m','6m'
-  ]
-  return keys[value] ?? null
 }
 
 function ratingFromTraktor(ranking: number | undefined): number {

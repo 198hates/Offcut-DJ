@@ -155,10 +155,16 @@ export function exportToIntegration(appDb: Database.Database, dbPath: string): i
       SELECT * FROM tracks WHERE json_extract(source_ids, '$."engine-dj"') IS NOT NULL
     `).all() as Record<string, unknown>[]
 
+    // NOTE: `key` is deliberately NOT written. The Engine key encoding
+    // (Camelot 1-24 vs chromatic 0-23) is unverified against a real m.db — see
+    // engineKeyToName/nameToEngineKey and scripts/inspect-engine-db.cjs.
+    // Writing a guessed value could silently corrupt the key of a track whose
+    // key originated from another source. We leave Engine's existing key value
+    // untouched until the mapping is confirmed, then restore `key = ?` here.
     const updateStmt = eng.prepare(`
       UPDATE Track SET
         title = ?, artist = ?, album = ?, genre = ?, comment = ?,
-        bpm = ?, key = ?, rating = ?
+        bpm = ?, rating = ?
       WHERE id = ?
     `)
 
@@ -169,7 +175,7 @@ export function exportToIntegration(appDb: Database.Database, dbPath: string): i
         if (!engId) continue
         updateStmt.run(
           row.title, row.artist, row.album, row.genre, row.comment,
-          row.bpm, nameToEngineKey(row.key as string | null),
+          row.bpm,
           starsToEngineRating(row.rating as number),
           engId
         )
@@ -207,7 +213,7 @@ function getCuePoints(eng: Database.Database, trackId: string): CuePoint[] {
   }
 }
 
-function sampleToMs(sample: number, sampleRate = 44100): number {
+export function sampleToMs(sample: number, sampleRate = 44100): number {
   return Math.round((sample / sampleRate) * 1000)
 }
 
@@ -217,7 +223,7 @@ function resolveEnginePath(p: string): string {
   return p.replace(/\\/g, '/')
 }
 
-function engineKeyToName(key: number | null): string | null {
+export function engineKeyToName(key: number | null): string | null {
   if (key == null || key === 0) return null
   // Engine DJ uses Camelot: 1-12 = 1A-12A (minor), 13-24 = 1B-12B (major)
   const minor = ['1A','2A','3A','4A','5A','6A','7A','8A','9A','10A','11A','12A']
@@ -227,7 +233,7 @@ function engineKeyToName(key: number | null): string | null {
   return null
 }
 
-function nameToEngineKey(name: string | null): number | null {
+export function nameToEngineKey(name: string | null): number | null {
   if (!name) return null
   const minor = ['1A','2A','3A','4A','5A','6A','7A','8A','9A','10A','11A','12A']
   const major = ['1B','2B','3B','4B','5B','6B','7B','8B','9B','10B','11B','12B']
@@ -238,16 +244,16 @@ function nameToEngineKey(name: string | null): number | null {
   return null
 }
 
-function engineRatingToStars(rating: number | null): number {
+export function engineRatingToStars(rating: number | null): number {
   if (!rating) return 0
   return Math.round((rating / 100) * 5)
 }
 
-function starsToEngineRating(stars: number): number {
+export function starsToEngineRating(stars: number): number {
   return Math.round((stars / 5) * 100)
 }
 
-function engineColorToHex(color: number | null): string {
+export function engineColorToHex(color: number | null): string {
   if (!color) return '#ff8c00'
   const r = (color >> 16) & 0xff
   const g = (color >> 8) & 0xff

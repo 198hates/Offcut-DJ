@@ -2,6 +2,7 @@ import { writeFileSync } from 'fs'
 import Database from 'better-sqlite3'
 import { rowToTrack } from '../../library/db'
 import { splitTraktorPath, traktorKey } from './path'
+import { camelotToTraktorValue } from '../key-notation'
 import type { Track, CuePoint, ExportResult } from '../../../shared/types'
 
 export function exportToIntegration(appDb: Database.Database, outputPath: string): ExportResult {
@@ -75,13 +76,13 @@ export function exportToIntegration(appDb: Database.Database, outputPath: string
 function trackToNml(track: Track, dateModified: string): string {
   const { volume, dir, file } = splitTraktorPath(track.filePath)
   const ranking = starsToTraktorRanking(track.rating)
-  const key = track.key ? nameToTraktorKey(track.key) : ''
+  const keyValue = track.key ? camelotToTraktorValue(track.key) : null
 
   const cueLines = track.cuePoints.map(cueToNml).join('\n')
   const tempoLine = track.bpm != null
     ? `    <TEMPO BPM="${track.bpm.toFixed(6)}" BPM_QUALITY="100"></TEMPO>`
     : ''
-  const keyLine = key !== '' ? `    <MUSICAL_KEY VALUE="${key}"></MUSICAL_KEY>` : ''
+  const keyLine = keyValue != null ? `    <MUSICAL_KEY VALUE="${keyValue}"></MUSICAL_KEY>` : ''
 
   return [
     `    <ENTRY MODIFIED_DATE="${dateModified}" MODIFIED_TIME="0" AUDIO_ID="" TITLE="${escapeXml(track.title)}" ARTIST="${escapeXml(track.artist)}">`,
@@ -109,16 +110,6 @@ function buildTraktorKey(track: Track): string {
 
 function starsToTraktorRanking(stars: number): number {
   return Math.round((stars / 5) * 255)
-}
-
-function nameToTraktorKey(key: string): number {
-  const keys: Record<string, number> = {
-    '1d': 0,'8d': 1,'3d': 2,'10d': 3,'5d': 4,'12d': 5,'7d': 6,
-    '2d': 7,'9d': 8,'4d': 9,'11d': 10,'6d': 11,
-    '1m': 12,'8m': 13,'3m': 14,'10m': 15,'5m': 16,'12m': 17,'7m': 18,
-    '2m': 19,'9m': 20,'4m': 21,'11m': 22,'6m': 23
-  }
-  return keys[key.toLowerCase()] ?? 0
 }
 
 function escapeXml(str: string): string {

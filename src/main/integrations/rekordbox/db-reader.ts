@@ -17,6 +17,7 @@ import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import SqlCipherDatabase from 'better-sqlite3-multiple-ciphers'
 import { rowToTrack, insertOrUpdateTrack } from '../../library/db'
+import { rbScaleNameToCamelot } from '../key-notation'
 import type { Track, CuePoint, ImportResult, ExportResult } from '../../../shared/types'
 
 export const RB_KEY = '402fd482c38817c35ffa8ffb8c7d93143b749e7d315df7a81732a1ff43608497'
@@ -120,7 +121,7 @@ export function importFromRekordboxDb(
           year: row.Year != null ? Number(row.Year) : null,
           label: String(row.LabelName ?? ''),
           bpm: row.BPM != null ? Number(row.BPM) / 100 : null,
-          key: rbKeyToName(row.Tonality as string | null),
+          key: rbScaleNameToCamelot(row.Tonality as string | null),
           durationSeconds: row.Length != null ? Number(row.Length) : null,
           rating: rbRatingToStars(row.Rating as number | null),
           dateAdded: String(row.StockDate ?? new Date().toISOString()),
@@ -329,13 +330,6 @@ function hexToRbColor(hex: string): number {
     '#b10dc9': 7, '#ff69b4': 8
   }
   return map[hex.toLowerCase()] ?? 1
-}
-
-function rbKeyToName(key: string | null): string | null {
-  if (!key) return null
-  // Rekordbox 6/7 stores key as a string like "C", "C#", "Am", etc.
-  // or as a numeric ID — return as-is if it's already a string
-  return key
 }
 
 function rbRatingToStars(rating: number | null): number {

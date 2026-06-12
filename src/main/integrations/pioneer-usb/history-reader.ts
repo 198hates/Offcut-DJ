@@ -19,6 +19,7 @@
 import { existsSync, readdirSync } from 'fs'
 import { join } from 'path'
 import Database from 'better-sqlite3'
+import { rbScaleNameToCamelot } from '../key-notation'
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -69,23 +70,8 @@ interface SongRow {
   Length:    number | null
 }
 
-// ── Key conversion (mirrors desktop db-reader.ts) ────────────────────────────
-
-const RB_KEY_NAMES: Record<string, string> = {
-  'Cmaj': '8B',  'C#maj': '3B', 'Dbmaj': '3B', 'Dmaj': '10B', 'D#maj': '5B',
-  'Ebmaj': '5B', 'Emaj': '12B','Fmaj': '7B',   'F#maj': '2B', 'Gbmaj': '2B',
-  'Gmaj': '9B',  'G#maj': '4B', 'Abmaj': '4B', 'Amaj': '11B', 'A#maj': '6B',
-  'Bbmaj': '6B', 'Bmaj': '1B',
-  'Cmin': '5A',  'C#min': '12A','Dbmin': '12A','Dmin': '7A',  'D#min': '2A',
-  'Ebmin': '2A', 'Emin': '9A', 'Fmin': '4A',   'F#min': '11A','Gbmin': '11A',
-  'Gmin': '6A',  'G#min': '1A', 'Abmin': '1A', 'Amin': '8A',  'A#min': '3A',
-  'Bbmin': '3A', 'Bmin': '10A',
-}
-
-function rbKeyToName(raw: string | null | undefined): string | null {
-  if (!raw) return null
-  return RB_KEY_NAMES[raw.trim()] ?? null
-}
+// Key conversion (Rekordbox ScaleName → Camelot) is shared with the desktop
+// db-reader — see ../key-notation.ts.
 
 // ── Locate the database ───────────────────────────────────────────────────────
 
@@ -207,7 +193,7 @@ export function readUsbHistory(
           title:           s.Title ?? '?',
           artist:          s.ArtistName ?? '',
           bpm:             s.BPM != null ? Number(s.BPM) / 100 : null,
-          key:             rbKeyToName(s.Tonality),
+          key:             rbScaleNameToCamelot(s.Tonality),
           durationSeconds: s.Length != null ? Number(s.Length) : null,
           position:        i,
           localTrackId,
