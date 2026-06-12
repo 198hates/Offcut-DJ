@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { insertOrUpdateTrack } from '../../library/db'
 import { parseSeratoTagsFromFile } from './geob'
+import { decodeSeratoUtf16BE, fromSeratoPath } from './path'
 import type { Track, ImportResult } from '../../../shared/types'
 
 export function importFromIntegration(appDb: Database.Database, seratoDir: string): ImportResult {
@@ -95,7 +96,7 @@ export function importFromIntegration(appDb: Database.Database, seratoDir: strin
   return result
 }
 
-function parseCrateFile(buf: Buffer): string[] {
+export function parseCrateFile(buf: Buffer): string[] {
   const paths: string[] = []
   let offset = 0
 
@@ -108,7 +109,7 @@ function parseCrateFile(buf: Buffer): string[] {
 
     if (tag === 'otrk') {
       const trackPath = parseTrackRecord(buf.subarray(offset, offset + length))
-      if (trackPath) paths.push(trackPath)
+      if (trackPath) paths.push(fromSeratoPath(trackPath))
     }
 
     offset += length
@@ -125,7 +126,8 @@ function parseTrackRecord(buf: Buffer): string | null {
     offset += 8
     if (offset + length > buf.length) break
     if (tag === 'ptrk') {
-      return buf.toString('utf16le', offset, offset + length)
+      // Serato stores ptrk as UTF-16BE, not LE.
+      return decodeSeratoUtf16BE(buf.subarray(offset, offset + length))
     }
     offset += length
   }

@@ -1,6 +1,7 @@
 import { writeFileSync } from 'fs'
 import Database from 'better-sqlite3'
 import { rowToTrack } from '../../library/db'
+import { splitTraktorPath, traktorKey } from './path'
 import type { Track, CuePoint, ExportResult } from '../../../shared/types'
 
 export function exportToIntegration(appDb: Database.Database, outputPath: string): ExportResult {
@@ -102,26 +103,8 @@ function cueToNml(cue: CuePoint): string {
   return `      <CUE_V2 NAME="${escapeXml(cue.label)}" DISPL_ORDER="0" TYPE="${type}" START="${start}" LEN="0.000000" REPEATS="-1" HOTCUE="${hotcue}" COLOR="#${color}"></CUE_V2>`
 }
 
-function splitTraktorPath(filePath: string): { volume: string; dir: string; file: string } {
-  if (process.platform === 'win32') {
-    const parts = filePath.replace(/\\/g, '/').split('/')
-    const volume = parts[0].replace(':', '') // e.g., "C"
-    const file = parts.pop() ?? ''
-    const dir = '/:' + parts.slice(1).join('/') + '/'
-    return { volume, dir, file }
-  }
-  // macOS/Linux: /Volumes/Drive/path/to/file.mp3
-  const parts = filePath.split('/')
-  const file = parts.pop() ?? ''
-  // Traktor uses volume name as the drive; for local files it's typically the disk name
-  const volume = parts[2] ?? '' // e.g., "Macintosh HD" or drive name
-  const dir = '/: ' + parts.slice(3).join('/') + '/'
-  return { volume, dir, file }
-}
-
 function buildTraktorKey(track: Track): string {
-  const { volume, dir, file } = splitTraktorPath(track.filePath)
-  return `${volume}${dir}${file}`
+  return traktorKey(splitTraktorPath(track.filePath))
 }
 
 function starsToTraktorRanking(stars: number): number {

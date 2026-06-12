@@ -2,16 +2,17 @@ import { writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
 import Database from 'better-sqlite3'
 import { rowToTrack } from '../../library/db'
+import { encodeSeratoUtf16BE, toSeratoPath } from './path'
 import type { Track, ExportResult } from '../../../shared/types'
 
 // Serato crate format: sequence of tagged records
 // tag (4 ASCII bytes) + length (4 bytes big-endian) + data
 //
-// vrsn: version string (UTF-16 LE)
+// vrsn: version string (UTF-16 BE)
 // otrk: track container (contains ptrk)
-// ptrk: track path (UTF-16 LE, relative to Music folder)
+// ptrk: track path (UTF-16 BE, relative to the volume root)
 
-const CRATE_VERSION = '1.0/Serato ScratchLive Crate\0'
+const CRATE_VERSION = '1.0/Serato ScratchLive Crate'
 
 export function exportToIntegration(appDb: Database.Database, seratoDir: string): ExportResult {
   const result: ExportResult = { tracksExported: 0, playlistsExported: 0, errors: [], cancelled: false }
@@ -62,13 +63,13 @@ export function exportToIntegration(appDb: Database.Database, seratoDir: string)
   return result
 }
 
-function buildCrateBuffer(tracks: Track[]): Buffer {
+export function buildCrateBuffer(tracks: Track[]): Buffer {
   const chunks: Buffer[] = []
 
-  chunks.push(makeRecord('vrsn', encodeUtf16(CRATE_VERSION)))
+  chunks.push(makeRecord('vrsn', encodeSeratoUtf16BE(CRATE_VERSION)))
 
   for (const track of tracks) {
-    const pathData = encodeUtf16(track.filePath)
+    const pathData = encodeSeratoUtf16BE(toSeratoPath(track.filePath))
     const ptrkRecord = makeRecord('ptrk', pathData)
     chunks.push(makeRecord('otrk', ptrkRecord))
   }
@@ -81,14 +82,6 @@ function makeRecord(tag: string, data: Buffer): Buffer {
   header.write(tag, 0, 'ascii')
   header.writeUInt32BE(data.length, 4)
   return Buffer.concat([header, data])
-}
-
-function encodeUtf16(str: string): Buffer {
-  const buf = Buffer.alloc(str.length * 2)
-  for (let i = 0; i < str.length; i++) {
-    buf.writeUInt16BE(str.charCodeAt(i), i * 2)
-  }
-  return buf
 }
 
 function sanitizeCrateName(name: string): string {

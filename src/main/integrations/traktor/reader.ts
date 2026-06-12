@@ -3,6 +3,7 @@ import { XMLParser } from 'fast-xml-parser'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { insertOrUpdateTrack } from '../../library/db'
+import { joinTraktorPath } from './path'
 import type { Track, ImportResult, CuePoint } from '../../../shared/types'
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
@@ -153,13 +154,7 @@ function importPlaylistNode(
 }
 
 function buildFilePath(loc: Record<string, string>): string {
-  const dir = (loc['@_DIR'] ?? '').replace(/\//g, '/').replace(/^\//, '')
-  const file = loc['@_FILE'] ?? ''
-  const volume = loc['@_VOLUME'] ?? ''
-  if (process.platform === 'darwin') {
-    return `/${volume}/${dir}${file}`.replace(/\/+/g, '/')
-  }
-  return `${volume}\\${dir.replace(/\//g, '\\')}${file}`
+  return joinTraktorPath(loc['@_VOLUME'] ?? '', loc['@_DIR'] ?? '', loc['@_FILE'] ?? '')
 }
 
 function parseCuePoints(raw: unknown): CuePoint[] {
