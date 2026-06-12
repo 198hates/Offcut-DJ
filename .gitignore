@@ -3,3 +3,9 @@ dist
 out
 .DS_Store
 *.local
+
+# Packaging inputs — fetched/built locally, far too large for git
+# (build/demucs-dist ~600MB, build/models/*.onnx; electron-builder reads them
+#  via extraResources at package time)
+build/
+*.tsbuildinfo
