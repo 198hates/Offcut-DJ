@@ -16,6 +16,11 @@ crate-type = ["cdylib"]
 napi        = { version = "2.16", features = ["napi4", "async"] }
 napi-derive = "2.16"
 
+# Async runtime. napi's "async" feature drives futures on a tokio runtime but
+# does not re-export the crate, so we depend on it directly for spawn_blocking
+# (used to decode files and rebuild output streams off the JS event loop).
+tokio       = { version = "1", features = ["rt", "rt-multi-thread"] }
+
 # Cross-platform audio I/O (CoreAudio/WASAPI/ALSA)
 cpal        = { version = "0.15", features = ["asio"] }
 
@@ -42,6 +47,8 @@ parking_lot = "0.12"
 
 [build-dependencies]
 napi-build = "2"
+# Compiles the vendored Signalsmith Stretch C++ wrapper into the addon.
+cc = "1"
 
 # ── Profile overrides ────────────────────────────────────────────────────────
 

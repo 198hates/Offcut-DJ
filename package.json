@@ -1,5 +1,5 @@
 {
-  "name": "crate",
+  "name": "offcut",
   "version": "0.1.0",
   "description": "Cross-platform DJ library manager — sync Rekordbox, Serato, Traktor, Apple Music and Engine DJ",
   "main": "out/main/index.js",
@@ -10,20 +10,22 @@
     "build": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "rebuild:sqlcipher": "node scripts/rebuild-sqlcipher.js",
-    "build:mac": "npm run build && electron-builder --mac --arm64",
-    "build:win": "npm run build && electron-builder --win",
-    "build:linux": "npm run build && electron-builder --linux",
-    "engine:build": "cd native/audio-engine && cargo build --release && cp target/release/libcrate_audio_engine.dylib ../../out/main/crate-audio-engine.node 2>/dev/null; cp target/release/crate_audio_engine.dll ../../out/main/crate-audio-engine.node 2>/dev/null; cp target/release/libcrate_audio_engine.so ../../out/main/crate-audio-engine.node 2>/dev/null; true",
+    "build:mac": "npm run build && npm run engine:build && electron-builder --mac --arm64",
+    "build:win": "npm run build && npm run engine:build && electron-builder --win",
+    "build:linux": "npm run build && npm run engine:build && electron-builder --linux",
+    "engine:build": "cd native/audio-engine && cargo build --release && cd ../.. && node scripts/copy-engine.js",
     "engine:build:napi": "cd native/audio-engine && napi build --platform --release --output-dir ../../out/main",
-    "engine:dev": "cd native/audio-engine && cargo build && cp target/debug/libcrate_audio_engine.dylib ../../out/main/crate-audio-engine.node 2>/dev/null; cp target/debug/crate_audio_engine.dll ../../out/main/crate-audio-engine.node 2>/dev/null; cp target/debug/libcrate_audio_engine.so ../../out/main/crate-audio-engine.node 2>/dev/null; true",
+    "engine:dev": "cd native/audio-engine && cargo build && cd ../.. && node scripts/copy-engine.js --debug",
     "engine:check": "cd native/audio-engine && cargo check"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",
     "better-sqlite3-multiple-ciphers": "^12.9.0",
+    "cytoscape": "^3.34.0",
     "electron-updater": "^6.3.0",
     "fast-xml-parser": "^4.4.1",
     "ffmpeg-static": "^5.3.0",
+    "kaitai-struct": "^0.9.0",
     "music-metadata": "^7.14.0",
     "onnxruntime-node": "^1.26.0",
     "prolink-connect": "^0.11.0",
@@ -36,6 +38,7 @@
     "@electron-toolkit/tsconfig": "^1.0.1",
     "@electron-toolkit/utils": "^3.0.0",
     "@types/better-sqlite3": "^7.6.11",
+    "@types/cytoscape": "^3.21.9",
     "@types/node": "^20.16.0",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
@@ -51,9 +54,14 @@
     "typescript": "^5.5.4",
     "vite": "^5.4.2"
   },
+  "overrides": {
+    "prolink-connect": {
+      "better-sqlite3": "$better-sqlite3"
+    }
+  },
   "build": {
-    "appId": "co.betweenthebridges.crate",
-    "productName": "Crate",
+    "appId": "co.betweenthebridges.offcut",
+    "productName": "Offcut",
     "copyright": "Copyright © 2026 Between the Bridges",
     "directories": {
       "buildResources": "resources",
@@ -62,14 +70,34 @@
     "files": [
       "out/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "build/demucs-dist/offcut-demucs",
+        "to": "offcut-demucs",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "build/models/beat_this.onnx",
+        "to": "models/beat_this.onnx"
+      },
+      {
+        "from": "src/main/integrations/rekordbox-usb/templates/empty-export.pdb",
+        "to": "rekordbox/empty-export.pdb"
+      },
+      {
+        "from": "native/audio-engine/crate-audio-engine.node",
+        "to": "crate-audio-engine.node"
+      }
+    ],
     "asarUnpack": [
       "**/node_modules/better-sqlite3/**/*.node",
       "**/node_modules/better-sqlite3-multiple-ciphers/**/*.node",
       "**/node_modules/onnxruntime-node/**/*.node",
       "**/node_modules/onnxruntime-node/bin/**",
       "**/node_modules/ffmpeg-static/ffmpeg",
-      "out/main/beat-analysis-worker.js",
-      "out/main/crate-audio-engine.node"
+      "out/main/beat-analysis-worker.js"
     ],
     "publish": {
       "provider": "github",
@@ -85,6 +113,12 @@
       "gatekeeperAssess": false,
       "entitlements": "resources/entitlements.mac.plist",
       "entitlementsInherit": "resources/entitlements.mac.plist",
+      "extendInfo": {
+        "NSDesktopFolderUsageDescription": "Offcut reads your music files to analyse and play them.",
+        "NSDocumentsFolderUsageDescription": "Offcut reads your music files to analyse and play them.",
+        "NSDownloadsFolderUsageDescription": "Offcut reads your music files to analyse and play them.",
+        "NSRemovableVolumesUsageDescription": "Offcut reads music files stored on external drives."
+      },
       "target": [
         {
           "target": "dmg",
@@ -128,7 +162,7 @@
       "target": [
         "AppImage"
       ],
-      "icon": "resources/icon.icns",
+      "icon": "resources/icon.png",
       "category": "Audio",
       "artifactName": "${productName}-${version}-linux-${arch}.AppImage"
     }

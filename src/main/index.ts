@@ -6,10 +6,13 @@ import { registerLibraryHandlers } from './ipc/library'
 import { registerSettingsHandlers } from './ipc/settings'
 import { registerAudioHandlers } from './ipc/audio'
 import { registerProLinkHandlers } from './ipc/prolink'
+import { registerLineageHandlers } from './ipc/lineage'
+import { registerStemHandlers } from './ipc/stems'
 import { loadNativeEngine, registerEngineHandlers } from './engine'
 import { warmModel } from './integrations/beat-analysis'
 import { startWatcher } from './integrations/watch-folder'
 import { loadSettings, saveSettings } from './settings'
+import { migrateUserDataFromCrate } from './migrate-userdata'
 
 function createWindow(): void {
   const settings = loadSettings()
@@ -57,7 +60,11 @@ function createWindow(): void {
 function setupAutoUpdater(): void {
   if (is.dev) return
 
-  autoUpdater.checkForUpdatesAndNotify()
+  // Non-fatal: unsigned/--dir builds have no app-update.yml, and offline
+  // launches shouldn't surface an unhandled rejection.
+  autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+    console.warn('[updater] check failed:', (err as Error)?.message ?? err)
+  })
 
   autoUpdater.on('update-available', () => {
     ipcMain.emit('updater:update-available')
@@ -69,7 +76,9 @@ function setupAutoUpdater(): void {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('co.betweenthebridges.crate')
+  // One-time: carry library/settings over from the old "Crate" data folder.
+  migrateUserDataFromCrate()
+  electronApp.setAppUserModelId('co.betweenthebridges.offcut')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -79,6 +88,8 @@ app.whenReady().then(() => {
   registerSettingsHandlers()
   registerAudioHandlers()
   registerProLinkHandlers()
+  registerLineageHandlers()
+  registerStemHandlers()
   registerEngineHandlers()
   loadNativeEngine()    // non-fatal: logs warning if .node not compiled yet
   setupAutoUpdater()

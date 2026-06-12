@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface } from '../shared/types'
+import type { Track, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport } from '../shared/types'
 
 const api = {
   library: {
@@ -105,6 +105,59 @@ const api = {
     readUsbHistory: (usbRoot: string) =>
       ipcRenderer.invoke('library:readUsbHistory', usbRoot)
   },
+  rekordboxUsb: {
+    /** Volume roots of any mounted prepared Rekordbox USBs. */
+    find: (): Promise<string[]> => ipcRenderer.invoke('rekordboxUsb:find'),
+    browse: (): Promise<string | null> => ipcRenderer.invoke('rekordboxUsb:browse'),
+    read: (usbRoot: string): Promise<UsbExport | { error: string }> =>
+      ipcRenderer.invoke('rekordboxUsb:read', usbRoot),
+    listVolumes: (): Promise<{ root: string; name: string; hasRekordbox: boolean }[]> =>
+      ipcRenderer.invoke('rekordboxUsb:listVolumes'),
+    initialize: (usbRoot: string): Promise<{ pdbPath: string; created: boolean } | { error: string }> =>
+      ipcRenderer.invoke('rekordboxUsb:initialize', usbRoot),
+    exists: (usbRoot: string): Promise<boolean> => ipcRenderer.invoke('rekordboxUsb:exists', usbRoot),
+    importBackup: (
+      backupRoot: string,
+      includeAnalysis = true
+    ): Promise<{ tracksImported: number; playlistsImported: number; errors: string[] } | { error: string }> =>
+      ipcRenderer.invoke('rekordboxUsb:importBackup', backupRoot, includeAnalysis),
+    onImportProgress: (cb: (p: { phase: 'tracks' | 'playlists'; current: number; total: number }) => void): (() => void) => {
+      const h = (_e: unknown, p: Parameters<typeof cb>[0]): void => cb(p)
+      ipcRenderer.on('rekordboxUsb:importProgress', h)
+      return () => ipcRenderer.removeListener('rekordboxUsb:importProgress', h)
+    },
+    eject: (usbRoot: string): Promise<{ ejected: true } | { error: string }> =>
+      ipcRenderer.invoke('rekordboxUsb:eject', usbRoot),
+    onVolumesChanged: (cb: () => void): (() => void) => {
+      const h = (): void => cb()
+      ipcRenderer.on('rekordboxUsb:volumesChanged', h)
+      return () => ipcRenderer.removeListener('rekordboxUsb:volumesChanged', h)
+    },
+    writePlaylist: (
+      usbRoot: string,
+      name: string,
+      trackIds: number[]
+    ): Promise<{ pdbPath: string; backupPath: string; playlistId: number; entryCount: number } | { error: string }> =>
+      ipcRenderer.invoke('rekordboxUsb:writePlaylist', usbRoot, name, trackIds),
+    syncPlaylists: (
+      usbRoot: string,
+      playlists: {
+        name: string
+        tracks: {
+          artist: string; title: string; audioFilePath: string; bpm: number; durationSec: number
+          beatgrid?: import('../shared/types').BeatgridMarker[]; bitrate?: number; year?: number
+        }[]
+      }[]
+    ): Promise<
+      { backupPath: string; totalAdded: number; totalLinked: number; playlists: { name: string; linked: number; added: number; newEntries: number; updatedExisting: boolean; skipped: string[] }[] }
+      | { error: string }
+    > => ipcRenderer.invoke('rekordboxUsb:syncPlaylists', usbRoot, playlists),
+    onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy' }) => void): (() => void) => {
+      const h = (_e: unknown, p: Parameters<typeof cb>[0]): void => cb(p)
+      ipcRenderer.on('rekordboxUsb:syncProgress', h)
+      return () => ipcRenderer.removeListener('rekordboxUsb:syncProgress', h)
+    }
+  },
   audio: {
     readFile: (filePath: string): Promise<ArrayBuffer> =>
       ipcRenderer.invoke('audio:readFile', filePath),
@@ -134,6 +187,8 @@ const api = {
     play:  (deckId: string, fromMs?: number) => ipcRenderer.send('engine:play', deckId, fromMs),
     pause: (deckId: string)                  => ipcRenderer.send('engine:pause', deckId),
     seek:  (deckId: string, ms: number)      => ipcRenderer.send('engine:seek', deckId, ms),
+    scrubBegin: (deckId: string) => ipcRenderer.send('engine:scrubBegin', deckId),
+    scrubEnd:   (deckId: string) => ipcRenderer.send('engine:scrubEnd', deckId),
 
     // ── Settings ───────────────────────────────────────────────────────────
     setVolume:    (deckId: string, v: number)        => ipcRenderer.send('engine:setVolume', deckId, v),
@@ -143,6 +198,13 @@ const api = {
     setStemGain:  (deckId: string, kind: string, db: number) => ipcRenderer.send('engine:setStemGain', deckId, kind, db),
     setStemMuted: (deckId: string, kind: string, muted: boolean) => ipcRenderer.send('engine:setStemMuted', deckId, kind, muted),
     setStemSoloed:(deckId: string, kind: string, soloed: boolean) => ipcRenderer.send('engine:setStemSoloed', deckId, kind, soloed),
+    loadStems:    (deckId: string, paths: Record<string, string>): Promise<void> => ipcRenderer.invoke('engine:loadStems', deckId, paths),
+    unloadStems:  (deckId: string) => ipcRenderer.send('engine:unloadStems', deckId),
+    hasStems:     (deckId: string): Promise<boolean> => ipcRenderer.invoke('engine:hasStems', deckId),
+    syncTo:       (deckId: string, masterDeckId: string, ratio: number, phaseSecs: number) => ipcRenderer.send('engine:syncTo', deckId, masterDeckId, ratio, phaseSecs),
+    updateSync:   (deckId: string, ratio: number, phaseSecs: number) => ipcRenderer.send('engine:updateSync', deckId, ratio, phaseSecs),
+    clearSync:    (deckId: string) => ipcRenderer.send('engine:clearSync', deckId),
+    isSynced:     (deckId: string): Promise<boolean> => ipcRenderer.invoke('engine:isSynced', deckId),
 
     // ── Loop ───────────────────────────────────────────────────────────────
     setLoop:   (deckId: string, startMs: number, endMs: number) => ipcRenderer.send('engine:setLoop', deckId, startMs, endMs),
@@ -151,6 +213,11 @@ const api = {
     // ── Output ─────────────────────────────────────────────────────────────
     setOutputDevice: (deckId: string, deviceId: string): Promise<void> =>
       ipcRenderer.invoke('engine:setOutputDevice', deckId, deviceId),
+
+    // ── Master-bus recording ────────────────────────────────────────────────
+    recordStart: (): Promise<string> => ipcRenderer.invoke('engine:recordStart'),
+    recordStop:  (): Promise<{ path: string; seconds: number }> =>
+      ipcRenderer.invoke('engine:recordStop'),
 
     // ── Polled getters ──────────────────────────────────────────────────────
     getTime:  (deckId: string): Promise<number> => ipcRenderer.invoke('engine:getTime', deckId),
@@ -212,6 +279,52 @@ const api = {
     },
     importUnownedTrack: (capturedId: string): Promise<{ ok: boolean; localTrackId?: string; error?: string }> =>
       ipcRenderer.invoke('prolink:importUnownedTrack', capturedId),
+  },
+  lineage: {
+    status: (): Promise<LineageStatus> => ipcRenderer.invoke('lineage:status'),
+    enrich: (input: EnrichInput): Promise<Seed | null> =>
+      ipcRenderer.invoke('lineage:enrich', input),
+    searchSeeds: (input: { artist?: string; title?: string }): Promise<SeedCandidate[]> =>
+      ipcRenderer.invoke('lineage:searchSeeds', input),
+    discover: (seed: Seed, opts?: DiscoverOptions): Promise<DiscoverResult> =>
+      ipcRenderer.invoke('lineage:discover', seed, opts),
+    onProgress: (cb: (p: DiscoverProgress) => void): (() => void) => {
+      const handler = (_e: unknown, p: DiscoverProgress): void => cb(p)
+      ipcRenderer.on('lineage:progress', handler)
+      return () => ipcRenderer.removeListener('lineage:progress', handler)
+    },
+    identify: (input: { filePath?: string; artist?: string; title?: string }): Promise<IdentityResult | null> =>
+      ipcRenderer.invoke('lineage:identify', input),
+    preview: (track: LibraryTrackRef): Promise<PreviewResult> =>
+      ipcRenderer.invoke('lineage:preview', track),
+    bandcampPreview: (track: LibraryTrackRef): Promise<BandcampEmbed | null> =>
+      ipcRenderer.invoke('lineage:bandcampPreview', track),
+    bandcampEmbed: (url: string): Promise<BandcampEmbed | null> =>
+      ipcRenderer.invoke('lineage:bandcampEmbed', url),
+    listNew: (): Promise<StoredCandidate[]> => ipcRenderer.invoke('lineage:listNew'),
+    listSaved: (): Promise<StoredCandidate[]> => ipcRenderer.invoke('lineage:listSaved'),
+    save: (key: string): Promise<void> => ipcRenderer.invoke('lineage:save', key),
+    dismiss: (key: string): Promise<void> => ipcRenderer.invoke('lineage:dismiss', key),
+    loadRekordbox: (xmlPath: string): Promise<void> =>
+      ipcRenderer.invoke('lineage:loadRekordbox', xmlPath),
+    loadSerato: (cratePath: string): Promise<string[]> =>
+      ipcRenderer.invoke('lineage:loadSerato', cratePath),
+    reloadLibrary: (): Promise<boolean> => ipcRenderer.invoke('lineage:reloadLibrary'),
+    exportCrate: (opts?: LineageExportOptions): Promise<LineageExportResult> =>
+      ipcRenderer.invoke('lineage:exportCrate', opts)
+  },
+  stems: {
+    status: (): Promise<StemsStatus> => ipcRenderer.invoke('stems:status'),
+    cached: (trackId: string): Promise<StemPaths | null> =>
+      ipcRenderer.invoke('stems:cached', trackId),
+    separate: (trackId: string, filePath: string): Promise<StemSeparateResult> =>
+      ipcRenderer.invoke('stems:separate', trackId, filePath),
+    clear: (trackId: string): Promise<boolean> => ipcRenderer.invoke('stems:clear', trackId),
+    onProgress: (cb: (p: StemProgress) => void): (() => void) => {
+      const handler = (_e: unknown, p: StemProgress): void => cb(p)
+      ipcRenderer.on('stems:progress', handler)
+      return () => ipcRenderer.removeListener('stems:progress', handler)
+    }
   }
 }
 

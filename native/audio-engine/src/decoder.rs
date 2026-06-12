@@ -14,7 +14,6 @@ use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
-use symphonia::core::conv::IntoSample;
 
 use crate::deck::PcmBuffer;
 
@@ -31,13 +30,12 @@ pub fn decode_file(path: &Path) -> Result<PcmBuffer, String> {
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
+    // enable_gapless trims MP3/AAC encoder delay + padding. Without it every
+    // decoded position carries a ~26 ms lead-in, systematically misaligning
+    // beatgrids/cues against what Rekordbox/Serato show for the same file.
+    let fmt_opts = FormatOptions { enable_gapless: true, ..Default::default() };
     let probed = symphonia::default::get_probe()
-        .format(
-            &hint,
-            mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
-        )
+        .format(&hint, mss, &fmt_opts, &MetadataOptions::default())
         .map_err(|e| format!("Probe failed for {:?}: {}", path, e))?;
 
     let mut format = probed.format;
@@ -51,7 +49,9 @@ pub fn decode_file(path: &Path) -> Result<PcmBuffer, String> {
 
     let track_id   = track.id;
     let sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
-    let channels   = track.codec_params.channels.map(|c| c.count()).unwrap_or(2);
+    // Channel count is taken from the first decoded buffer's spec below, not the
+    // (sometimes-absent) codec params, so this header hint is unused.
+    let _channels  = track.codec_params.channels.map(|c| c.count()).unwrap_or(2);
 
     // Create the decoder
     let mut decoder = symphonia::default::get_codecs()
@@ -206,7 +206,7 @@ pub fn compute_band_peaks(pcm: &PcmBuffer, buckets: usize) -> BandPeaks {
     }
 
     // Normalise each band 0–1
-    fn normalise(v: &mut Vec<f32>) {
+    fn normalise(v: &mut [f32]) {
         let max = v.iter().cloned().fold(0.0f32, f32::max);
         if max > 0.0 { for s in v.iter_mut() { *s /= max; } }
     }

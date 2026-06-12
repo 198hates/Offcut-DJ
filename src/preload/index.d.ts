@@ -3,6 +3,9 @@ import type {
   Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId,
   AppSettings, SmartRule, RunningOrder, EditLineage, CutHistory,
   PlayerStatus, CapturedTrack, ProLinkNetworkIface, ProLinkSessionState,
+  EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed,
+  StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef,
+  StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, BeatgridMarker,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -79,6 +82,28 @@ declare global {
         browseForUsb: () => Promise<string | null>
         readUsbHistory: (usbRoot: string) => Promise<UsbPlayedSet[]>
       }
+      rekordboxUsb: {
+        find: () => Promise<string[]>
+        browse: () => Promise<string | null>
+        read: (usbRoot: string) => Promise<UsbExport | { error: string }>
+        listVolumes: () => Promise<{ root: string; name: string; hasRekordbox: boolean }[]>
+        initialize: (usbRoot: string) => Promise<{ pdbPath: string; created: boolean } | { error: string }>
+        exists: (usbRoot: string) => Promise<boolean>
+        importBackup: (backupRoot: string, includeAnalysis?: boolean) => Promise<{ tracksImported: number; playlistsImported: number; errors: string[] } | { error: string }>
+        onImportProgress: (cb: (p: { phase: 'tracks' | 'playlists'; current: number; total: number }) => void) => () => void
+        eject: (usbRoot: string) => Promise<{ ejected: true } | { error: string }>
+        onVolumesChanged: (cb: () => void) => () => void
+        writePlaylist: (usbRoot: string, name: string, trackIds: number[]) => Promise<
+          { pdbPath: string; backupPath: string; playlistId: number; entryCount: number } | { error: string }
+        >
+        syncPlaylists: (
+          usbRoot: string,
+          playlists: { name: string; tracks: { artist: string; title: string; audioFilePath: string; bpm: number; durationSec: number; beatgrid?: BeatgridMarker[]; bitrate?: number; year?: number }[] }[]
+        ) => Promise<
+          { backupPath: string; totalAdded: number; totalLinked: number; playlists: { name: string; linked: number; added: number; newEntries: number; updatedExisting: boolean; skipped: string[] }[] } | { error: string }
+        >
+        onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy' }) => void) => () => void
+      }
       audio: {
         readFile: (filePath: string) => Promise<ArrayBuffer>
         readTags: (filePath: string) => Promise<{
@@ -107,6 +132,34 @@ declare global {
         onTrackUpdated: (cb: (_e: unknown, track: CapturedTrack) => void) => () => void
         importUnownedTrack: (capturedId: string) => Promise<{ ok: boolean; localTrackId?: string; error?: string }>
       }
+      /** Lineage — library expansion / crate-digging engine bridge. */
+      lineage: {
+        status: () => Promise<LineageStatus>
+        enrich: (input: EnrichInput) => Promise<Seed | null>
+        searchSeeds: (input: { artist?: string; title?: string }) => Promise<SeedCandidate[]>
+        discover: (seed: Seed, opts?: DiscoverOptions) => Promise<DiscoverResult>
+        onProgress: (cb: (p: DiscoverProgress) => void) => () => void
+        identify: (input: { filePath?: string; artist?: string; title?: string }) => Promise<IdentityResult | null>
+        preview: (track: LibraryTrackRef) => Promise<PreviewResult>
+        bandcampPreview: (track: LibraryTrackRef) => Promise<BandcampEmbed | null>
+        bandcampEmbed: (url: string) => Promise<BandcampEmbed | null>
+        listNew: () => Promise<StoredCandidate[]>
+        listSaved: () => Promise<StoredCandidate[]>
+        save: (key: string) => Promise<void>
+        dismiss: (key: string) => Promise<void>
+        loadRekordbox: (xmlPath: string) => Promise<void>
+        loadSerato: (cratePath: string) => Promise<string[]>
+        reloadLibrary: () => Promise<boolean>
+        exportCrate: (opts?: LineageExportOptions) => Promise<LineageExportResult>
+      }
+      /** Stem separation (Demucs) bridge. */
+      stems: {
+        status: () => Promise<StemsStatus>
+        cached: (trackId: string) => Promise<StemPaths | null>
+        separate: (trackId: string, filePath: string) => Promise<StemSeparateResult>
+        clear: (trackId: string) => Promise<boolean>
+        onProgress: (cb: (p: StemProgress) => void) => () => void
+      }
       /** Native Rust audio engine IPC bridge (id·2026·009). */
       engine: {
         isAvailable: () => Promise<boolean>
@@ -124,6 +177,8 @@ declare global {
         play:  (deckId: string, fromMs?: number) => void
         pause: (deckId: string) => void
         seek:  (deckId: string, ms: number) => void
+        scrubBegin: (deckId: string) => void
+        scrubEnd:   (deckId: string) => void
         // Settings
         setVolume:    (deckId: string, v: number) => void
         setRate:      (deckId: string, r: number) => void
@@ -132,11 +187,21 @@ declare global {
         setStemGain:  (deckId: string, kind: string, db: number) => void
         setStemMuted: (deckId: string, kind: string, muted: boolean) => void
         setStemSoloed:(deckId: string, kind: string, soloed: boolean) => void
+        loadStems:    (deckId: string, paths: Record<string, string>) => Promise<void>
+        unloadStems:  (deckId: string) => void
+        hasStems:     (deckId: string) => Promise<boolean>
+        syncTo:       (deckId: string, masterDeckId: string, ratio: number, phaseSecs: number) => void
+        updateSync:   (deckId: string, ratio: number, phaseSecs: number) => void
+        clearSync:    (deckId: string) => void
+        isSynced:     (deckId: string) => Promise<boolean>
         // Loop
         setLoop:   (deckId: string, startMs: number, endMs: number) => void
         clearLoop: (deckId: string) => void
         // Output
         setOutputDevice: (deckId: string, deviceId: string) => Promise<void>
+        // Master-bus recording (native engine)
+        recordStart: () => Promise<string>
+        recordStop: () => Promise<{ path: string; seconds: number }>
         // Polled getters
         getTime:  (deckId: string) => Promise<number>
         getLevel: (deckId: string) => Promise<number>
