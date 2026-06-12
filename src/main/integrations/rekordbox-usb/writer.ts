@@ -60,13 +60,16 @@ function playlistEntryRow(o: { entryIndex: number; trackId: number; playlistId: 
   return b
 }
 
-function buildPage(o: { pageIndex: number; type: number; nextPage: number; rows: Buffer[] }): Buffer {
+function buildPage(o: { pageIndex: number; type: number; nextPage: number; rows: Buffer[]; sequence: number }): Buffer {
   const page = Buffer.alloc(PAGE)
   page.writeUInt32LE(0, 0)
   page.writeUInt32LE(o.pageIndex >>> 0, 4)
   page.writeUInt32LE(o.type >>> 0, 8)
   page.writeUInt32LE(o.nextPage >>> 0, 12)
-  page.writeUInt32LE(0, 16)
+  // Edit sequence. Real Rekordbox NEVER leaves a data page (rows > 0) at
+  // sequence 0 — a CDJ validates this and rejects the whole database
+  // ("rekordbox Database not found!") if a row-bearing page has sequence 0.
+  page.writeUInt32LE(o.sequence >>> 0, 16)
   page.writeUInt32LE(0, 20)
 
   const n = o.rows.length
@@ -96,8 +99,23 @@ function buildPage(o: { pageIndex: number; type: number; nextPage: number; rows:
   const capacity = PAGE - HEADER - numGroups * GROUP_STRIDE
   page.writeUInt16LE(Math.max(0, capacity - heap) & 0xffff, 28)
   page.writeUInt16LE(heap & 0xffff, 30)
+  // Transaction state of a cleanly-written page: all n rows touched from index 0
+  // (matches a real Rekordbox data page; zeros here look "never written").
+  page.writeUInt16LE(n & 0xffff, 32)  // transaction_row_count
+  page.writeUInt16LE(0, 34)           // transaction_row_index
   return page
 }
+
+// Header field offsets.
+const HDR_SEQUENCE_OFF = 20
+/** Read the db edit sequence, then advance the header's "next" sequence by one. */
+function nextSequence(buf: Buffer): number {
+  const seq = buf.readUInt32LE(HDR_SEQUENCE_OFF)
+  buf.writeUInt32LE((seq + 1) >>> 0, HDR_SEQUENCE_OFF)
+  return seq
+}
+/** `empty_candidate` — the page Rekordbox would allocate next for this table. */
+const setTableEmptyCandidate = (buf: Buffer, off: number, v: number): void => { buf.writeUInt32LE(v >>> 0, off + 4) }
 
 const TABLES_OFFSET = 28
 const TABLE_SIZE = 16
@@ -156,15 +174,19 @@ export function addPlaylistToExportPdb(input: Buffer, opts: AddPlaylistOptions):
   })
 
   const out = Buffer.concat([buf, Buffer.alloc(newPages.length * PAGE)])
-  for (const p of newPages) buildPage({ pageIndex: p.index, type: p.type, nextPage: 0xffffffff, rows: p.rows }).copy(out, p.index * PAGE)
+  const seq = nextSequence(out)
+  for (const p of newPages) buildPage({ pageIndex: p.index, type: p.type, nextPage: 0xffffffff, rows: p.rows, sequence: seq }).copy(out, p.index * PAGE)
 
   if (entryPageIndices.length) {
     setPageNext(out, entriesLast, entryPageIndices[0])
     for (let i = 0; i < entryPageIndices.length - 1; i++) setPageNext(out, entryPageIndices[i], entryPageIndices[i + 1])
-    setTableLastPage(out, entOff, entryPageIndices[entryPageIndices.length - 1])
+    const entLast = entryPageIndices[entryPageIndices.length - 1]
+    setTableLastPage(out, entOff, entLast)
+    setTableEmptyCandidate(out, entOff, entLast + 1)
   }
   setPageNext(out, treeLast, treeIdx)
   setTableLastPage(out, treeOff, treeIdx)
+  setTableEmptyCandidate(out, treeOff, treeIdx + 1)
   out.writeUInt32LE(out.length / PAGE, 12) // next_unused_page
 
   return out
@@ -183,6 +205,7 @@ export function addEntriesToExportPdb(
   const entOff = findTable(buf, numTables, PT.PLAYLIST_ENTRIES)
   if (entOff < 0) throw new Error('playlist_entries table not found')
 
+  const seq = buf.readUInt32LE(HDR_SEQUENCE_OFF)
   let nextIndex = buf.length / PAGE
   const pageIndices: number[] = []
   const pages: Buffer[] = []
@@ -195,6 +218,7 @@ export function addEntriesToExportPdb(
         pageIndex: idx,
         type: PT.PLAYLIST_ENTRIES,
         nextPage: 0xffffffff,
+        sequence: seq,
         rows: chunk.map((tid, j) =>
           playlistEntryRow({ entryIndex: startIndex + i + j + 1, trackId: tid, playlistId })
         )
@@ -202,10 +226,13 @@ export function addEntriesToExportPdb(
     )
   }
   const out = Buffer.concat([buf, ...pages])
+  nextSequence(out) // advance the header's "next" sequence past the pages we wrote
   const oldLast = tableLastPage(out, entOff)
   setPageNext(out, oldLast, pageIndices[0])
   for (let i = 0; i < pageIndices.length - 1; i++) setPageNext(out, pageIndices[i], pageIndices[i + 1])
-  setTableLastPage(out, entOff, pageIndices[pageIndices.length - 1])
+  const entLast = pageIndices[pageIndices.length - 1]
+  setTableLastPage(out, entOff, entLast)
+  setTableEmptyCandidate(out, entOff, entLast + 1)
   out.writeUInt32LE(out.length / PAGE, 12)
   return out
 }
@@ -282,12 +309,15 @@ export function addArtistToExportPdb(input: Buffer, id: number, name: string): B
   const tOff = findTable(buf, numTables, PT.ARTISTS)
   if (tOff < 0) throw new Error('artists table not found')
   const row = artistRowBuf(id, name)
+  const seq = buf.readUInt32LE(HDR_SEQUENCE_OFF)
   const newIdx = buf.length / PAGE
-  const page = buildPage({ pageIndex: newIdx, type: PT.ARTISTS, nextPage: 0xffffffff, rows: [row] })
+  const page = buildPage({ pageIndex: newIdx, type: PT.ARTISTS, nextPage: 0xffffffff, rows: [row], sequence: seq })
   const out = Buffer.concat([buf, page])
+  nextSequence(out)
   const oldLast = tableLastPage(out, tOff)
   setPageNext(out, oldLast, newIdx)
   setTableLastPage(out, tOff, newIdx)
+  setTableEmptyCandidate(out, tOff, newIdx + 1)
   out.writeUInt32LE(out.length / PAGE, 12)
   return out
 }
@@ -300,12 +330,15 @@ export function addTrackToExportPdb(input: Buffer, fields: NewTrackFields): Buff
   if (tOff < 0) throw new Error('tracks table not found')
   const row = trackRowBuf(fields)
   if (HEADER + row.length + GROUP_STRIDE > PAGE) throw new Error('track row too large for one page')
+  const seq = buf.readUInt32LE(HDR_SEQUENCE_OFF)
   const newIdx = buf.length / PAGE
-  const page = buildPage({ pageIndex: newIdx, type: PT.TRACKS, nextPage: 0xffffffff, rows: [row] })
+  const page = buildPage({ pageIndex: newIdx, type: PT.TRACKS, nextPage: 0xffffffff, rows: [row], sequence: seq })
   const out = Buffer.concat([buf, page])
+  nextSequence(out)
   const oldLast = tableLastPage(out, tOff)
   setPageNext(out, oldLast, newIdx)
   setTableLastPage(out, tOff, newIdx)
+  setTableEmptyCandidate(out, tOff, newIdx + 1)
   out.writeUInt32LE(out.length / PAGE, 12)
   return out
 }
