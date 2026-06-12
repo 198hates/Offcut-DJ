@@ -16,10 +16,10 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { keyBlipColor } from '../../components/CamelotWheel'
+import { hashHue } from '../../lib/format'
 import { TrackDetail } from '../../components/TrackDetail'
 import { useArtwork } from '../../hooks/useArtwork'
-// deck stores reserved for future "load to deck" from Compass
-// import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
+import { useTrackMenuContext } from '../../hooks/useTrackMenu'
 import type { Track } from '@shared/types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -55,16 +55,9 @@ function axisLabel(axis: XAxis | YAxis): string {
   return { danceability: 'Danceability', bpm: 'BPM', mood: 'Mood', energy: 'Energy' }[axis]
 }
 
-/** Deterministic hue from a string for genre colouring */
-function strHue(s: string): number {
-  let h = 0
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xffff
-  return h % 360
-}
-
 function genreColor(genre: string): string {
   if (!genre) return '#8A8474'
-  return `hsl(${strHue(genre)}, 52%, 52%)`
+  return `hsl(${hashHue(genre)}, 52%, 52%)`
 }
 
 /** Ray-cast point-in-polygon test */
@@ -117,6 +110,7 @@ export function CompassPage(): JSX.Element {
   const [hoverId,    setHoverId]    = useState<string | null>(null)
   const [hoverPos,   setHoverPos]   = useState<{ x: number; y: number } | null>(null)
   const [lassoIds,   setLassoIds]   = useState<Set<string>>(new Set())
+  const openTrackMenu = useTrackMenuContext()
 
   // ── Filters ─────────────────────────────────────────────────────────────────
   const [filterGenres, setFilterGenres] = useState<Set<string>>(new Set())
@@ -179,9 +173,12 @@ export function CompassPage(): JSX.Element {
   const getPlotSize = useCallback(() => {
     const c = canvasRef.current
     if (!c) return { w: 600, h: 400 }
+    // The 2D context is scaled by devicePixelRatio, so all drawing — including
+    // plot dimensions — must be in CSS pixels, not the canvas's device pixels.
+    const dpr = window.devicePixelRatio || 1
     return {
-      w: c.width  - MARGIN.left - MARGIN.right,
-      h: c.height - MARGIN.top  - MARGIN.bottom,
+      w: c.width / dpr - MARGIN.left - MARGIN.right,
+      h: c.height / dpr - MARGIN.top - MARGIN.bottom,
     }
   }, [])
 
@@ -204,12 +201,15 @@ export function CompassPage(): JSX.Element {
 
     const dpr = window.devicePixelRatio || 1
     const { w, h } = getPlotSize()
+    // CSS-pixel canvas dimensions (context is dpr-scaled).
+    const cssW = canvas.width / dpr
+    const cssH = canvas.height / dpr
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.clearRect(0, 0, cssW, cssH)
 
     // Background
     ctx.fillStyle = '#0d0b08'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.fillRect(0, 0, cssW, cssH)
 
     // Plot area subtle border
     ctx.strokeStyle = 'rgba(255,255,255,0.05)'
@@ -234,11 +234,11 @@ export function CompassPage(): JSX.Element {
       }
     }
 
-    // Axis labels
+    // Axis labels (font in CSS px — context is already dpr-scaled)
     ctx.fillStyle = 'rgba(180,170,155,0.55)'
-    ctx.font = `${10 * dpr}px "JetBrains Mono", monospace`
+    ctx.font = '10px "JetBrains Mono", monospace'
     ctx.textAlign = 'center'
-    ctx.fillText(axisLabel(xAxis).toUpperCase(), MARGIN.left + (w * zoom) / 2, canvas.height - 8)
+    ctx.fillText(axisLabel(xAxis).toUpperCase(), MARGIN.left + (w * zoom) / 2, cssH - 8)
     ctx.save()
     ctx.translate(12, MARGIN.top + (h * zoom) / 2)
     ctx.rotate(-Math.PI / 2)
@@ -388,6 +388,15 @@ export function CompassPage(): JSX.Element {
     }
     return best
   }, [tracks, xAxis, yAxis, zoom, pan, toCanvas])
+
+  // Right-click a dot → shared track menu. Acts on the lasso selection when the
+  // clicked dot is part of it, otherwise just that track.
+  const onContextMenu = useCallback((e: React.MouseEvent) => {
+    const hit = hitTest(e.clientX, e.clientY)
+    if (!hit) return
+    const ids = lassoIds.has(hit.id) ? [...lassoIds] : [hit.id]
+    openTrackMenu(e, { ids, track: hit, onShowDetail: (t) => setDetailId(t.id) })
+  }, [hitTest, lassoIds, openTrackMenu])
 
   // ── Mouse events ─────────────────────────────────────────────────────────────
 
@@ -552,19 +561,19 @@ export function CompassPage(): JSX.Element {
   const MOOD_LABEL = (m: number) => MOOD_LABELS[MOOD_RANGES.findIndex(([lo, hi]) => m >= lo && m <= hi)] ?? 'Neutral'
 
   return (
-    <div className="flex-1 min-h-0 flex overflow-hidden bg-[#0d0b08]">
+    <div className="h-full min-h-0 flex overflow-hidden bg-[#0d0b08]">
       {/* ── Main canvas area ─────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 flex flex-col">
 
         {/* Toolbar */}
-        <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-white/[0.06] bg-[#111009]">
-          <span className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-accent mr-1">Compass</span>
+        <div className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 border-b border-white/[0.06] bg-[#111009]">
+          <span className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-accent mr-1">Compass</span>
 
           {/* Axis selectors */}
-          <span className="font-mono text-[9px] text-muted uppercase tracking-[0.1em]">X</span>
+          <span className="font-mono text-[12px] text-muted uppercase tracking-[0.1em]">X</span>
           {(['danceability', 'bpm', 'mood'] as XAxis[]).map((a) => (
             <button key={a} onClick={() => setXAxis(a)}
-              className={`font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
+              className={`font-mono text-[12px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
                 ${xAxis === a ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink'}`}>
               {a}
             </button>
@@ -572,10 +581,10 @@ export function CompassPage(): JSX.Element {
 
           <div className="w-px h-4 bg-white/10 mx-1" />
 
-          <span className="font-mono text-[9px] text-muted uppercase tracking-[0.1em]">Y</span>
+          <span className="font-mono text-[12px] text-muted uppercase tracking-[0.1em]">Y</span>
           {(['energy', 'bpm', 'mood'] as YAxis[]).map((a) => (
             <button key={a} onClick={() => setYAxis(a)}
-              className={`font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
+              className={`font-mono text-[12px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
                 ${yAxis === a ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink'}`}>
               {a}
             </button>
@@ -584,10 +593,10 @@ export function CompassPage(): JSX.Element {
           <div className="w-px h-4 bg-white/10 mx-1" />
 
           {/* Colour mode */}
-          <span className="font-mono text-[9px] text-muted uppercase tracking-[0.1em]">Colour</span>
+          <span className="font-mono text-[12px] text-muted uppercase tracking-[0.1em]">Colour</span>
           {(['key', 'genre'] as ColorMode[]).map((m) => (
             <button key={m} onClick={() => setColorMode(m)}
-              className={`font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
+              className={`font-mono text-[12px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
                 ${colorMode === m ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink'}`}>
               {m}
             </button>
@@ -597,24 +606,24 @@ export function CompassPage(): JSX.Element {
 
           {/* Clusters toggle */}
           <button onClick={() => setShowClusters((v) => !v)}
-            className={`font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
+            className={`font-mono text-[12px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
               ${showClusters ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink'}`}>
             clusters
           </button>
 
           {/* Filter */}
           <button onClick={() => setShowFilters((v) => !v)}
-            className={`font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
+            className={`font-mono text-[12px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
               ${(showFilters || isFiltered) ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink'}`}>
             filter{isFiltered ? ' •' : ''}
           </button>
 
           {/* Reset view */}
-          <button onClick={resetView} className="font-mono text-[9px] uppercase tracking-[0.08em] text-muted hover:text-ink transition-colors px-2 py-0.5 rounded">
+          <button onClick={resetView} className="font-mono text-[12px] uppercase tracking-[0.08em] text-muted hover:text-ink transition-colors px-2 py-0.5 rounded">
             reset
           </button>
 
-          <span className="font-mono text-[9px] text-muted/40 tabular-nums">
+          <span className="font-mono text-[12px] text-muted/40 tabular-nums">
             {tracks.length.toLocaleString()} tracks
           </span>
         </div>
@@ -630,6 +639,7 @@ export function CompassPage(): JSX.Element {
             onMouseUp={onMouseUp}
             onMouseLeave={onMouseLeave}
             onWheel={onWheel}
+            onContextMenu={onContextMenu}
           />
 
           {/* Hover tooltip */}
@@ -654,18 +664,18 @@ export function CompassPage(): JSX.Element {
                 )}
                 {/* Text content */}
                 <div className="px-3 py-2 space-y-0.5 min-w-0">
-                  <p className="font-mono text-[10px] font-bold text-ink max-w-[200px] truncate">
+                  <p className="font-mono text-[13px] font-bold text-ink max-w-[200px] truncate">
                     {hoverTrack.title || hoverTrack.filePath.split('/').pop()}
                   </p>
-                  <p className="font-mono text-[9px] text-muted truncate">{hoverTrack.artist}</p>
+                  <p className="font-mono text-[12px] text-muted truncate">{hoverTrack.artist}</p>
                   <div className="flex items-center gap-2 pt-0.5">
-                    {hoverTrack.bpm    != null && <span className="font-mono text-[8.5px] text-ink-soft">{hoverTrack.bpm.toFixed(1)} bpm</span>}
-                    {hoverTrack.key               && <span className="font-mono text-[8.5px] font-bold" style={{ color: keyBlipColor(hoverTrack.key) }}>{hoverTrack.key}</span>}
-                    {hoverTrack.energy != null && <span className="font-mono text-[8.5px] text-muted">nrg {hoverTrack.energy}</span>}
-                    {hoverTrack.mood   != null && <span className="font-mono text-[8.5px] text-muted">{MOOD_LABEL(hoverTrack.mood)}</span>}
+                    {hoverTrack.bpm    != null && <span className="font-mono text-[11px] text-ink-soft">{hoverTrack.bpm.toFixed(1)} bpm</span>}
+                    {hoverTrack.key               && <span className="font-mono text-[11px] font-bold" style={{ color: keyBlipColor(hoverTrack.key) }}>{hoverTrack.key}</span>}
+                    {hoverTrack.energy != null && <span className="font-mono text-[11px] text-muted">nrg {hoverTrack.energy}</span>}
+                    {hoverTrack.mood   != null && <span className="font-mono text-[11px] text-muted">{MOOD_LABEL(hoverTrack.mood)}</span>}
                   </div>
                   {(axisVal(hoverTrack, xAxis) == null || axisVal(hoverTrack, yAxis) == null) && (
-                    <p className="font-mono text-[8px] text-muted/50">needs analysis</p>
+                    <p className="font-mono text-[11px] text-muted/50">needs analysis</p>
                   )}
                 </div>
               </div>
@@ -675,11 +685,11 @@ export function CompassPage(): JSX.Element {
           {/* Lasso action bar */}
           {lassoIds.size > 0 && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-[#1a1612] border border-accent/30 rounded-lg px-4 py-2 shadow-xl">
-              <span className="font-mono text-[10px] text-ink">
+              <span className="font-mono text-[13px] text-ink">
                 {lassoIds.size.toLocaleString()} track{lassoIds.size !== 1 ? 's' : ''} selected
               </span>
               <button onClick={sendLassoToSetBuilder}
-                className="font-mono text-[9px] uppercase tracking-[0.1em] text-accent hover:text-ink border border-accent/40 hover:bg-accent/10 px-3 py-1 rounded transition-colors">
+                className="font-mono text-[12px] uppercase tracking-[0.1em] text-accent hover:text-ink border border-accent/40 hover:bg-accent/10 px-3 py-1 rounded transition-colors">
                 add to set builder
               </button>
               {/* Add to running order */}
@@ -690,7 +700,7 @@ export function CompassPage(): JSX.Element {
                     setLassoOrders(ros.map((r) => ({ id: r.id, title: r.title, catalogNum: r.catalogNum })))
                     setShowLassoOrderPicker((v) => !v)
                   }}
-                  className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-white/20 hover:bg-white/[0.06] px-3 py-1 rounded transition-colors">
+                  className="font-mono text-[12px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-white/20 hover:bg-white/[0.06] px-3 py-1 rounded transition-colors">
                   → order
                 </button>
                 {showLassoOrderPicker && lassoOrders.length > 0 && (
@@ -698,7 +708,7 @@ export function CompassPage(): JSX.Element {
                     {lassoOrders.map((ro) => (
                       <button key={ro.id}
                         onClick={() => sendLassoToOrder(ro.id)}
-                        className="w-full text-left px-3 py-1.5 border-b border-border/20 last:border-0 font-mono text-[9px] text-muted hover:text-ink hover:bg-ink/[0.05] transition-colors">
+                        className="w-full text-left px-3 py-1.5 border-b border-border/20 last:border-0 font-mono text-[12px] text-muted hover:text-ink hover:bg-ink/[0.05] transition-colors">
                         N° {String(ro.catalogNum).padStart(3,'0')} · {ro.title || 'Untitled'}
                       </button>
                     ))}
@@ -714,11 +724,11 @@ export function CompassPage(): JSX.Element {
                   await addTracksToPlaylist(pl.id, lassoTrackList.map((t) => t.id))
                   setLassoIds(new Set())
                 }}
-                className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-white/20 hover:bg-white/[0.06] px-3 py-1 rounded transition-colors">
+                className="font-mono text-[12px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-white/20 hover:bg-white/[0.06] px-3 py-1 rounded transition-colors">
                 + playlist
               </button>
               <button onClick={() => setLassoIds(new Set())}
-                className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink transition-colors">
+                className="font-mono text-[12px] uppercase tracking-[0.1em] text-muted hover:text-ink transition-colors">
                 clear
               </button>
             </div>
@@ -727,7 +737,7 @@ export function CompassPage(): JSX.Element {
           {/* Hint overlay (empty state) */}
           {tracks.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <p className="font-mono text-[11px] text-muted/40 uppercase tracking-[0.15em]">import tracks to begin</p>
+              <p className="font-mono text-[13px] text-muted/40 uppercase tracking-[0.15em]">import tracks to begin</p>
             </div>
           )}
           {tracks.length > 0 && (() => {
@@ -736,8 +746,8 @@ export function CompassPage(): JSX.Element {
             if (withX === 0 || withY === 0) return (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="text-center space-y-2 px-8">
-                  <p className="font-mono text-[10px] text-white/30 uppercase tracking-[0.15em]">no data for {axisLabel(withX === 0 ? xAxis : yAxis).toLowerCase()}</p>
-                  <p className="font-mono text-[8.5px] text-white/20 leading-relaxed">
+                  <p className="font-mono text-[13px] text-white/30 uppercase tracking-[0.15em]">no data for {axisLabel(withX === 0 ? xAxis : yAxis).toLowerCase()}</p>
+                  <p className="font-mono text-[11px] text-white/20 leading-relaxed">
                     run Analysis → BPM + Key to populate energy and danceability,<br/>or switch axes using the controls above
                   </p>
                 </div>
@@ -747,7 +757,7 @@ export function CompassPage(): JSX.Element {
           })()}
 
           {/* Zoom hint */}
-          <div className="absolute bottom-3 right-3 font-mono text-[8px] text-white/15 pointer-events-none select-none">
+          <div className="absolute bottom-3 right-3 font-mono text-[11px] text-white/15 pointer-events-none select-none">
             scroll to zoom · drag to pan · shift+drag to lasso
           </div>
         </div>
@@ -757,10 +767,10 @@ export function CompassPage(): JSX.Element {
       {showFilters && (
         <div className="shrink-0 w-52 border-l border-white/[0.06] bg-[#111009] flex flex-col overflow-hidden">
           <div className="shrink-0 flex items-center justify-between px-3 py-2 border-b border-white/[0.05]">
-            <span className="font-mono text-[9px] font-bold uppercase tracking-[0.15em] text-accent">Filters</span>
+            <span className="font-mono text-[12px] font-bold uppercase tracking-[0.15em] text-accent">Filters</span>
             {isFiltered && (
               <button onClick={() => { setFilterGenres(new Set()); setFilterKeys(new Set()); setFilterMoods(new Set()) }}
-                className="font-mono text-[8px] uppercase tracking-[0.1em] text-muted hover:text-accent transition-colors">
+                className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-accent transition-colors">
                 clear
               </button>
             )}
@@ -769,7 +779,7 @@ export function CompassPage(): JSX.Element {
           <div className="flex-1 overflow-y-auto px-3 py-2 space-y-4">
             {/* Mood */}
             <div>
-              <p className="font-mono text-[8.5px] uppercase tracking-[0.15em] text-muted mb-1.5">Mood</p>
+              <p className="font-mono text-[11px] uppercase tracking-[0.15em] text-muted mb-1.5">Mood</p>
               <div className="space-y-1">
                 {MOOD_LABELS.map((label, i) => {
                   const on = filterMoods.has(i)
@@ -784,7 +794,7 @@ export function CompassPage(): JSX.Element {
                         ${on ? 'bg-accent/10' : 'hover:bg-white/[0.04]'}`}
                     >
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ background: MOOD_COLORS[i] }} />
-                      <span className={`font-mono text-[9px] ${on ? 'text-ink' : 'text-muted'}`}>{label}</span>
+                      <span className={`font-mono text-[12px] ${on ? 'text-ink' : 'text-muted'}`}>{label}</span>
                     </button>
                   )
                 })}
@@ -794,7 +804,7 @@ export function CompassPage(): JSX.Element {
             {/* Key distribution */}
             {allKeys.length > 0 && (
               <div>
-                <p className="font-mono text-[8.5px] uppercase tracking-[0.15em] text-muted mb-1.5">Key · distribution</p>
+                <p className="font-mono text-[11px] uppercase tracking-[0.15em] text-muted mb-1.5">Key · distribution</p>
                 <div className="space-y-0.5">
                   {allKeys.map((k) => {
                     const on    = filterKeys.has(k)
@@ -810,7 +820,7 @@ export function CompassPage(): JSX.Element {
                         className={`w-full flex items-center gap-2 px-1.5 py-0.5 rounded transition-colors
                           ${on ? 'bg-white/[0.06]' : 'hover:bg-white/[0.03]'}`}
                       >
-                        <span className="font-mono text-[8px] w-8 text-right shrink-0"
+                        <span className="font-mono text-[11px] w-8 text-right shrink-0"
                           style={{ color: keyBlipColor(k), opacity: on ? 1 : 0.65 }}>
                           {k}
                         </span>
@@ -818,7 +828,7 @@ export function CompassPage(): JSX.Element {
                           <div className="h-full rounded-full transition-all"
                             style={{ width: `${pct * 100}%`, background: keyBlipColor(k), opacity: on ? 0.8 : 0.35 }} />
                         </div>
-                        <span className="font-mono text-[7px] text-muted/40 w-5 text-right tabular-nums shrink-0">{count}</span>
+                        <span className="font-mono text-[10px] text-muted/40 w-5 text-right tabular-nums shrink-0">{count}</span>
                       </button>
                     )
                   })}
@@ -829,7 +839,7 @@ export function CompassPage(): JSX.Element {
             {/* Genre */}
             {allGenres.length > 0 && (
               <div>
-                <p className="font-mono text-[8.5px] uppercase tracking-[0.15em] text-muted mb-1.5">Genre</p>
+                <p className="font-mono text-[11px] uppercase tracking-[0.15em] text-muted mb-1.5">Genre</p>
                 <div className="space-y-0.5">
                   {allGenres.map((g) => {
                     const on = filterGenres.has(g)
@@ -838,7 +848,7 @@ export function CompassPage(): JSX.Element {
                         onClick={() => setFilterGenres((prev) => {
                           const next = new Set(prev); on ? next.delete(g) : next.add(g); return next
                         })}
-                        className={`w-full text-left px-2 py-0.5 rounded font-mono text-[9px] truncate transition-colors
+                        className={`w-full text-left px-2 py-0.5 rounded font-mono text-[12px] truncate transition-colors
                           ${on ? 'bg-accent/10 text-ink' : 'text-muted hover:text-ink hover:bg-white/[0.04]'}`}
                       >
                         {g}
@@ -859,6 +869,7 @@ export function CompassPage(): JSX.Element {
           onClose={() => setDetailId(null)}
         />
       )}
+
     </div>
   )
 }

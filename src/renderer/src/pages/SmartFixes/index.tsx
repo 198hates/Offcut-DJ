@@ -553,7 +553,7 @@ export function SmartFixesPage(): JSX.Element {
         <h1 className="font-mono text-base font-bold uppercase tracking-[0.12em] text-ink">
           <span className="text-accent mr-2">01</span>smart fixes
         </h1>
-        <p className="font-mono text-[10px] text-muted mt-0.5">
+        <p className="font-mono text-[13px] text-muted mt-0.5">
           scan · preview · apply — each fix shows exact before/after before changing anything
         </p>
       </div>
@@ -576,37 +576,37 @@ export function SmartFixesPage(): JSX.Element {
               onClick={() => isOpen ? setOpenFix(null) : scan(fix)}
             >
               {/* Number */}
-              <span className="font-mono text-[9px] text-muted w-4 shrink-0 tabular-nums text-right">
+              <span className="font-mono text-[12px] text-muted w-4 shrink-0 tabular-nums text-right">
                 {String(i + 1).padStart(2, '0')}
               </span>
 
               {/* Icon chip */}
-              <div className="w-8 h-8 shrink-0 rounded bg-ink/5 border border-border/30 flex items-center justify-center font-mono text-[10px] font-bold text-muted">
+              <div className="w-8 h-8 shrink-0 rounded bg-ink/5 border border-border/30 flex items-center justify-center font-mono text-[13px] font-bold text-muted">
                 {fix.icon}
               </div>
 
               {/* Label + description */}
               <div className="flex-1 min-w-0">
-                <p className="font-mono text-[10.5px] font-bold text-ink">{fix.label}</p>
-                <p className="font-mono text-[9.5px] text-muted truncate mt-0.5">{fix.description}</p>
+                <p className="font-mono text-[13px] font-bold text-ink">{fix.label}</p>
+                <p className="font-mono text-[12px] text-muted truncate mt-0.5">{fix.description}</p>
               </div>
 
               {/* Status / action */}
               <div className="shrink-0 flex items-center gap-2">
                 {isApplied && (
-                  <span className="font-mono text-[9.5px] text-green-600 dark:text-green-400">
+                  <span className="font-mono text-[12px] text-green-600 dark:text-green-400">
                     ✓ {applied[fix.id]} fixed
                   </span>
                 )}
                 {!isOpen ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); scan(fix) }}
-                    className="px-3 py-1 font-mono text-[9.5px] uppercase tracking-[0.1em] bg-ink/5 hover:bg-ink/10 border border-border/40 rounded transition-colors text-ink-soft hover:text-ink"
+                    className="px-3 py-1 font-mono text-[12px] uppercase tracking-[0.1em] bg-ink/5 hover:bg-ink/10 border border-border/40 rounded transition-colors text-ink-soft hover:text-ink"
                   >
                     scan
                   </button>
                 ) : (
-                  <span className="font-mono text-[9.5px] text-muted uppercase tracking-[0.1em]">
+                  <span className="font-mono text-[12px] text-muted uppercase tracking-[0.1em]">
                     {res.length} found
                   </span>
                 )}
@@ -618,8 +618,8 @@ export function SmartFixesPage(): JSX.Element {
               <div className="border-t border-border/20">
                 {res.length === 0 ? (
                   <div className="px-4 py-4 flex items-center gap-2">
-                    <span className="text-green-600 dark:text-green-400 font-mono text-[10px]">✓</span>
-                    <span className="font-mono text-[10px] text-muted">no issues found</span>
+                    <span className="text-green-600 dark:text-green-400 font-mono text-[13px]">✓</span>
+                    <span className="font-mono text-[13px] text-muted">no issues found</span>
                   </div>
                 ) : (
                   <>
@@ -632,11 +632,11 @@ export function SmartFixesPage(): JSX.Element {
                             const noneSel = new Set<number>()
                             setSelections((s) => ({ ...s, [fix.id]: sel.size === res.length ? noneSel : allSel }))
                           }}
-                          className="font-mono text-[8.5px] text-muted/50 hover:text-muted border border-border/25 rounded px-1.5 py-0.5 transition-colors"
+                          className="font-mono text-[11px] text-muted/50 hover:text-muted border border-border/25 rounded px-1.5 py-0.5 transition-colors"
                         >
                           {sel.size === res.length ? 'deselect all' : 'select all'}
                         </button>
-                        <span className="font-mono text-[10px] text-ink-soft">
+                        <span className="font-mono text-[13px] text-ink-soft">
                           <span className="text-accent font-bold">{selCount}</span>
                           {selCount !== res.length && <span className="text-muted/50"> of {res.length}</span>}
                           {' '}selected
@@ -645,7 +645,7 @@ export function SmartFixesPage(): JSX.Element {
                       <button
                         onClick={() => applyFix(fix)}
                         disabled={isBusy || selCount === 0}
-                        className="px-4 py-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] bg-accent hover:bg-accent/90 text-paper rounded transition-colors disabled:opacity-40"
+                        className="px-4 py-1.5 font-mono text-[12px] uppercase tracking-[0.12em] bg-accent hover:bg-accent/90 text-paper rounded transition-colors disabled:opacity-40"
                       >
                         {isBusy ? 'applying…' : `apply ${selCount}`}
                       </button>
@@ -662,16 +662,16 @@ export function SmartFixesPage(): JSX.Element {
                             {/* Checkbox */}
                             <input type="checkbox" checked={checked} readOnly className="accent-accent mt-0.5" />
                             <div className="min-w-0">
-                              <p className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted mb-0.5">
+                              <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted mb-0.5">
                                 {r.field}{r.extra ? ` + ${Object.keys(r.extra).join(', ')}` : ''}
                               </p>
-                              <p className="font-sans text-[11px] text-ink-soft truncate">{r.before}</p>
+                              <p className="font-sans text-[13px] text-ink-soft truncate">{r.before}</p>
                             </div>
                             <div className="min-w-0">
-                              <p className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent mb-0.5">after</p>
-                              <p className="font-sans text-[11px] text-ink font-medium truncate">{r.after}</p>
+                              <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-accent mb-0.5">after</p>
+                              <p className="font-sans text-[13px] text-ink font-medium truncate">{r.after}</p>
                               {r.extra && (
-                                <p className="font-mono text-[9px] text-muted truncate mt-0.5">
+                                <p className="font-mono text-[12px] text-muted truncate mt-0.5">
                                   {Object.entries(r.extra).map(([k, v]) =>
                                     `${k}: ${Array.isArray(v) ? v.join(', ') : v}`
                                   ).join(' · ')}
@@ -682,7 +682,7 @@ export function SmartFixesPage(): JSX.Element {
                         )
                       })}
                       {res.length > 200 && (
-                        <div className="px-4 py-2 font-mono text-[9.5px] text-muted">
+                        <div className="px-4 py-2 font-mono text-[12px] text-muted">
                           …and {res.length - 200} more
                         </div>
                       )}

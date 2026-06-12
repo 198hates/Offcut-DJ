@@ -59,6 +59,12 @@ export interface AudioEngineContract {
   pause(): void
   /** Seek to `seconds`. Maintains play/pause state. */
   seek(seconds: number): void
+
+  /** Enter scrub mode: while paused, dragging (via `seek`) produces audio that
+   *  follows the playhead at hand velocity (needle search). Pair with `scrubEnd`. */
+  scrubBegin(): void
+  /** Leave scrub mode, returning to the paused state at the current position. */
+  scrubEnd(): void
   /** Current playback position in seconds. */
   readonly currentTime: number
   /** Total duration of the loaded audio in seconds. */
@@ -125,6 +131,17 @@ export interface AudioEngineContract {
   /** Solo a stem bus (exclusive: other buses are silenced). */
   setStemSoloed(kind: StemKind, soloed: boolean): void
 
+  /**
+   * Load four separated stem files (drums/bass/vocals/other) for the current
+   * track and play them on independent buses, so mute/solo/gain become real.
+   * Sources are file paths (read via IPC) or URLs. Resolves once decoded.
+   */
+  loadStems(urls: Record<StemKind, string>): Promise<void>
+  /** Drop the stem buses and revert to single-mix playback. */
+  unloadStems(): void
+  /** True when four stem buses are loaded and driving playback. */
+  readonly hasStems: boolean
+
   // ── Output routing ───────────────────────────────────────────────────────
 
   /**
@@ -135,13 +152,25 @@ export interface AudioEngineContract {
    */
   setOutputDevice(deviceId: string): Promise<void>
 
-  // ── Inter-deck sync ──────────────────────────────────────────────────────
+  // ── Inter-deck sync (shared clock) ─────────────────────────────────────────
 
   /**
-   * Lock this engine's tempo to `master` so both decks share the same clock.
-   * Phase 4: implemented once the shared Rust clock is running.
+   * Slave this deck to the master deck's transport so both share one clock.
+   * `masterId` is the master deck's id ('A' / 'B'); `ratio` is masterBPM /
+   * slaveBPM (the tempo this deck runs at); `phaseSeconds` offsets the beat
+   * alignment. The native engine derives this deck's position from the master's
+   * every audio block, so they stay phase-locked without drift.
    */
-  syncTo(master: AudioEngineContract): void
+  syncTo(masterId: string, ratio: number, phaseSeconds: number): void
+
+  /** Update an active sync's tempo ratio / phase without re-linking. */
+  updateSync(ratio: number, phaseSeconds: number): void
+
+  /** Release the sync and return to free-running playback. */
+  clearSync(): void
+
+  /** True while this deck is slaved to a master. */
+  readonly isSynced: boolean
 
   // ── VU metering ──────────────────────────────────────────────────────────
 

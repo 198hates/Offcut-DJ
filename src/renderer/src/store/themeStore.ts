@@ -22,7 +22,7 @@ export const useThemeStore = create<ThemeStore>()(
       }
     }),
     {
-      name: 'crate-theme',
+      name: 'offcut-theme',
       onRehydrateStorage: () => (state) => {
         applyTheme(state?.theme ?? 'light')
       }

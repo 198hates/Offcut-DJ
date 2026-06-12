@@ -176,6 +176,8 @@ interface Props {
   /** Flux-mode shadow playhead (seconds). Renders as a ghost hairline ahead of the real head. */
   fluxTime?: number | null
   onSeek: (time: number) => void
+  onScrubStart?: () => void
+  onScrubEnd?: () => void
   isLoading?: boolean
 }
 
@@ -188,7 +190,7 @@ export function WaveformGL({
   cuePoints, mainCueTime, beatgrid, analysedBeatgrid,
   loopStart, loopEnd, isLooping,
   fluxTime,
-  onSeek, isLoading,
+  onSeek, onScrubStart, onScrubEnd, isLoading,
 }: Props): JSX.Element {
   const glCanvasRef  = useRef<HTMLCanvasElement>(null)
   const ovCanvasRef  = useRef<HTMLCanvasElement>(null)
@@ -537,7 +539,8 @@ export function WaveformGL({
     e.preventDefault()
     dragRef.current = { startX: e.clientX, startTime: ctRef.current }
     e.currentTarget.style.cursor = 'grabbing'
-  }, [duration])  // ctRef is a stable ref, no dep needed
+    onScrubStart?.()  // enable audio scrub (needle search) for the gesture
+  }, [duration, onScrubStart])  // ctRef is a stable ref, no dep needed
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const drag = dragRef.current
@@ -564,15 +567,16 @@ export function WaveformGL({
         pendingSeek.current = null
       }
       onSeek(ctRef.current)  // ensure final position is committed
+      onScrubEnd?.()
     }
     dragRef.current = null
     e.currentTarget.style.cursor = 'grab'
-  }, [onSeek])
+  }, [onSeek, onScrubEnd])
 
   // Cancel drag if pointer leaves the window
   useEffect(() => {
     const up = () => {
-      if (dragRef.current) onSeek(ctRef.current)
+      if (dragRef.current) { onSeek(ctRef.current); onScrubEnd?.() }
       dragRef.current = null
       if (pendingSeek.current !== null) {
         cancelAnimationFrame(pendingSeek.current)
@@ -582,7 +586,7 @@ export function WaveformGL({
     }
     window.addEventListener('mouseup', up)
     return () => window.removeEventListener('mouseup', up)
-  }, [onSeek])
+  }, [onSeek, onScrubEnd])
 
   return (
     <div className="relative flex-1 min-w-0 bg-black/40 rounded overflow-hidden">

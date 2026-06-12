@@ -115,7 +115,7 @@ export function FnBus(): JSX.Element {
     <div className="shrink-0 flex items-stretch bg-chassis-soft border-b border-border/30" style={{ height: 52 }}>
       {/* Bus label */}
       <div className="flex items-center px-3 border-r border-border/30">
-        <span className="font-mono text-[8px] font-bold uppercase tracking-[0.22em] text-muted"
+        <span className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-muted"
               style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
           <span className="text-accent">fn</span>·bus
         </span>
@@ -170,10 +170,10 @@ export function FnBus(): JSX.Element {
                 }}
               />
 
-              {/* Icon */}
+              {/* Icon — ink-soft when idle so the bus reads at a glance */}
               <div
-                className="w-[18px] h-[18px] mb-0.5"
-                style={{ color: on ? 'rgb(var(--accent-rgb))' : 'rgb(var(--muted-rgb))' }}
+                className="w-[18px] h-[18px] mb-0.5 transition-colors"
+                style={{ color: on ? 'rgb(var(--accent-rgb))' : 'rgb(var(--ink-soft-rgb))' }}
               >
                 {ICONS[key]}
               </div>

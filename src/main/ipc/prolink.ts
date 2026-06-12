@@ -211,6 +211,13 @@ export function registerProLinkHandlers(): void {
           color:           '',
           playCount:       0,
           lastPlayedAt:    null,
+          updatedAt:       null,
+          fileSize:        null,
+          fileType:        null,
+          sampleRate:      null,
+          bitDepth:        null,
+          gainDb:          null,
+          phrases:         null,
           sourceIds:       { prolink: `player${ct.player}` },
         }
         insertOrUpdateTrack(db, track)

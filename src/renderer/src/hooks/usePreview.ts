@@ -1,69 +1,31 @@
 /**
- * usePreview — lightweight 30-second track preview
+ * usePreview — thin wrapper over the shared `trackPreviewStore`.
  *
- * Uses Web Audio API to decode and play a short clip starting from the
- * track's "Mix In" hot cue (or the beginning if none). Only one preview
- * plays at a time — calling preview() cancels any running preview.
+ * Both the old hook and the store decoded + played a 30s clip independently;
+ * this now delegates to the single store engine so there's one preview at a
+ * time across the whole app (Library, Orders, Set Builder, LibraryMini).
  */
 
-import { useState, useCallback, useRef } from 'react'
+import { useCallback } from 'react'
 import type { Track } from '@shared/types'
+import { useTrackPreview } from '../store/trackPreviewStore'
 
-const PREVIEW_DURATION = 30  // seconds
+export function usePreview(): {
+  previewId: string | null
+  preview: (track: Track, durationSec?: number) => Promise<void>
+  toggle: (track: Track, durationSec?: number) => Promise<void>
+  stop: () => void
+} {
+  const previewId = useTrackPreview((s) => s.previewId)
+  const toggle = useTrackPreview((s) => s.toggle)
+  const stop = useTrackPreview((s) => s.stop)
 
-let _globalStop: (() => void) | null = null
-
-export function usePreview() {
-  const [previewId, setPreviewId] = useState<string | null>(null)
-  const ctxRef = useRef<AudioContext | null>(null)
-
-  const stop = useCallback(() => {
-    if (ctxRef.current) {
-      try { ctxRef.current.close() } catch { /* ignore */ }
-      ctxRef.current = null
+  // preview() = ensure this track is playing (start if not already current).
+  const preview = useCallback(async (track: Track, durationSec?: number) => {
+    if (useTrackPreview.getState().previewId !== track.id) {
+      await useTrackPreview.getState().toggle(track, durationSec)
     }
-    setPreviewId(null)
-    _globalStop = null
   }, [])
-
-  const preview = useCallback(async (track: Track, durationSec = PREVIEW_DURATION) => {
-    // Stop any existing preview (globally — so two usePreview hooks don't fight)
-    if (_globalStop) _globalStop()
-
-    setPreviewId(track.id)
-    _globalStop = stop
-
-    try {
-      const ab = await window.api.audio.readFile(track.filePath)
-      const ctx = new AudioContext()
-      ctxRef.current = ctx
-      const buf = await ctx.decodeAudioData(ab)
-
-      // Find start offset: prefer 'mix-in' / 'MIX IN' cue, else beginning
-      const mixInCue = track.cuePoints.find((c) =>
-        c.type === 'hotcue' && /mix.?in/i.test(c.label)
-      )
-      const startSec = mixInCue ? mixInCue.positionMs / 1000 : 0
-
-      const source = ctx.createBufferSource()
-      source.buffer = buf
-      source.connect(ctx.destination)
-      source.start(0, startSec, durationSec)
-      source.onended = () => {
-        if (ctxRef.current === ctx) stop()
-      }
-    } catch {
-      stop()
-    }
-  }, [stop])
-
-  const toggle = useCallback(async (track: Track, durationSec = PREVIEW_DURATION) => {
-    if (previewId === track.id) {
-      stop()
-    } else {
-      await preview(track, durationSec)
-    }
-  }, [previewId, preview, stop])
 
   return { previewId, preview, toggle, stop }
 }

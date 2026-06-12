@@ -4,7 +4,9 @@ import { useDeckAStore } from '../../store/playerStore'
 import { useToastStore } from '../../store/toastStore'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { compatibilityScore, magicSort } from '../../lib/compatibility'
+import { setTrackDragData, acceptsTrackDrop, readTrackIds } from '../../lib/trackDrag'
 import { GraphView } from './GraphView'
+import { useTrackMenuContext } from '../../hooks/useTrackMenu'
 import type { Playlist, Track } from '@shared/types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -360,10 +362,10 @@ export function SetBuilderPage(): JSX.Element {
       <div className="flex flex-col items-center justify-center h-full gap-4">
         <div className="space-y-1 text-center">
           <p className="font-mono text-xs font-bold uppercase tracking-[0.15em] text-ink">set builder</p>
-          <p className="font-mono text-[10px] text-muted">plan your set as energy arcs · export as crates</p>
+          <p className="font-mono text-[13px] text-muted">plan your set as energy arcs · export as crates</p>
         </div>
         <button onClick={handleCreateSet}
-          className="px-5 py-2.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[10px] uppercase tracking-[0.15em] rounded transition-colors">
+          className="px-5 py-2.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[13px] uppercase tracking-[0.15em] rounded transition-colors">
           create first set
         </button>
       </div>
@@ -386,18 +388,18 @@ export function SetBuilderPage(): JSX.Element {
         <select
           value={activeSetId ?? ''}
           onChange={(e) => { setActiveSetId(e.target.value); setActiveChapterId(null); setSeedTrack(null) }}
-          className="bg-paper border border-border/40 rounded px-2 py-1 font-mono text-[10px] text-ink outline-none focus:border-accent cursor-pointer"
+          className="bg-paper border border-border/40 rounded px-2 py-1 font-mono text-[13px] text-ink outline-none focus:border-accent cursor-pointer"
         >
           {sets.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
 
         <button onClick={handleCreateSet}
-          className="px-2 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 rounded transition-colors"
+          className="px-2 py-1 font-mono text-[12px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 rounded transition-colors"
           title="New set">+ set</button>
 
         {activeSetId && <>
           <button onClick={handleCreateChapter}
-            className="px-2 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-accent hover:text-accent/80 border border-accent/30 rounded transition-colors">
+            className="px-2 py-1 font-mono text-[12px] uppercase tracking-[0.1em] text-accent hover:text-accent/80 border border-accent/30 rounded transition-colors">
             + chapter
           </button>
 
@@ -405,31 +407,31 @@ export function SetBuilderPage(): JSX.Element {
           <div className="relative">
             <button
               onClick={() => setShowQuickSet((v) => !v)}
-              className="px-2 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 rounded transition-colors"
+              className="px-2 py-1 font-mono text-[12px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 rounded transition-colors"
               title="Auto-generate a chapter from energy/mood criteria">
               quick set
             </button>
             {showQuickSet && (
               <div className="absolute top-8 left-0 z-30 bg-chassis border border-border/40 rounded shadow-xl px-4 py-3 space-y-3 min-w-[200px]">
-                <p className="font-mono text-[8.5px] uppercase tracking-[0.12em] text-muted">quick set</p>
+                <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">quick set</p>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[9px] text-muted w-14 shrink-0">energy</span>
+                  <span className="font-mono text-[12px] text-muted w-14 shrink-0">energy</span>
                   <input type="number" min="1" max="10" value={qsEnergy[0]}
                     onChange={(e) => setQsEnergy([Number(e.target.value), qsEnergy[1]])}
-                    className="w-12 bg-paper border border-border/40 rounded px-2 py-0.5 font-mono text-[9px] text-ink outline-none focus:border-accent" />
-                  <span className="font-mono text-[9px] text-muted/50">–</span>
+                    className="w-12 bg-paper border border-border/40 rounded px-2 py-0.5 font-mono text-[12px] text-ink outline-none focus:border-accent" />
+                  <span className="font-mono text-[12px] text-muted/50">–</span>
                   <input type="number" min="1" max="10" value={qsEnergy[1]}
                     onChange={(e) => setQsEnergy([qsEnergy[0], Number(e.target.value)])}
-                    className="w-12 bg-paper border border-border/40 rounded px-2 py-0.5 font-mono text-[9px] text-ink outline-none focus:border-accent" />
+                    className="w-12 bg-paper border border-border/40 rounded px-2 py-0.5 font-mono text-[12px] text-ink outline-none focus:border-accent" />
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[9px] text-muted w-14 shrink-0">tracks</span>
+                  <span className="font-mono text-[12px] text-muted w-14 shrink-0">tracks</span>
                   <input type="number" min="4" max="30" value={qsCount}
                     onChange={(e) => setQsCount(Number(e.target.value))}
-                    className="w-16 bg-paper border border-border/40 rounded px-2 py-0.5 font-mono text-[9px] text-ink outline-none focus:border-accent" />
+                    className="w-16 bg-paper border border-border/40 rounded px-2 py-0.5 font-mono text-[12px] text-ink outline-none focus:border-accent" />
                 </div>
                 <button onClick={handleQuickSet}
-                  className="w-full px-3 py-1.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[9px] uppercase tracking-[0.1em] rounded transition-colors">
+                  className="w-full px-3 py-1.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[12px] uppercase tracking-[0.1em] rounded transition-colors">
                   generate chapter
                 </button>
               </div>
@@ -437,7 +439,7 @@ export function SetBuilderPage(): JSX.Element {
           </div>
 
           <button onClick={handleImportAutoGroups}
-            className="px-2 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 rounded transition-colors"
+            className="px-2 py-1 font-mono text-[12px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 rounded transition-colors"
             title="Import auto-grouped clusters as chapter drafts">
             from groups
           </button>
@@ -455,7 +457,7 @@ export function SetBuilderPage(): JSX.Element {
         )}
 
         {chapters.length > 0 && (
-          <span className="font-mono text-[9px] text-muted/60 tabular-nums">
+          <span className="font-mono text-[12px] text-muted/60 tabular-nums">
             {chapters.length} ch · {chapters.reduce((s, c) => s + c.trackIds.length, 0)} trks ·{' '}
             {fmt(chapters.reduce((s, ch) => s + (profiles.get(ch.id)?.duration ?? 0), 0))}
           </span>
@@ -464,12 +466,12 @@ export function SetBuilderPage(): JSX.Element {
         {chapters.length > 0 && (
           <>
             <button onClick={handleExportToOrder}
-              className="px-2 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/30 rounded transition-colors"
+              className="px-2 py-1 font-mono text-[12px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/30 rounded transition-colors"
               title="Create a running order from all chapters">
               → order
             </button>
             <button onClick={handleExport}
-              className="px-2 py-1 font-mono text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 rounded transition-colors"
+              className="px-2 py-1 font-mono text-[12px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 rounded transition-colors"
               title="Export all chapters as M3U playlists">
               m3u
             </button>
@@ -480,7 +482,7 @@ export function SetBuilderPage(): JSX.Element {
         <button
           onClick={() => setShowBrowser((v) => !v)}
           title={showBrowser ? 'Hide library browser' : 'Show library browser'}
-          className={`flex items-center gap-1 px-2 py-1 font-mono text-[9px] border rounded transition-colors ${
+          className={`flex items-center gap-1 px-2 py-1 font-mono text-[12px] border rounded transition-colors ${
             showBrowser
               ? 'bg-accent/15 text-accent border-accent/30'
               : 'text-muted border-border/35 hover:text-ink'
@@ -499,7 +501,7 @@ export function SetBuilderPage(): JSX.Element {
         <div className="flex items-center border border-border/35 rounded overflow-hidden">
           {([['split', 'Split', SplitIcon], ['swimlane', 'Lanes', SwimlaneIcon], ['timeline', 'Arc', TimelineIcon], ['graph', 'Graph', GraphIcon]] as const).map(([mode, label, Icon]) => (
             <button key={mode} onClick={() => setViewMode(mode)} title={label}
-              className={`flex items-center gap-1 px-2 py-1 font-mono text-[9px] transition-colors ${
+              className={`flex items-center gap-1 px-2 py-1 font-mono text-[12px] transition-colors ${
                 viewMode === mode ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink hover:bg-ink/5'
               }`}>
               <Icon />
@@ -514,9 +516,9 @@ export function SetBuilderPage(): JSX.Element {
         <div className="flex-1 overflow-hidden">
           {chapters.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-3">
-              <p className="font-mono text-[10px] text-muted">no chapters yet</p>
+              <p className="font-mono text-[13px] text-muted">no chapters yet</p>
               <button onClick={handleCreateChapter}
-                className="px-4 py-2 bg-accent hover:bg-accent/90 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors">
+                className="px-4 py-2 bg-accent hover:bg-accent/90 text-paper font-mono text-[13px] uppercase tracking-[0.12em] rounded transition-colors">
                 add first chapter
               </button>
             </div>
@@ -585,39 +587,39 @@ function ChapterHeader({ chapter, profile, onMagicSort, onRename, onDelete, comp
           onChange={(e) => setDraftName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setRenaming(false); setDraftName(chapter.name) } }}
           onBlur={commit}
-          className="flex-1 min-w-0 bg-transparent border-b border-accent outline-none font-mono text-[10px] font-bold text-ink"
+          className="flex-1 min-w-0 bg-transparent border-b border-accent outline-none font-mono text-[13px] font-bold text-ink"
         />
       ) : (
-        <span className="font-mono text-[10px] font-bold text-ink cursor-text flex-1 min-w-0 truncate"
+        <span className="font-mono text-[13px] font-bold text-ink cursor-text flex-1 min-w-0 truncate"
           onDoubleClick={() => setRenaming(true)}>{chapter.name}</span>
       )}
 
       {/* Profile badges */}
       <div className="flex items-center gap-1.5 shrink-0">
         {profile.bpmAvg != null && (
-          <span className="font-mono text-[8.5px] text-muted tabular-nums" title="BPM range">
+          <span className="font-mono text-[11px] text-muted tabular-nums" title="BPM range">
             {fmtBpmRange(profile)}
           </span>
         )}
         {profile.energyAvg != null && (
-          <span className="font-mono text-[8.5px] tabular-nums" title="Energy range"
+          <span className="font-mono text-[11px] tabular-nums" title="Energy range"
             style={{ color: scoreColor(profile.energyAvg / 10) }}>
             {fmtEnergyRange(profile)}
           </span>
         )}
         {profile.keyCluster && (
-          <span className="font-mono text-[8.5px] font-bold tabular-nums"
+          <span className="font-mono text-[11px] font-bold tabular-nums"
             style={{ color: keyBlipColor(profile.keyCluster) }} title="Key cluster">
             {profile.keyCluster}
           </span>
         )}
-        <span className="font-mono text-[8.5px] text-muted/60 tabular-nums">{fmt(profile.duration)}</span>
+        <span className="font-mono text-[11px] text-muted/60 tabular-nums">{fmt(profile.duration)}</span>
       </div>
 
       {/* Magic sort */}
       <button onClick={(e) => { e.stopPropagation(); onMagicSort() }}
         title="Magic Sort — reorder by harmonic + energy compatibility"
-        className="shrink-0 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded transition-colors">
+        className="shrink-0 px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-[0.08em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded transition-colors">
         sort
       </button>
 
@@ -637,13 +639,18 @@ function CompactTrackRow({ track, index, accentColor, fitScoreVal, isSeed, onLoa
   onLoad: () => void; onRemove: () => void; onSetSeed: () => void
 }): JSX.Element {
   const keyColor = keyBlipColor(track.key)
+  const openTrackMenu = useTrackMenuContext()
   return (
     <div
       className={`group flex items-center gap-2 px-3 py-1.5 border-b border-border/15 hover:bg-ink/[0.04] transition-colors ${isSeed ? 'bg-accent/[0.06]' : ''}`}
       style={{ borderLeftColor: accentColor, borderLeftWidth: 2 }}
       onDoubleClick={onLoad}
+      onContextMenu={(e) => openTrackMenu(e, {
+        ids: [track.id], track,
+        remove: { label: 'Remove from chapter', action: onRemove }
+      })}
     >
-      <span className="font-mono text-[9px] text-muted/50 tabular-nums w-4 text-right shrink-0">{index}</span>
+      <span className="font-mono text-[12px] text-muted/50 tabular-nums w-4 text-right shrink-0">{index}</span>
 
       {/* Seed toggle */}
       <button
@@ -653,13 +660,13 @@ function CompactTrackRow({ track, index, accentColor, fitScoreVal, isSeed, onLoa
       >⊕</button>
 
       <div className="flex-1 min-w-0">
-        <p className="font-mono text-[10px] text-ink truncate leading-snug">{track.title || '—'}</p>
-        <p className="font-mono text-[9px] text-muted truncate leading-snug">{track.artist}</p>
+        <p className="font-mono text-[13px] text-ink truncate leading-snug">{track.title || '—'}</p>
+        <p className="font-mono text-[12px] text-muted truncate leading-snug">{track.artist}</p>
       </div>
 
-      {track.bpm  != null && <span className="font-mono text-[9px] text-muted tabular-nums shrink-0">{track.bpm.toFixed(0)}</span>}
-      {track.key  && <span className="font-mono text-[9px] font-bold tabular-nums shrink-0" style={{ color: keyColor }}>{track.key}</span>}
-      <span className="font-mono text-[9px] text-muted tabular-nums shrink-0 hidden sm:inline">{fmt(track.durationSeconds)}</span>
+      {track.bpm  != null && <span className="font-mono text-[12px] text-muted tabular-nums shrink-0">{track.bpm.toFixed(0)}</span>}
+      {track.key  && <span className="font-mono text-[12px] font-bold tabular-nums shrink-0" style={{ color: keyColor }}>{track.key}</span>}
+      <span className="font-mono text-[12px] text-muted tabular-nums shrink-0 hidden sm:inline">{fmt(track.durationSeconds)}</span>
 
       {/* Fit score bar */}
       {fitScoreVal != null && (
@@ -718,16 +725,16 @@ function SuggestionPanel({ chapterId, suggestions, seedTrack, onSetSeed, onAdd, 
       {/* Mode toggle + seed indicator */}
       <div className="flex items-center gap-1 px-2 py-1 border-b border-border/15">
         <button onClick={() => setMode('suggest')}
-          className={`px-2 py-0.5 font-mono text-[8.5px] uppercase tracking-[0.08em] rounded transition-colors ${mode === 'suggest' ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink'}`}>
+          className={`px-2 py-0.5 font-mono text-[11px] uppercase tracking-[0.08em] rounded transition-colors ${mode === 'suggest' ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink'}`}>
           ✨ suggest
         </button>
         <button onClick={() => setMode('search')}
-          className={`px-2 py-0.5 font-mono text-[8.5px] uppercase tracking-[0.08em] rounded transition-colors ${mode === 'search' ? 'bg-ink/10 text-ink' : 'text-muted hover:text-ink'}`}>
+          className={`px-2 py-0.5 font-mono text-[11px] uppercase tracking-[0.08em] rounded transition-colors ${mode === 'search' ? 'bg-ink/10 text-ink' : 'text-muted hover:text-ink'}`}>
           🔍 search
         </button>
         {seedTrack && (
           <div className="flex items-center gap-1 ml-auto">
-            <span className="font-mono text-[8px] text-accent/70 truncate max-w-[100px]"
+            <span className="font-mono text-[11px] text-accent/70 truncate max-w-[100px]"
               title={`Seed: ${seedTrack.title}`}>seed: {seedTrack.title || seedTrack.artist}</span>
             <button onClick={() => onSetSeed(null)} className="text-muted/50 hover:text-red-400 font-mono text-xs">×</button>
           </div>
@@ -740,7 +747,7 @@ function SuggestionPanel({ chapterId, suggestions, seedTrack, onSetSeed, onAdd, 
           <input value={query} onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
             onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
             placeholder="search library to add…"
-            className={`w-full bg-paper border border-border/35 rounded px-2 py-1 font-mono outline-none focus:border-accent transition-colors placeholder-muted/50 ${compact ? 'text-[9px]' : 'text-[10px]'}`}
+            className={`w-full bg-paper border border-border/35 rounded px-2 py-1 font-mono outline-none focus:border-accent transition-colors placeholder-muted/50 ${compact ? 'text-[12px]' : 'text-[13px]'}`}
           />
         </div>
       )}
@@ -748,7 +755,7 @@ function SuggestionPanel({ chapterId, suggestions, seedTrack, onSetSeed, onAdd, 
       {/* Seed mode — no seed yet */}
       {mode === 'suggest' && !seedTrack && (
         <div className="px-3 py-3 text-center">
-          <p className="font-mono text-[9px] text-muted/60 italic">
+          <p className="font-mono text-[12px] text-muted/60 italic">
             Click ⊕ on any track above to seed suggestions
           </p>
         </div>
@@ -762,19 +769,19 @@ function SuggestionPanel({ chapterId, suggestions, seedTrack, onSetSeed, onAdd, 
               className="flex items-center gap-2 px-2 py-1 hover:bg-ink/[0.06] cursor-pointer border-b border-border/10 last:border-0"
               onMouseDown={() => onAdd(chapterId, [track.id])}>
               <div className="flex-1 min-w-0">
-                <p className="font-mono text-[9.5px] text-ink truncate">{track.title || '—'}</p>
-                <p className="font-mono text-[8.5px] text-muted truncate">{track.artist}</p>
+                <p className="font-mono text-[12px] text-ink truncate">{track.title || '—'}</p>
+                <p className="font-mono text-[11px] text-muted truncate">{track.artist}</p>
               </div>
-              {track.bpm != null && <span className="font-mono text-[9px] text-muted shrink-0 tabular-nums">{track.bpm.toFixed(0)}</span>}
+              {track.bpm != null && <span className="font-mono text-[12px] text-muted shrink-0 tabular-nums">{track.bpm.toFixed(0)}</span>}
               {track.key && (
-                <span className="font-mono text-[9px] font-bold shrink-0 tabular-nums" style={{ color: keyBlipColor(track.key) }}>{track.key}</span>
+                <span className="font-mono text-[12px] font-bold shrink-0 tabular-nums" style={{ color: keyBlipColor(track.key) }}>{track.key}</span>
               )}
               {score != null && (
                 <div className="w-8 h-1 bg-border/20 rounded-full overflow-hidden shrink-0" title={`Match: ${Math.round(score * 100)}%`}>
                   <div className="h-full rounded-full" style={{ width: `${score * 100}%`, background: scoreColor(score) }} />
                 </div>
               )}
-              <span className="text-accent/50 font-mono text-[9px] shrink-0">+</span>
+              <span className="text-accent/50 font-mono text-[12px] shrink-0">+</span>
             </div>
           ))}
         </div>
@@ -782,7 +789,7 @@ function SuggestionPanel({ chapterId, suggestions, seedTrack, onSetSeed, onAdd, 
 
       {mode === 'suggest' && seedTrack && items.length === 0 && (
         <div className="px-3 py-2">
-          <p className="font-mono text-[9px] text-muted/50 italic">No suggestions — library may need BPM/key analysis</p>
+          <p className="font-mono text-[12px] text-muted/50 italic">No suggestions — library may need BPM/key analysis</p>
         </div>
       )}
     </div>
@@ -819,7 +826,7 @@ function SplitView(p: ViewProps): JSX.Element {
                   <div className="flex items-center gap-1.5 px-3 py-0.5"
                     title={`Transition: ${trans.label} · Δenergy ${trans.energyDelta.toFixed(1)} · Δbpm ${trans.bpmDelta.toFixed(0)} · Δmood ${trans.moodDelta.toFixed(2)}`}>
                     <div className="flex-1 h-px" style={{ background: trans.color + '60' }} />
-                    <span className="font-mono text-[7px] uppercase tracking-[0.1em]" style={{ color: trans.color }}>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.1em]" style={{ color: trans.color }}>
                       {trans.label}
                     </span>
                     <div className="flex-1 h-px" style={{ background: trans.color + '60' }} />
@@ -852,7 +859,7 @@ function SplitView(p: ViewProps): JSX.Element {
             />
             <div className="flex-1 overflow-y-auto">
               {activeTracks.length === 0 ? (
-                <div className="flex items-center justify-center h-24 font-mono text-[10px] text-muted/60 italic">
+                <div className="flex items-center justify-center h-24 font-mono text-[13px] text-muted/60 italic">
                   drop tracks here or use the panel below
                 </div>
               ) : (
@@ -878,7 +885,7 @@ function SplitView(p: ViewProps): JSX.Element {
             />
           </>
         ) : (
-          <div className="flex items-center justify-center h-full font-mono text-[10px] text-muted/60">
+          <div className="flex items-center justify-center h-full font-mono text-[13px] text-muted/60">
             select a chapter
           </div>
         )}
@@ -897,13 +904,13 @@ function ChapterListRow({ chapter, tracks, profile, isActive, isDraggingTracks, 
 }): JSX.Element {
   const [isDragOver, setIsDragOver] = useState(false)
   const handleDragOver = (e: React.DragEvent) => {
-    if (!isDraggingTracks && !e.dataTransfer.types.includes('application/x-crate-track-ids')) return
+    if (!isDraggingTracks && !acceptsTrackDrop(e)) return
     e.preventDefault(); setIsDragOver(true)
   }
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setIsDragOver(false)
     let ids = isDraggingTracks ? draggingTrackIds : []
-    if (!ids.length) { try { ids = JSON.parse(e.dataTransfer.getData('application/x-crate-track-ids')) } catch {} }
+    if (!ids.length) ids = readTrackIds(e)
     if (ids.length) onDrop(ids)
   }
 
@@ -921,9 +928,9 @@ function ChapterListRow({ chapter, tracks, profile, isActive, isDraggingTracks, 
       <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: chapter.color }} />
       <span className="w-1.5 h-1.5 rounded-full shrink-0 opacity-60" style={{ background: chapter.color }} />
       <div className="flex-1 min-w-0">
-        <p className={`font-mono text-[10px] truncate ${isActive ? 'font-bold text-ink' : 'text-ink-soft'}`}>{chapter.name}</p>
+        <p className={`font-mono text-[13px] truncate ${isActive ? 'font-bold text-ink' : 'text-ink-soft'}`}>{chapter.name}</p>
         {profile && (
-          <p className="font-mono text-[8px] text-muted/60 tabular-nums">
+          <p className="font-mono text-[11px] text-muted/60 tabular-nums">
             {tracks.length}t · {fmtBpmRange(profile)}
             {profile.energyAvg != null ? ` · nrg ${profile.energyAvg.toFixed(0)}` : ''}
           </p>
@@ -931,7 +938,7 @@ function ChapterListRow({ chapter, tracks, profile, isActive, isDraggingTracks, 
       </div>
       <button onClick={(e) => { e.stopPropagation(); onMagicSort() }}
         title="Magic Sort this chapter"
-        className="opacity-0 group-hover:opacity-100 shrink-0 text-muted/50 hover:text-accent transition-all font-mono text-[9px]">↕</button>
+        className="opacity-0 group-hover:opacity-100 shrink-0 text-muted/50 hover:text-accent transition-all font-mono text-[12px]">↕</button>
       <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete "${chapter.name}"?`)) onDelete() }}
         className="opacity-0 group-hover:opacity-100 shrink-0 text-muted/40 hover:text-red-500 transition-all font-mono text-xs">×</button>
     </div>
@@ -964,7 +971,7 @@ function SwimlaneView(p: ViewProps): JSX.Element {
             {trans && (
               <div className="flex flex-col items-center justify-center px-1 shrink-0" style={{ width: 24 }}>
                 <div className="flex-1 w-px" style={{ background: trans.color + '40' }} />
-                <span className="font-mono text-[7px] rotate-90 my-1" style={{ color: trans.color }} title={trans.label}>
+                <span className="font-mono text-[10px] rotate-90 my-1" style={{ color: trans.color }} title={trans.label}>
                   {trans.label === 'rough' ? '!' : trans.label === 'ok' ? '~' : '✓'}
                 </span>
                 <div className="flex-1 w-px" style={{ background: trans.color + '40' }} />
@@ -1002,15 +1009,17 @@ function SwimlaneColumn({ chapter, tracks, profile, isActive, isDraggingTracks, 
 }): JSX.Element {
   const [isDragOver, setIsDragOver] = useState(false)
   const handleDragOver = (e: React.DragEvent) => {
-    if (!isDraggingTracks && !e.dataTransfer.types.includes('application/x-crate-track-ids')) return
+    if (!isDraggingTracks && !acceptsTrackDrop(e)) return
     e.preventDefault(); setIsDragOver(true)
   }
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setIsDragOver(false)
     let ids = isDraggingTracks ? draggingTrackIds : []
-    if (!ids.length) { try { ids = JSON.parse(e.dataTransfer.getData('application/x-crate-track-ids')) } catch {} }
+    if (!ids.length) ids = readTrackIds(e)
     if (ids.length) onAddTracks(ids)
   }
+
+  const openTrackMenu = useTrackMenuContext()
 
   return (
     <div
@@ -1036,19 +1045,23 @@ function SwimlaneColumn({ chapter, tracks, profile, isActive, isDraggingTracks, 
               className={`group flex flex-col px-2 py-1.5 border-b border-border/10 hover:bg-ink/[0.04] cursor-pointer transition-colors ${isSeed ? 'bg-accent/[0.06]' : ''}`}
               style={{ borderLeftColor: chapter.color, borderLeftWidth: 2 }}
               onDoubleClick={() => onLoad(track)}
+              onContextMenu={(e) => openTrackMenu(e, {
+                ids: [track.id], track,
+                remove: { label: 'Remove from chapter', action: () => onRemoveTrack(track.id) }
+              })}
             >
               <div className="flex items-center gap-1">
                 <button onClick={(e) => { e.stopPropagation(); onSetSeed(isSeed ? null : track) }}
-                  className={`text-[10px] leading-none shrink-0 transition-colors ${isSeed ? 'text-accent' : 'text-muted/30 hover:text-accent/60'}`}>⊕</button>
-                <p className="font-mono text-[9.5px] text-ink truncate flex-1">{track.title || '—'}</p>
+                  className={`text-[13px] leading-none shrink-0 transition-colors ${isSeed ? 'text-accent' : 'text-muted/30 hover:text-accent/60'}`}>⊕</button>
+                <p className="font-mono text-[12px] text-ink truncate flex-1">{track.title || '—'}</p>
                 <button onClick={(e) => { e.stopPropagation(); onRemoveTrack(track.id) }}
                   className="opacity-0 group-hover:opacity-100 text-muted/40 hover:text-red-500 font-mono text-xs">×</button>
               </div>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="font-mono text-[8.5px] text-muted truncate">{track.artist}</span>
+                <span className="font-mono text-[11px] text-muted truncate">{track.artist}</span>
                 <div className="flex-1" />
-                {track.bpm != null && <span className="font-mono text-[8.5px] text-muted tabular-nums">{track.bpm.toFixed(0)}</span>}
-                {track.key && <span className="font-mono text-[8.5px] font-bold tabular-nums" style={{ color: keyColor }}>{track.key}</span>}
+                {track.bpm != null && <span className="font-mono text-[11px] text-muted tabular-nums">{track.bpm.toFixed(0)}</span>}
+                {track.key && <span className="font-mono text-[11px] font-bold tabular-nums" style={{ color: keyColor }}>{track.key}</span>}
                 {fScore != null && (
                   <div className="w-6 h-1 bg-border/20 rounded-full overflow-hidden" title={`Fit ${Math.round(fScore * 100)}%`}>
                     <div className="h-full rounded-full" style={{ width: `${fScore * 100}%`, background: scoreColor(fScore) }} />
@@ -1060,7 +1073,7 @@ function SwimlaneColumn({ chapter, tracks, profile, isActive, isDraggingTracks, 
         })}
         {isDragOver && (
           <div className="m-1.5 h-8 rounded border-2 border-dashed border-accent/50 flex items-center justify-center">
-            <span className="font-mono text-[9px] text-accent/70">drop here</span>
+            <span className="font-mono text-[12px] text-accent/70">drop here</span>
           </div>
         )}
       </div>
@@ -1112,13 +1125,13 @@ function TimelineView(p: ViewProps): JSX.Element {
             const [isDragOver, setIsDragOver] = useState(false)
 
             const handleDragOver = (e: React.DragEvent) => {
-              if (!p.isDraggingTracks && !e.dataTransfer.types.includes('application/x-crate-track-ids')) return
+              if (!p.isDraggingTracks && !acceptsTrackDrop(e)) return
               e.preventDefault(); setIsDragOver(true)
             }
             const handleDrop = (e: React.DragEvent) => {
               e.preventDefault(); setIsDragOver(false)
               let ids = p.isDraggingTracks ? p.draggingTrackIds : []
-              if (!ids.length) { try { ids = JSON.parse(e.dataTransfer.getData('application/x-crate-track-ids')) } catch {} }
+              if (!ids.length) ids = readTrackIds(e)
               if (ids.length) p.onAddTracks(ch.id, ids)
             }
 
@@ -1145,10 +1158,10 @@ function TimelineView(p: ViewProps): JSX.Element {
                     }}
                   />
                   <div className="mt-1 overflow-hidden" style={{ height: 28 }}>
-                    <p className="font-mono text-[8px] uppercase tracking-[0.08em] truncate transition-colors"
+                    <p className="font-mono text-[11px] uppercase tracking-[0.08em] truncate transition-colors"
                       style={{ color: isActive ? ch.color : 'rgb(var(--muted-rgb))' }}>{ch.name}</p>
                     {profile && (
-                      <p className="font-mono text-[7px] text-muted/60 tabular-nums truncate">
+                      <p className="font-mono text-[10px] text-muted/60 tabular-nums truncate">
                         {profile.trackCount}t · {fmtBpmRange(profile)}
                         {profile.energyAvg != null ? ` · nrg ${profile.energyAvg.toFixed(0)}` : ''}
                       </p>
@@ -1196,7 +1209,7 @@ function TimelineView(p: ViewProps): JSX.Element {
             />
           </>
         ) : (
-          <div className="flex items-center justify-center flex-1 font-mono text-[10px] text-muted/60">
+          <div className="flex items-center justify-center flex-1 font-mono text-[13px] text-muted/60">
             select a chapter above
           </div>
         )}
@@ -1243,6 +1256,7 @@ function TrackBrowserPanel({ activeChapterId, activeSetId, profiles, seedTrack, 
   const playlists     = useLibraryStore((s) => s.playlists)
   const setDragging   = useLibraryStore((s) => s.setDragging)
   const clearDragging = useLibraryStore((s) => s.clearDragging)
+  const openTrackMenu = useTrackMenuContext()
 
   const [query,  setQuery]  = useState('')
   const [sortBy, setSortBy] = useState<SortField>('artist')
@@ -1287,8 +1301,7 @@ function TrackBrowserPanel({ activeChapterId, activeSetId, profiles, seedTrack, 
   }, [allTracks, query, sortBy])
 
   const handleDragStart = (e: React.DragEvent, track: Track) => {
-    e.dataTransfer.effectAllowed = 'copy'
-    e.dataTransfer.setData('application/x-crate-track-ids', JSON.stringify([track.id]))
+    setTrackDragData(e, [track.id])
     setDragging([track.id])
   }
 
@@ -1297,23 +1310,23 @@ function TrackBrowserPanel({ activeChapterId, activeSetId, profiles, seedTrack, 
       {/* Header */}
       <div className="shrink-0 px-2 pt-2 pb-1.5 border-b border-border/20 space-y-1.5">
         <div className="flex items-center justify-between">
-          <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-muted">
+          <p className="font-mono text-[12px] font-bold uppercase tracking-[0.18em] text-muted">
             library · {sorted.length.toLocaleString()}
           </p>
           {!activeChapterId && (
-            <p className="font-mono text-[8px] text-muted/50 italic">select a chapter first</p>
+            <p className="font-mono text-[11px] text-muted/50 italic">select a chapter first</p>
           )}
         </div>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="filter…"
-          className="w-full bg-paper border border-border/35 rounded px-2 py-1 font-mono text-[10px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/40"
+          className="w-full bg-paper border border-border/35 rounded px-2 py-1 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/40"
         />
         <div className="flex gap-px">
           {(['artist', 'bpm', 'key', 'energy', 'genre'] as const).map((s) => (
             <button key={s} onClick={() => setSortBy(s)}
-              className={`flex-1 py-0.5 font-mono text-[7.5px] uppercase tracking-[0.06em] rounded transition-colors ${
+              className={`flex-1 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] rounded transition-colors ${
                 sortBy === s ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink'
               }`}>{s}</button>
           ))}
@@ -1337,6 +1350,7 @@ function TrackBrowserPanel({ activeChapterId, activeSetId, profiles, seedTrack, 
               onDragStart={(e) => !inChapter && handleDragStart(e, track)}
               onDragEnd={clearDragging}
               onDoubleClick={() => onLoadA(track)}
+              onContextMenu={(e) => openTrackMenu(e, { ids: [track.id], track })}
               className={`group flex items-center gap-1.5 px-2 py-1.5 border-b border-border/10 transition-colors ${
                 inChapter
                   ? 'opacity-30 cursor-default'
@@ -1348,18 +1362,18 @@ function TrackBrowserPanel({ activeChapterId, activeSetId, profiles, seedTrack, 
 
               {/* Title + artist */}
               <div className="flex-1 min-w-0">
-                <p className="font-mono text-[9.5px] text-ink truncate leading-tight">{track.title || '—'}</p>
+                <p className="font-mono text-[12px] text-ink truncate leading-tight">{track.title || '—'}</p>
                 <div className="flex items-center gap-1">
-                  <p className="font-mono text-[8.5px] text-muted truncate flex-1">{track.artist}</p>
+                  <p className="font-mono text-[11px] text-muted truncate flex-1">{track.artist}</p>
                   {inSet && (
-                    <span className="font-mono text-[7px] text-accent/50 shrink-0">set</span>
+                    <span className="font-mono text-[10px] text-accent/50 shrink-0">set</span>
                   )}
                 </div>
               </div>
 
               {/* BPM */}
               {track.bpm != null && (
-                <span className="font-mono text-[8.5px] text-muted tabular-nums shrink-0">
+                <span className="font-mono text-[11px] text-muted tabular-nums shrink-0">
                   {track.bpm.toFixed(0)}
                 </span>
               )}
@@ -1384,7 +1398,7 @@ function TrackBrowserPanel({ activeChapterId, activeSetId, profiles, seedTrack, 
               {activeChapterId && !inChapter && (
                 <button
                   onClick={() => onAdd(activeChapterId, [track.id])}
-                  className="shrink-0 opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center rounded bg-accent/20 hover:bg-accent/40 text-accent font-mono text-[11px] leading-none transition-all"
+                  className="shrink-0 opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center rounded bg-accent/20 hover:bg-accent/40 text-accent font-mono text-[13px] leading-none transition-all"
                   title="Add to chapter"
                 >+</button>
               )}
@@ -1394,7 +1408,7 @@ function TrackBrowserPanel({ activeChapterId, activeSetId, profiles, seedTrack, 
 
         {sorted.length === 0 && (
           <div className="flex items-center justify-center h-20">
-            <p className="font-mono text-[10px] text-muted/50 italic">no tracks match</p>
+            <p className="font-mono text-[13px] text-muted/50 italic">no tracks match</p>
           </div>
         )}
       </div>

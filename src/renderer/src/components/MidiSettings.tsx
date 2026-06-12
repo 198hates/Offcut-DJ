@@ -59,18 +59,18 @@ function ActionRow({ action }: { action: MidiActionDef }): JSX.Element {
       }`}
     >
       {/* Action label */}
-      <span className="font-mono text-[9.5px] text-ink-soft flex-1 min-w-0 truncate">
+      <span className="font-mono text-[12px] text-ink-soft flex-1 min-w-0 truncate">
         {action.label}
       </span>
 
       {/* Mapping display */}
       {isLearning ? (
-        <span className="font-mono text-[9px] text-accent animate-pulse w-36 text-center">
+        <span className="font-mono text-[12px] text-accent animate-pulse w-36 text-center">
           move a control…
         </span>
       ) : (
         <span
-          className={`font-mono text-[9px] w-36 text-center tabular-nums ${
+          className={`font-mono text-[12px] w-36 text-center tabular-nums ${
             mapping ? 'text-ink-soft' : 'text-muted/40'
           }`}
         >
@@ -81,7 +81,7 @@ function ActionRow({ action }: { action: MidiActionDef }): JSX.Element {
       {/* Learn button */}
       <button
         onClick={() => isLearning ? stopLearning() : startLearning(action.id)}
-        className={`font-mono text-[8.5px] uppercase tracking-[0.12em] px-2 py-0.5 rounded border transition-colors ${
+        className={`font-mono text-[11px] uppercase tracking-[0.12em] px-2 py-0.5 rounded border transition-colors ${
           isLearning
             ? 'border-accent/60 text-accent bg-accent/10 hover:bg-accent/20'
             : 'border-border/40 text-muted hover:text-ink hover:border-border/70'
@@ -94,7 +94,7 @@ function ActionRow({ action }: { action: MidiActionDef }): JSX.Element {
       <button
         onClick={() => clearMapping(action.id)}
         disabled={!mapping}
-        className="font-mono text-[8.5px] uppercase tracking-[0.12em] px-2 py-0.5 rounded border border-transparent text-muted/40 hover:border-red-500/30 hover:text-red-400 disabled:opacity-0 disabled:pointer-events-none transition-colors"
+        className="font-mono text-[11px] uppercase tracking-[0.12em] px-2 py-0.5 rounded border border-transparent text-muted/40 hover:border-red-500/30 hover:text-red-400 disabled:opacity-0 disabled:pointer-events-none transition-colors"
         title="Clear mapping"
       >
         ✕
@@ -114,7 +114,7 @@ function ActionGroup({
 }): JSX.Element {
   return (
     <div className="space-y-0.5">
-      <p className="font-mono text-[8px] uppercase tracking-[0.18em] text-muted/60 px-3 py-1 mt-2">
+      <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted/60 px-3 py-1 mt-2">
         {title}
       </p>
       {actions.map((a) => (
@@ -160,7 +160,7 @@ export function MidiSettings(): JSX.Element {
               className={`absolute top-1 w-4 h-4 rounded-full bg-paper shadow transition-all ${enabled ? 'left-5' : 'left-1'}`}
             />
           </button>
-          <span className="font-mono text-[9.5px] text-ink-soft">
+          <span className="font-mono text-[12px] text-ink-soft">
             {enabled ? 'MIDI enabled' : 'MIDI disabled'}
           </span>
         </div>
@@ -168,13 +168,13 @@ export function MidiSettings(): JSX.Element {
         {/* Connected devices */}
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           {connectedDevices.length === 0 ? (
-            <span className="font-mono text-[9px] text-muted/50">no MIDI devices detected</span>
+            <span className="font-mono text-[12px] text-muted/50">no MIDI devices detected</span>
           ) : (
             <>
-              <span className="font-mono text-[9px] text-muted/60 shrink-0">
+              <span className="font-mono text-[12px] text-muted/60 shrink-0">
                 {connectedDevices.length} device{connectedDevices.length !== 1 ? 's' : ''}:
               </span>
-              <span className="font-mono text-[9px] text-ink-soft truncate">
+              <span className="font-mono text-[12px] text-ink-soft truncate">
                 {connectedDevices.join(', ')}
               </span>
             </>
@@ -189,7 +189,7 @@ export function MidiSettings(): JSX.Element {
                 clearAllMappings()
               }
             }}
-            className="font-mono text-[8.5px] uppercase tracking-[0.12em] px-2 py-0.5 rounded border border-red-500/25 text-red-400/70 hover:border-red-500/50 hover:text-red-400 transition-colors"
+            className="font-mono text-[11px] uppercase tracking-[0.12em] px-2 py-0.5 rounded border border-red-500/25 text-red-400/70 hover:border-red-500/50 hover:text-red-400 transition-colors"
           >
             clear all
           </button>
@@ -197,18 +197,18 @@ export function MidiSettings(): JSX.Element {
       </div>
 
       {/* Instructions */}
-      <div className="flex items-start gap-2 font-mono text-[9.5px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
+      <div className="flex items-start gap-2 font-mono text-[12px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
         <span className="shrink-0 text-accent">ℹ</span>
         <span>
           press <strong className="text-ink-soft">Learn</strong> next to an action,
           then move a knob, fader, or press a pad on your controller.
-          press <kbd className="bg-ink/[0.07] border border-border/30 rounded px-1 text-ink-soft text-[8.5px]">Esc</kbd> to cancel.
+          press <kbd className="bg-ink/[0.07] border border-border/30 rounded px-1 text-ink-soft text-[11px]">Esc</kbd> to cancel.
           mappings persist across sessions.
         </span>
       </div>
 
       {/* Action table header */}
-      <div className="flex items-center gap-3 px-3 font-mono text-[8px] uppercase tracking-[0.14em] text-muted/50 border-b border-border/20 pb-1">
+      <div className="flex items-center gap-3 px-3 font-mono text-[11px] uppercase tracking-[0.14em] text-muted/50 border-b border-border/20 pb-1">
         <span className="flex-1">Action</span>
         <span className="w-36 text-center">Mapping</span>
         <span className="w-12 text-center">Learn</span>
@@ -217,7 +217,7 @@ export function MidiSettings(): JSX.Element {
 
       {/* Deck A */}
       <div>
-        <h3 className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-accent/80 px-3 pt-2 pb-1 border-b border-border/15">
+        <h3 className="font-mono text-[12px] font-bold uppercase tracking-[0.16em] text-accent/80 px-3 pt-2 pb-1 border-b border-border/15">
           Deck A
         </h3>
         {Object.entries(groupActions(deckAActions)).map(([group, actions]) => (
@@ -231,7 +231,7 @@ export function MidiSettings(): JSX.Element {
 
       {/* Deck B */}
       <div>
-        <h3 className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-accent/80 px-3 pt-2 pb-1 border-b border-border/15">
+        <h3 className="font-mono text-[12px] font-bold uppercase tracking-[0.16em] text-accent/80 px-3 pt-2 pb-1 border-b border-border/15">
           Deck B
         </h3>
         {Object.entries(groupActions(deckBActions)).map(([group, actions]) => (
@@ -245,7 +245,7 @@ export function MidiSettings(): JSX.Element {
 
       {/* Mixer */}
       <div>
-        <h3 className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-accent/80 px-3 pt-2 pb-1 border-b border-border/15">
+        <h3 className="font-mono text-[12px] font-bold uppercase tracking-[0.16em] text-accent/80 px-3 pt-2 pb-1 border-b border-border/15">
           Mixer
         </h3>
         {Object.entries(groupActions(mixerActions)).map(([group, actions]) => (

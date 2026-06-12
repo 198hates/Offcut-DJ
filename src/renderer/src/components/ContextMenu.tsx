@@ -72,7 +72,7 @@ export function ContextMenu({ x, y, sections, onClose }: Props): JSX.Element {
                   }}
                   disabled={item.disabled}
                   className={`
-                    w-full text-left px-3 py-[5px] font-mono text-[10.5px]
+                    w-full text-left px-3 py-[5px] font-mono text-[13px]
                     flex items-center justify-between gap-4
                     transition-colors
                     ${item.disabled
@@ -83,7 +83,7 @@ export function ContextMenu({ x, y, sections, onClose }: Props): JSX.Element {
                   `}
                 >
                   <span>{item.label}</span>
-                  <span className="text-[9px] text-muted shrink-0 tabular-nums">
+                  <span className="text-[12px] text-muted shrink-0 tabular-nums">
                     {hasSub ? '›' : (item.shortcut ?? '')}
                   </span>
                 </button>
@@ -99,7 +99,7 @@ export function ContextMenu({ x, y, sections, onClose }: Props): JSX.Element {
                       <button
                         key={subi}
                         onClick={() => { sub.action(); onClose() }}
-                        className="w-full text-left px-3 py-[5px] font-mono text-[10.5px] text-ink-soft hover:bg-ink/[0.06] hover:text-ink transition-colors truncate"
+                        className="w-full text-left px-3 py-[5px] font-mono text-[13px] text-ink-soft hover:bg-ink/[0.06] hover:text-ink transition-colors truncate"
                       >
                         {sub.label}
                       </button>

@@ -390,23 +390,27 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-chassis"
-      style={{ fontFamily: "'JetBrains Mono', monospace" }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 sm:p-8"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
+      <div
+        className="flex flex-col w-full max-w-5xl h-[72vh] max-h-[680px] rounded-lg border border-border/40 bg-chassis shadow-2xl overflow-hidden"
+        style={{ fontFamily: "'JetBrains Mono', monospace" }}
+      >
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 border-b border-border/30 bg-chassis-soft flex-wrap">
 
         <div className="flex-1 min-w-0">
-          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-accent">beatgrid editor</p>
-          <p className="text-[10px] text-ink truncate mt-0.5">{track.title} · {track.artist}</p>
+          <p className="text-[12px] font-bold uppercase tracking-[0.2em] text-accent">beatgrid editor</p>
+          <p className="text-[13px] text-ink truncate mt-0.5">{track.title} · {track.artist}</p>
         </div>
 
         {/* BPM */}
         <div className="flex items-center gap-1 shrink-0">
-          <span className="text-[9px] text-muted uppercase tracking-[0.12em] mr-1">bpm</span>
+          <span className="text-[12px] text-muted uppercase tracking-[0.12em] mr-1">bpm</span>
           {([-1, -0.1, -0.01] as const).map((d) => (
             <button key={d} onClick={() => nudgeBpm(d)}
-              className="px-1.5 py-1 text-[9px] text-muted hover:text-ink border border-border/35 rounded transition-colors">
+              className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">
               {d}
             </button>
           ))}
@@ -415,36 +419,36 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
           </span>
           {([0.01, 0.1, 1] as const).map((d) => (
             <button key={d} onClick={() => nudgeBpm(d)}
-              className="px-1.5 py-1 text-[9px] text-muted hover:text-ink border border-border/35 rounded transition-colors">
+              className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">
               +{d}
             </button>
           ))}
           <button onClick={() => setBpm((b) => Math.round(b / 2 * 100) / 100)}
-            className="ml-1 px-2 py-1 text-[9px] text-muted hover:text-ink border border-border/35 rounded transition-colors">½</button>
+            className="ml-1 px-2 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">½</button>
           <button onClick={() => setBpm((b) => Math.round(b * 2 * 100) / 100)}
-            className="px-2 py-1 text-[9px] text-muted hover:text-ink border border-border/35 rounded transition-colors">×2</button>
+            className="px-2 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">×2</button>
         </div>
 
         {/* Offset */}
         <div className="flex items-center gap-1 shrink-0">
-          <span className="text-[9px] text-muted uppercase tracking-[0.12em] mr-1">offset</span>
+          <span className="text-[12px] text-muted uppercase tracking-[0.12em] mr-1">offset</span>
           {([-5, -1] as const).map((d) => (
             <button key={d} onClick={() => nudgeOffset(d)}
-              className="px-1.5 py-1 text-[9px] text-muted hover:text-ink border border-border/35 rounded transition-colors">
+              className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">
               {d}ms
             </button>
           ))}
-          <span className="px-2 py-1 text-[11px] text-ink tabular-nums select-none min-w-[4rem] text-center">
+          <span className="px-2 py-1 text-[13px] text-ink tabular-nums select-none min-w-[4rem] text-center">
             {(offsetMs / 1000).toFixed(3)}s
           </span>
           {([1, 5] as const).map((d) => (
             <button key={d} onClick={() => nudgeOffset(d)}
-              className="px-1.5 py-1 text-[9px] text-muted hover:text-ink border border-border/35 rounded transition-colors">
+              className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">
               +{d}ms
             </button>
           ))}
           <button onClick={autoDetect} disabled={loading}
-            className="ml-1 px-2 py-1 text-[9px] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded transition-colors disabled:opacity-40">
+            className="ml-1 px-2 py-1 text-[12px] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded transition-colors disabled:opacity-40">
             auto
           </button>
         </div>
@@ -452,19 +456,19 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
         {/* Zoom */}
         <div className="flex items-center gap-1 shrink-0">
           <button onClick={() => setView((v) => ({ ...v, pps: Math.max(10, v.pps / 1.5) }))}
-            className="px-2 py-1 text-[9px] text-muted hover:text-ink border border-border/35 rounded transition-colors">−</button>
-          <span className="text-[9px] text-muted w-12 text-center tabular-nums">{Math.round(view.pps)} px/s</span>
+            className="px-2 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">−</button>
+          <span className="text-[12px] text-muted w-12 text-center tabular-nums">{Math.round(view.pps)} px/s</span>
           <button onClick={() => setView((v) => ({ ...v, pps: Math.min(500, v.pps * 1.5) }))}
-            className="px-2 py-1 text-[9px] text-muted hover:text-ink border border-border/35 rounded transition-colors">+</button>
+            className="px-2 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">+</button>
         </div>
 
         <div className="flex items-center gap-2 ml-auto shrink-0">
           <button onClick={onClose}
-            className="px-3 py-1.5 text-[9px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
+            className="px-3 py-1.5 text-[12px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
             cancel
           </button>
           <button onClick={handleSave}
-            className="px-3 py-1.5 text-[9px] uppercase tracking-[0.1em] bg-accent hover:bg-accent/90 text-paper rounded transition-colors">
+            className="px-3 py-1.5 text-[12px] uppercase tracking-[0.1em] bg-accent hover:bg-accent/90 text-paper rounded transition-colors">
             save beatgrid
           </button>
         </div>
@@ -474,12 +478,12 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
       <div className="flex-1 relative bg-[#0a0a12] overflow-hidden" style={{ minHeight: 0 }}>
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-[10px] text-muted uppercase tracking-[0.15em]">decoding audio…</span>
+            <span className="text-[13px] text-muted uppercase tracking-[0.15em]">decoding audio…</span>
           </div>
         )}
         {error && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-[10px] text-red-500">{error}</span>
+            <span className="text-[13px] text-red-500">{error}</span>
           </div>
         )}
         <canvas
@@ -492,7 +496,7 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
         />
         {!loading && !error && (
           <div className="absolute bottom-6 right-3 pointer-events-none">
-            <span className="text-[8px] text-muted/40 uppercase tracking-[0.15em]">
+            <span className="text-[11px] text-muted/40 uppercase tracking-[0.15em]">
               click / drag to align · scroll to pan · ctrl+scroll to zoom
             </span>
           </div>
@@ -514,18 +518,19 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
 
       {/* ── Info bar ─────────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center gap-4 px-4 py-1.5 border-t border-border/20 bg-chassis-soft">
-        <span className="text-[8px] text-muted/50 uppercase tracking-[0.15em]">
+        <span className="text-[11px] text-muted/50 uppercase tracking-[0.15em]">
           {markers.length} beats · {Math.round(markers.length / 4)} bars ·{' '}
           {duration > 0
             ? `${Math.floor(duration / 60)}:${Math.floor(duration % 60).toString().padStart(2, '0')}`
             : '—'}
         </span>
-        <span className="text-[8px] text-muted/40 ml-auto">
+        <span className="text-[11px] text-muted/40 ml-auto">
           <span className="inline-block w-2 h-2 mr-1 rounded-sm" style={{ background: 'rgba(216,106,74,0.8)' }} />
           anchor (phase 0) ·{' '}
           <span style={{ color: 'rgba(255,255,255,0.5)' }}>▏</span> downbeat ·{' '}
           <span style={{ color: 'rgba(255,255,255,0.25)' }}>▏</span> beat
         </span>
+      </div>
       </div>
     </div>
   )

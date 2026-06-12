@@ -22,8 +22,8 @@ export function exportToIntegration(appDb: Database.Database, outputPath: string
   const lines: string[] = []
 
   lines.push('<?xml version="1.0" encoding="UTF-8" standalone="no" ?>')
-  lines.push(`<NML Version="19" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://10.0.0.1/" MODIFIED_BY="Crate">`)
-  lines.push(`  <HEAD COMPANY="Crate" PROGRAM="Crate"></HEAD>`)
+  lines.push(`<NML Version="19" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://10.0.0.1/" MODIFIED_BY="Offcut">`)
+  lines.push(`  <HEAD COMPANY="Offcut" PROGRAM="Offcut"></HEAD>`)
   lines.push(`  <MUSICFOLDERS></MUSICFOLDERS>`)
   lines.push(`  <COLLECTION ENTRIES="${tracks.length}">`)
 

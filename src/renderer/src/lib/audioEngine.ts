@@ -16,6 +16,8 @@ export type WaveformData = LoadResult
 type TimeCallback = (time: number) => void
 type VoidCallback = () => void
 
+const STEM_KINDS: StemKind[] = ['drums', 'bass', 'vocals', 'other']
+
 class AudioEngine implements AudioEngineContract {
   private ctx: AudioContext | null = null
   private buffer: AudioBuffer | null = null
@@ -73,7 +75,7 @@ class AudioEngine implements AudioEngineContract {
       this.eqMid = this.ctx.createBiquadFilter()
       this.eqMid.type = 'peaking'
       this.eqMid.frequency.value = 1000
-      this.eqMid.Q.value = 0.8
+      this.eqMid.Q.value = 0.9 // matches the native engine's mid band
       this.eqMid.gain.value = this._eqMid
 
       this.eqHigh = this.ctx.createBiquadFilter()
@@ -98,12 +100,25 @@ class AudioEngine implements AudioEngineContract {
       // Recording destination (MediaRecorder can attach its stream here)
       this._recordDest = this.ctx.createMediaStreamDestination()
 
-      // Chain: EQ → gain → analyser → speakers + record dest
+      // Per-stem gain buses — each sums into the EQ chain (eqLow). When stems
+      // are loaded, the four stem sources route through these instead of the
+      // single main source.
+      for (const k of STEM_KINDS) {
+        const g = this.ctx.createGain()
+        g.gain.value = 1
+        g.connect(this.eqLow)
+        this.stemGains[k] = g
+      }
+
+      // Chain: EQ → gain → analyser → speakers + record dest.
+      // Pre-listen taps POST-EQ but PRE-FADER: cueing the next track must be
+      // audible in headphones with the channel fader down — a post-fader tap
+      // defeats the point of a cue bus.
       this.eqLow.connect(this.eqMid)
       this.eqMid.connect(this.eqHigh)
       this.eqHigh.connect(this.gainNode)
+      this.eqHigh.connect(this._preListenGain)
       this.gainNode.connect(this.analyser)
-      this.gainNode.connect(this._preListenGain)
       this.gainNode.connect(this._recordDest)
       this.analyser.connect(this.ctx.destination)
     }
@@ -118,6 +133,10 @@ class AudioEngine implements AudioEngineContract {
     this.stop()
     this._looping = false
     this._rate = 1.0
+    // A freshly loaded track starts on the single mix bus; stems (if any) are
+    // loaded explicitly afterwards via loadStems().
+    this.stemBuffers = null
+    this._hasStems = false
 
     let ab: ArrayBuffer
     if (typeof source === 'string') {
@@ -143,28 +162,17 @@ class AudioEngine implements AudioEngineContract {
   // ── Playback ──────────────────────────────────────────────────────────────
 
   play(from?: number): void {
-    if (!this.buffer || !this.gainNode) return
+    if (!this.gainNode) return
+    if (!this._hasStems && !this.buffer) return
     const ctx = this.getCtx()
     cancelAnimationFrame(this.rafId)  // prevent stale RAF chains from accumulating
     this._stopSource()
 
-    const pos = Math.max(0, Math.min(from ?? this.pausedAt, this.buffer.duration))
+    const pos = Math.max(0, Math.min(from ?? this.pausedAt, this.duration))
     this.startPos = pos
     this.startedAt = ctx.currentTime
 
-    this.source = ctx.createBufferSource()
-    this.source.buffer = this.buffer
-    this.source.playbackRate.value = this._rate
-
-    if (this._looping && this._loopEnd > this._loopStart) {
-      this.source.loop = true
-      this.source.loopStart = this._loopStart
-      this.source.loopEnd = this._loopEnd
-    }
-
-    // Route through EQ chain (eqLow is guaranteed to exist after getCtx())
-    this.source.connect(this.eqLow!)
-    this.source.onended = () => {
+    const onEnded = (): void => {
       if (this._playing) {
         this._playing = false
         this.pausedAt = 0
@@ -172,7 +180,44 @@ class AudioEngine implements AudioEngineContract {
         cancelAnimationFrame(this.rafId)
       }
     }
-    this.source.start(0, pos)
+
+    if (this._hasStems && this.stemBuffers) {
+      // Four stem buses, started in the same synchronous block → sample-aligned.
+      this.stemSources = {}
+      let first = true
+      for (const k of STEM_KINDS) {
+        const src = ctx.createBufferSource()
+        src.buffer = this.stemBuffers[k]
+        src.playbackRate.value = this._rate
+        if (this._looping && this._loopEnd > this._loopStart) {
+          src.loop = true
+          src.loopStart = this._loopStart
+          src.loopEnd = this._loopEnd
+        }
+        src.connect(this.stemGains[k]!)
+        if (first) {
+          src.onended = onEnded
+          first = false
+        }
+        src.start(0, pos)
+        this.stemSources[k] = src
+      }
+      this._applyStemGains()
+    } else {
+      this.source = ctx.createBufferSource()
+      this.source.buffer = this.buffer
+      this.source.playbackRate.value = this._rate
+      if (this._looping && this._loopEnd > this._loopStart) {
+        this.source.loop = true
+        this.source.loopStart = this._loopStart
+        this.source.loopEnd = this._loopEnd
+      }
+      // Route through EQ chain (eqLow is guaranteed to exist after getCtx())
+      this.source.connect(this.eqLow!)
+      this.source.onended = onEnded
+      this.source.start(0, pos)
+    }
+
     this._playing = true
     this._tick()
   }
@@ -202,22 +247,34 @@ class AudioEngine implements AudioEngineContract {
     }
   }
 
+  // Scrub-while-paused (needle search) is a native-engine feature; the Web Audio
+  // fallback doesn't render audio with the transport stopped, so these are no-ops.
+  scrubBegin(): void {}
+  scrubEnd(): void {}
+
   // ── Loop ──────────────────────────────────────────────────────────────────
 
   setLoop(start: number, end: number): void {
     this._loopStart = Math.max(0, start)
-    this._loopEnd = Math.min(end, this.buffer?.duration ?? end)
+    this._loopEnd = Math.min(end, this.duration || end)
     this._looping = true
-    if (this.source) {
-      this.source.loop = true
-      this.source.loopStart = this._loopStart
-      this.source.loopEnd = this._loopEnd
+    const arm = (s: AudioBufferSourceNode | null | undefined): void => {
+      if (!s) return
+      s.loop = true
+      s.loopStart = this._loopStart
+      s.loopEnd = this._loopEnd
     }
+    arm(this.source)
+    for (const k of STEM_KINDS) arm(this.stemSources[k])
   }
 
   clearLoop(): void {
     this._looping = false
     if (this.source) this.source.loop = false
+    for (const k of STEM_KINDS) {
+      const s = this.stemSources[k]
+      if (s) s.loop = false
+    }
   }
 
   get isLooping(): boolean { return this._looping }
@@ -229,6 +286,10 @@ class AudioEngine implements AudioEngineContract {
   set playbackRate(r: number) {
     this._rate = Math.max(0.5, Math.min(2.0, r))
     if (this.source) this.source.playbackRate.value = this._rate
+    for (const k of STEM_KINDS) {
+      const s = this.stemSources[k]
+      if (s) s.playbackRate.value = this._rate
+    }
     // Recalculate startedAt so currentTime stays continuous
     if (this._playing && this.ctx) {
       const t = this.currentTime
@@ -244,15 +305,23 @@ class AudioEngine implements AudioEngineContract {
 
   setEqGain(band: 'high' | 'mid' | 'low', db: number): void {
     const clamped = Math.max(-24, Math.min(6, db))
+    // Knob floor acts as a kill (full cut), matching the native engine; the
+    // short time constant glides the change so fast knob moves don't zipper.
+    const applied = clamped <= -23.9 ? -40 : clamped
+    const apply = (f: BiquadFilterNode | null): void => {
+      if (!f) return
+      if (this.ctx) f.gain.setTargetAtTime(applied, this.ctx.currentTime, 0.03)
+      else f.gain.value = applied
+    }
     if (band === 'high') {
       this._eqHigh = clamped
-      if (this.eqHigh) this.eqHigh.gain.value = clamped
+      apply(this.eqHigh)
     } else if (band === 'mid') {
       this._eqMid = clamped
-      if (this.eqMid) this.eqMid.gain.value = clamped
+      apply(this.eqMid)
     } else {
       this._eqLow = clamped
-      if (this.eqLow) this.eqLow.gain.value = clamped
+      apply(this.eqLow)
     }
   }
 
@@ -285,19 +354,80 @@ class AudioEngine implements AudioEngineContract {
   get keylockEnabled(): boolean { return this._keylock }
 
   // ── Stems ─────────────────────────────────────────────────────────────────
+  // Real per-stem buses: four decoded stem buffers, each played through its own
+  // GainNode (created in getCtx, summed into the EQ chain). mute/solo/gain set
+  // the corresponding GainNode, so they affect audio for real.
 
-  /**
-   * Stem bus controls (drums / bass / vocals / other).
-   * Pre-demucs: stored but not routed — all audio is on the main bus.
-   * Post-demucs (Phase 3): each stem will have its own GainNode bus.
-   */
   private _stemGain:   Record<StemKind, number>  = { drums: 0, bass: 0, vocals: 0, other: 0 }
   private _stemMuted:  Record<StemKind, boolean> = { drums: false, bass: false, vocals: false, other: false }
   private _stemSoloed: Record<StemKind, boolean> = { drums: false, bass: false, vocals: false, other: false }
 
-  setStemGain(kind: StemKind, db: number): void   { this._stemGain[kind]   = db   }
-  setStemMuted(kind: StemKind, muted: boolean):    void { this._stemMuted[kind]  = muted  }
-  setStemSoloed(kind: StemKind, soloed: boolean):  void { this._stemSoloed[kind] = soloed }
+  private stemGains: Partial<Record<StemKind, GainNode>> = {}
+  private stemBuffers: Record<StemKind, AudioBuffer> | null = null
+  private stemSources: Partial<Record<StemKind, AudioBufferSourceNode>> = {}
+  private _hasStems = false
+
+  get hasStems(): boolean { return this._hasStems }
+
+  setStemGain(kind: StemKind, db: number): void {
+    this._stemGain[kind] = db
+    this._applyStemGains()
+  }
+  setStemMuted(kind: StemKind, muted: boolean): void {
+    this._stemMuted[kind] = muted
+    this._applyStemGains()
+  }
+  setStemSoloed(kind: StemKind, soloed: boolean): void {
+    this._stemSoloed[kind] = soloed
+    this._applyStemGains()
+  }
+
+  /** Compute each stem's effective linear gain (mute / solo / trim) and apply it. */
+  private _applyStemGains(): void {
+    const anySolo = STEM_KINDS.some((k) => this._stemSoloed[k])
+    for (const k of STEM_KINDS) {
+      const g = this.stemGains[k]
+      if (!g) continue
+      const audible = !this._stemMuted[k] && (!anySolo || this._stemSoloed[k])
+      const lin = audible ? Math.pow(10, this._stemGain[k] / 20) : 0
+      const ctx = this.ctx
+      if (ctx) g.gain.setTargetAtTime(lin, ctx.currentTime, 0.012)
+      else g.gain.value = lin
+    }
+  }
+
+  async loadStems(urls: Record<StemKind, string>): Promise<void> {
+    const ctx = this.getCtx()
+    const wasPlaying = this._playing
+    const pos = this.currentTime
+    const entries = await Promise.all(
+      STEM_KINDS.map(async (k): Promise<[StemKind, AudioBuffer]> => {
+        const src = urls[k]
+        const ab =
+          typeof src === 'string' && !/^https?:|^blob:/.test(src)
+            ? await window.api.audio.readFile(src)
+            : await (await fetch(src)).arrayBuffer()
+        return [k, await ctx.decodeAudioData(ab.slice(0))]
+      })
+    )
+    this.stemBuffers = Object.fromEntries(entries) as Record<StemKind, AudioBuffer>
+    this._hasStems = true
+    this._applyStemGains()
+    // Re-arm playback on the stem buses if we were mid-play.
+    this._stopSource()
+    if (wasPlaying) this.play(pos)
+    else this.pausedAt = pos
+  }
+
+  unloadStems(): void {
+    const wasPlaying = this._playing
+    const pos = this.currentTime
+    this._stopSource()
+    this.stemBuffers = null
+    this._hasStems = false
+    if (wasPlaying) this.play(pos)
+    else this.pausedAt = pos
+  }
 
   // ── Output routing ────────────────────────────────────────────────────────
 
@@ -318,19 +448,28 @@ class AudioEngine implements AudioEngineContract {
   // ── Inter-deck sync ───────────────────────────────────────────────────────
 
   /**
-   * Lock this deck's tempo to a master engine.
-   * Stub — Phase 4: implemented once both decks share a Rust clock.
+   * Shared-clock sync is a native-engine feature (it derives the slave deck's
+   * position from the master's transport in the Rust audio callback). The Web
+   * Audio engine has no equivalent, so these are no-ops; callers should rely on
+   * the native engine for beat-locked sync.
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  syncTo(_master: AudioEngineContract): void {
-    // TODO (Phase 4): adjust playbackRate to match master BPM and align phase
-  }
+  syncTo(_masterId: string, _ratio: number, _phaseSeconds: number): void {}
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  updateSync(_ratio: number, _phaseSeconds: number): void {}
+  clearSync(): void {}
+  get isSynced(): boolean { return false }
 
   // ── Volume ────────────────────────────────────────────────────────────────
 
   set volume(v: number) {
     this._volume = Math.max(0, Math.min(1, v))
-    if (this.gainNode) this.gainNode.gain.value = this._volume
+    if (this.gainNode) {
+      // Smooth fader moves (~6 ms) so rapid changes don't zipper — matches
+      // the native engine's per-sample gain smoothing.
+      if (this.ctx) this.gainNode.gain.setTargetAtTime(this._volume, this.ctx.currentTime, 0.006)
+      else this.gainNode.gain.value = this._volume
+    }
   }
   get volume(): number { return this._volume }
 
@@ -386,6 +525,14 @@ class AudioEngine implements AudioEngineContract {
       this.source.onended = null
       this.source = null
     }
+    for (const k of STEM_KINDS) {
+      const s = this.stemSources[k]
+      if (s) {
+        try { s.stop() } catch { /* already stopped */ }
+        s.onended = null
+      }
+    }
+    this.stemSources = {}
   }
 
   private _tick = (): void => {

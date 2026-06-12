@@ -441,7 +441,7 @@ export function GraphView({ chapterTracks, profiles, activeChapterId, onAddTrack
             {/* Text */}
             <div className="px-3 py-2 space-y-0.5 min-w-0">
               <div className="flex items-center gap-1.5">
-                <p className="font-mono text-[10px] font-bold text-ink max-w-[200px] truncate">{hoverNode.track.title}</p>
+                <p className="font-mono text-[13px] font-bold text-ink max-w-[200px] truncate">{hoverNode.track.title}</p>
                 {/* Preview pulse — shown once audio starts */}
                 {previewId === hoverNode.track.id && (
                   <span className="flex items-center gap-0.5 shrink-0" title="previewing">
@@ -455,24 +455,24 @@ export function GraphView({ chapterTracks, profiles, activeChapterId, onAddTrack
                   </span>
                 )}
               </div>
-              <p className="font-mono text-[9px] text-muted truncate">{hoverNode.track.artist}</p>
+              <p className="font-mono text-[12px] text-muted truncate">{hoverNode.track.artist}</p>
               <div className="flex items-center gap-2 pt-0.5">
-                {hoverNode.track.bpm != null    && <span className="font-mono text-[8.5px] text-ink-soft">{hoverNode.track.bpm.toFixed(1)} bpm</span>}
-                {hoverNode.track.key            && <span className="font-mono text-[8.5px] font-bold" style={{ color: keyBlipColor(hoverNode.track.key) }}>{hoverNode.track.key}</span>}
-                {hoverNode.track.energy != null && <span className="font-mono text-[8.5px] text-muted">nrg {hoverNode.track.energy}</span>}
-                {MOOD_LABEL(hoverNode.track.mood ?? null) && <span className="font-mono text-[8.5px] text-muted">{MOOD_LABEL(hoverNode.track.mood ?? null)}</span>}
+                {hoverNode.track.bpm != null    && <span className="font-mono text-[11px] text-ink-soft">{hoverNode.track.bpm.toFixed(1)} bpm</span>}
+                {hoverNode.track.key            && <span className="font-mono text-[11px] font-bold" style={{ color: keyBlipColor(hoverNode.track.key) }}>{hoverNode.track.key}</span>}
+                {hoverNode.track.energy != null && <span className="font-mono text-[11px] text-muted">nrg {hoverNode.track.energy}</span>}
+                {MOOD_LABEL(hoverNode.track.mood ?? null) && <span className="font-mono text-[11px] text-muted">{MOOD_LABEL(hoverNode.track.mood ?? null)}</span>}
               </div>
               {!hoverNode.isAnchor && (
                 <div className="flex items-center gap-2 pt-0.5">
                   <div className="flex-1 h-0.5 bg-border/20 rounded-full overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${hoverNode.score * 100}%`, background: '#D86A4A' }} />
                   </div>
-                  <span className="font-mono text-[8px] text-muted tabular-nums">{Math.round(hoverNode.score * 100)}%</span>
-                  <span className="font-mono text-[8px] text-muted/50">click to add · right-click dismiss</span>
+                  <span className="font-mono text-[11px] text-muted tabular-nums">{Math.round(hoverNode.score * 100)}%</span>
+                  <span className="font-mono text-[11px] text-muted/50">click to add · right-click dismiss</span>
                 </div>
               )}
               {hoverNode.isAnchor && (
-                <p className="font-mono text-[8px] text-muted/50 pt-0.5">click to load on deck A</p>
+                <p className="font-mono text-[11px] text-muted/50 pt-0.5">click to load on deck A</p>
               )}
             </div>
           </div>
@@ -484,13 +484,13 @@ export function GraphView({ chapterTracks, profiles, activeChapterId, onAddTrack
         {[['#4A9B6F','harmonic'],['#C9A02C','bpm'],['#4E7090','mood'],['rgba(110,101,83,0.6)','general']] .map(([c, l]) => (
           <div key={l} className="flex items-center gap-1">
             <div className="w-5 h-0.5 rounded-full" style={{ background: c }} />
-            <span className="font-mono text-[7.5px] uppercase tracking-[0.1em]" style={{ color: 'rgba(180,170,155,0.4)' }}>{l}</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.1em]" style={{ color: 'rgba(180,170,155,0.4)' }}>{l}</span>
           </div>
         ))}
       </div>
 
       {/* Hint */}
-      <div className="absolute bottom-3 right-3 font-mono text-[8px] pointer-events-none"
+      <div className="absolute bottom-3 right-3 font-mono text-[11px] pointer-events-none"
         style={{ color: 'rgba(180,170,155,0.2)' }}>
         click candidate to add · right-click to dismiss
       </div>

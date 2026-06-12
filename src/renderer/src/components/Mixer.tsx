@@ -11,6 +11,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useDeckAStore, useDeckBStore } from '../store/playerStore'
 import { useMixerStore } from '../store/mixerStore'
+import { useRecordingStore } from '../store/recordingStore'
 import type { AudioEngineContract } from '../lib/audioEngineContract'
 
 // ── EQ Knob ──────────────────────────────────────────────────────────────────
@@ -63,11 +64,11 @@ function EqKnob({ label, value, min = -24, max = 6, onChange }: {
       {/* Label + value */}
       <div className="flex flex-col" style={{ minWidth: 0 }}>
         <span
-          className="font-mono text-[8px] font-bold uppercase tracking-[0.18em] leading-none"
+          className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] leading-none"
           style={{ color: 'var(--deck-mute)' }}
         >{label}</span>
         <span
-          className="font-mono text-[7px] tabular-nums leading-none mt-0.5"
+          className="font-mono text-[10px] tabular-nums leading-none mt-0.5"
           style={{ color: isKill ? 'var(--deck-spot)' : 'var(--deck-ink)' }}
         >{display}</span>
       </div>
@@ -246,7 +247,7 @@ function ChannelStrip({
       {/* Channel label */}
       <div className="flex items-center justify-between">
         <span
-          className="font-mono text-[8px] font-bold uppercase tracking-[0.22em]"
+          className="font-mono text-[11px] font-bold uppercase tracking-[0.22em]"
           style={{ color: hasTrack ? 'var(--deck-spot)' : 'var(--deck-mute)' }}
         >CH {label}</span>
         {/* Activity LED */}
@@ -273,8 +274,8 @@ function ChannelStrip({
       {/* VU meter + label */}
       <div className="space-y-1">
         <div className="flex justify-between items-baseline">
-          <span className="font-mono text-[6px] uppercase tracking-[0.2em]" style={{ color: 'var(--deck-mute)' }}>level</span>
-          <span className="font-mono text-[7px] tabular-nums" style={{ color: 'rgba(235,229,211,0.4)' }}>
+          <span className="font-mono text-[9px] uppercase tracking-[0.2em]" style={{ color: 'var(--deck-mute)' }}>level</span>
+          <span className="font-mono text-[10px] tabular-nums" style={{ color: 'rgba(235,229,211,0.4)' }}>
             {Math.round(volume * 100)}
           </span>
         </div>
@@ -313,9 +314,9 @@ function Crossfader({ value, onChange }: { value: number; onChange: (v: number) 
     <div className="space-y-1.5 px-2 pb-2">
       {/* Labels */}
       <div className="flex justify-between items-center">
-        <span className="font-mono text-[7px] uppercase tracking-[0.18em]" style={{ color: 'var(--deck-mute)' }}>A</span>
-        <span className="font-mono text-[6px] uppercase tracking-[0.22em]" style={{ color: 'rgba(110,101,83,0.5)' }}>x-fade</span>
-        <span className="font-mono text-[7px] uppercase tracking-[0.18em]" style={{ color: 'var(--deck-mute)' }}>B</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: 'var(--deck-mute)' }}>A</span>
+        <span className="font-mono text-[9px] uppercase tracking-[0.22em]" style={{ color: 'rgba(110,101,83,0.5)' }}>x-fade</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: 'var(--deck-mute)' }}>B</span>
       </div>
 
       {/* Track */}
@@ -352,7 +353,6 @@ function Crossfader({ value, onChange }: { value: number; onChange: (v: number) 
 export function Mixer(): JSX.Element {
   const { volA, volB, xfade, setVolA, setVolB, setXfade } = useMixerStore()
 
-  const setVolumeA = useDeckAStore((s) => s.setVolume)
   const setEqA     = useDeckAStore((s) => s.setEq)
   const eqHighA    = useDeckAStore((s) => s.eqHigh)
   const eqMidA     = useDeckAStore((s) => s.eqMid)
@@ -361,7 +361,6 @@ export function Mixer(): JSX.Element {
   const hasTrackA  = useDeckAStore((s) => !!s.currentTrack)
   const engineA    = useDeckAStore((s) => s._engine)
 
-  const setVolumeB = useDeckBStore((s) => s.setVolume)
   const setEqB     = useDeckBStore((s) => s.setEq)
   const eqHighB    = useDeckBStore((s) => s.eqHigh)
   const eqMidB     = useDeckBStore((s) => s.eqMid)
@@ -370,12 +369,8 @@ export function Mixer(): JSX.Element {
   const hasTrackB  = useDeckBStore((s) => !!s.currentTrack)
   const engineB    = useDeckBStore((s) => s._engine)
 
-  useEffect(() => {
-    const xA = xfade <= 0.5 ? 1 : 1 - (xfade - 0.5) * 2
-    const xB = xfade >= 0.5 ? 1 : xfade * 2
-    setVolumeA(volA * xA)
-    setVolumeB(volB * xB)
-  }, [xfade, volA, volB, setVolumeA, setVolumeB])
+  // Volume application lives in lib/mixBus.ts (store-level subscription), so
+  // faders, crossfader and per-track trim work even when the Mixer is unmounted.
 
   return (
     <div
@@ -411,6 +406,36 @@ export function Mixer(): JSX.Element {
       <div className="shrink-0 pt-2">
         <Crossfader value={xfade} onChange={setXfade} />
       </div>
+
+      {/* Master-mix recorder — armed switch at the foot of the mixer */}
+      <RecModule />
     </div>
+  )
+}
+
+// ── RecModule ─────────────────────────────────────────────────────────────────
+// Master-mix recorder at the foot of the mixer column. Idle: dark switch with
+// a red-ringed dot. Live: pulsing red dot + running timer. Records the master
+// bus (native engine) to ~/Music/Offcut Recordings, or the Web Audio mix.
+
+function RecModule(): JSX.Element {
+  const { state, durationSeconds, startRecording, stopRecording } = useRecordingStore()
+  const recording = state === 'recording'
+  const saving = state === 'saving'
+
+  const fmtDur = (s: number): string =>
+    `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
+
+  return (
+    <button
+      className={`rec-module ${recording ? 'rec-live' : ''}`}
+      onClick={() => (recording ? void stopRecording() : !saving && startRecording())}
+      title={recording ? 'Stop recording and save the mix' : 'Record the master mix'}
+    >
+      <span className="rec-dot" />
+      <span className="rec-label">
+        {saving ? 'saving' : recording ? fmtDur(durationSeconds) : 'rec'}
+      </span>
+    </button>
   )
 }

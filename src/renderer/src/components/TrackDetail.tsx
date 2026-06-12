@@ -44,6 +44,7 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
   const [dirty, setDirty] = useState(false)
   const [tab, setTab] = useState<'inspector' | 'edit'>('inspector')
   const [editingBeatgrid, setEditingBeatgrid] = useState(false)
+  const [analysing, setAnalysing] = useState(false)
 
   useEffect(() => {
     setDraft(track ? { ...track } : null)
@@ -87,7 +88,6 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
     }
   }
 
-  const [analysing, setAnalysing] = useState(false)
   const handleReanalyse = async (): Promise<void> => {
     if (!draft) return
     setAnalysing(true)
@@ -164,7 +164,7 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.18em] rounded transition-colors ${
+              className={`px-2.5 py-1 font-mono text-[12px] uppercase tracking-[0.18em] rounded transition-colors ${
                 tab === t ? 'text-ink bg-ink/8 font-bold' : 'text-muted hover:text-ink'
               }`}
             >
@@ -185,7 +185,7 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
               await navigator.clipboard.writeText(info)
               showToast('Copied to clipboard', 'success')
             }}
-            className="font-mono text-[8px] text-muted/40 hover:text-muted transition-colors px-1"
+            className="font-mono text-[11px] text-muted/40 hover:text-muted transition-colors px-1"
           >
             ⎘
           </button>
@@ -206,7 +206,7 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
           <button
             onClick={handleSave}
             disabled={!dirty || saving}
-            className={`flex-1 py-1.5 rounded font-mono text-[10px] uppercase tracking-[0.12em] transition-colors ${
+            className={`flex-1 py-1.5 rounded font-mono text-[13px] uppercase tracking-[0.12em] transition-colors ${
               saved
                 ? 'bg-green-600/15 text-green-600 border border-green-600/25'
                 : dirty
@@ -220,7 +220,7 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
             onClick={handleReanalyse}
             disabled={analysing}
             title="Re-run audio analysis: BPM, key, energy, danceability, mood"
-            className="shrink-0 px-3 py-1.5 rounded font-mono text-[10px] uppercase tracking-[0.12em] border border-border/40 text-muted hover:text-accent hover:border-accent/40 transition-colors disabled:opacity-40"
+            className="shrink-0 px-3 py-1.5 rounded font-mono text-[13px] uppercase tracking-[0.12em] border border-border/40 text-muted hover:text-accent hover:border-accent/40 transition-colors disabled:opacity-40"
           >
             {analysing ? 'analysing…' : draft.bpm ? 're-analyse' : 'analyse'}
           </button>
@@ -228,7 +228,7 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
             onClick={handleWriteToFile}
             disabled={writing}
             title="Write title, artist, BPM, key and other fields into the audio file itself"
-            className="shrink-0 px-3 py-1.5 rounded font-mono text-[10px] uppercase tracking-[0.12em] border border-border/40 text-muted hover:text-ink hover:border-border/70 transition-colors disabled:opacity-40"
+            className="shrink-0 px-3 py-1.5 rounded font-mono text-[13px] uppercase tracking-[0.12em] border border-border/40 text-muted hover:text-ink hover:border-border/70 transition-colors disabled:opacity-40"
           >
             {writing ? 'writing…' : 'write to file'}
           </button>
@@ -265,7 +265,7 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
               <p className="font-sans font-semibold text-[13px] text-white leading-tight truncate drop-shadow">
                 {draft.title || 'Unknown Title'}
               </p>
-              <p className="font-mono text-[9.5px] text-white/70 truncate drop-shadow">
+              <p className="font-mono text-[12px] text-white/70 truncate drop-shadow">
                 {[draft.artist, draft.album].filter(Boolean).join(' · ') || '—'}
               </p>
             </div>
@@ -275,15 +275,15 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
             <p className="font-sans font-semibold text-[13px] text-ink leading-tight truncate">
               {draft.title || 'Unknown Title'}
             </p>
-            <p className="font-mono text-[9.5px] text-muted truncate">
+            <p className="font-mono text-[12px] text-muted truncate">
               {[draft.artist, draft.album].filter(Boolean).join(' · ') || '—'}
             </p>
           </div>
         )}
       </div>
 
-      {/* Specs grid */}
-      <div className="px-3 py-2 grid grid-cols-2 gap-0 border-b border-border/30">
+      {/* Specs grid — stacked label-over-value cells with a real gutter */}
+      <div className="px-3 py-2 grid grid-cols-2 gap-x-6 border-b border-border/30">
         <Spec label="BPM" value={draft.bpm ? draft.bpm.toFixed(1) : '—'} accent />
         <Spec label="Key" value={draft.key || '—'} accent />
         <Spec label="Time" value={fmtDur(draft.durationSeconds)} />
@@ -303,7 +303,7 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
       {/* Camelot wheel + mixable tracks */}
       <div className="px-3 py-3 border-b border-border/30">
         <div className="flex items-baseline justify-between mb-2">
-          <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
+          <p className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted">
             <span className="text-accent mr-1">03</span>harmonic
           </p>
         </div>
@@ -317,12 +317,12 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
       {/* Beatgrid */}
       <div className="px-3 py-3 border-b border-border/30">
         <div className="flex items-center justify-between">
-          <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
+          <p className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted">
             <span className="text-accent mr-1">06</span>beatgrid
           </p>
           <button
             onClick={onEditBeatgrid}
-            className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted hover:text-accent transition-colors border border-border/35 hover:border-accent/40 rounded px-2 py-0.5"
+            className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-accent transition-colors border border-border/35 hover:border-accent/40 rounded px-2 py-0.5"
           >
             {draft.beatgrid.length > 0 ? 'edit' : 'create'}
           </button>
@@ -370,19 +370,19 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
               return (
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent/80 bg-accent/8 px-1.5 py-0.5 rounded">
+                    <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-accent/80 bg-accent/8 px-1.5 py-0.5 rounded">
                       {SOURCE_LABELS[bg.source] ?? bg.source}
                     </span>
                     {isKept && (
                       <span
-                        className="font-mono text-[8px] uppercase tracking-[0.18em] px-1.5 py-0.5 rounded border"
+                        className="font-mono text-[11px] uppercase tracking-[0.18em] px-1.5 py-0.5 rounded border"
                         style={{ color: '#C9A02C', borderColor: 'rgba(201,160,44,0.45)', background: 'rgba(201,160,44,0.08)' }}
                         title="Human-verified beatgrid — confidence is definitive"
                       >
                         kept
                       </span>
                     )}
-                    <span className="font-mono text-[9px] text-muted">
+                    <span className="font-mono text-[12px] text-muted">
                       {bg.beats.length} beats · {bg.medianBpm.toFixed(2)} bpm
                     </span>
                   </div>
@@ -396,27 +396,27 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
                         }}
                       />
                     </div>
-                    <span className="font-mono text-[9px] text-muted tabular-nums shrink-0">{confPct}%</span>
+                    <span className="font-mono text-[12px] text-muted tabular-nums shrink-0">{confPct}%</span>
                   </div>
                   {/* Trust verdict */}
-                  <p className={`font-mono text-[8.5px] ${verdictColor}`}>{verdict}</p>
+                  <p className={`font-mono text-[11px] ${verdictColor}`}>{verdict}</p>
                 </div>
               )
             })() : (
-              <p className="font-mono text-[9px] text-muted">
+              <p className="font-mono text-[12px] text-muted">
                 {draft.beatgrid.length} markers · {draft.bpm?.toFixed(2) ?? '—'} bpm
               </p>
             )}
           </div>
         ) : (
-          <p className="font-mono text-[9px] text-muted/50 mt-1.5 italic">no beatgrid</p>
+          <p className="font-mono text-[12px] text-muted/50 mt-1.5 italic">no beatgrid</p>
         )}
       </div>
 
       {/* Cue points */}
       {draft.cuePoints.length > 0 && (
         <div className="px-3 py-3">
-          <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted mb-2">
+          <p className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted mb-2">
             <span className="text-accent mr-1">07</span>hot cues
           </p>
           <div className="space-y-0">
@@ -425,12 +425,12 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
               .map((cue, i) => (
                 <div key={i} className="flex items-center gap-2 py-1.5 border-b border-border/20 last:border-b-0">
                   <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: cue.color || '#D86A4A' }} />
-                  <span className="font-mono text-[9px] text-muted w-7 shrink-0">
+                  <span className="font-mono text-[12px] text-muted w-7 shrink-0">
                     {cue.type === 'hotcue' ? `H${(cue.index ?? 0) + 1}` : 'MEM'}
                   </span>
-                  <span className="font-mono text-[10px] text-ink tabular-nums w-12 shrink-0">{formatMs(cue.positionMs)}</span>
+                  <span className="font-mono text-[13px] text-ink tabular-nums w-12 shrink-0">{formatMs(cue.positionMs)}</span>
                   {cue.label && (
-                    <span className="font-mono text-[9px] text-ink-soft uppercase tracking-wide truncate">{cue.label}</span>
+                    <span className="font-mono text-[12px] text-ink-soft uppercase tracking-wide truncate">{cue.label}</span>
                   )}
                 </div>
               ))}
@@ -444,7 +444,7 @@ function InspectorTab({ draft, fmtDur, onEditBeatgrid }: { draft: Track; fmtDur:
       {/* Custom fields */}
       {Object.keys(draft.customTags).length > 0 && (
         <div className="px-3 py-3 border-t border-border/20">
-          <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted mb-2">
+          <p className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted mb-2">
             <span className="text-accent mr-1">09</span>custom fields
           </p>
           <div className="space-y-1">
@@ -552,12 +552,12 @@ function ProvenanceSection({ trackId, track }: { trackId: string; track: Track }
   return (
     <div className="px-3 py-3 border-t border-border/20">
       <div className="flex items-center justify-between mb-2">
-        <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
+        <p className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted">
           <span className="text-accent mr-1">08</span>provenance
         </p>
         {freshColor && (
           <span
-            className="font-mono text-[8px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded"
+            className="font-mono text-[11px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded"
             style={{ color: freshColor, background: freshColor + '18' }}
           >
             {freshColor === '#C9A02C' ? 'rediscovery' : 'recent'}
@@ -568,12 +568,12 @@ function ProvenanceSection({ trackId, track }: { trackId: string; track: Track }
       {/* Play history */}
       <div className="space-y-1 mb-2">
         {track.playCount === 0 ? (
-          <p className="font-mono text-[9px] text-muted/50 italic">never played</p>
+          <p className="font-mono text-[12px] text-muted/50 italic">never played</p>
         ) : (
           <>
             <div className="flex items-baseline gap-2">
-              <span className="font-mono text-[10px] font-bold text-ink tabular-nums">{track.playCount}</span>
-              <span className="font-mono text-[9px] text-muted">
+              <span className="font-mono text-[13px] font-bold text-ink tabular-nums">{track.playCount}</span>
+              <span className="font-mono text-[12px] text-muted">
                 play{track.playCount !== 1 ? 's' : ''}
                 {track.lastPlayedAt ? ` · last ${relativeDate(track.lastPlayedAt)}` : ''}
               </span>
@@ -583,12 +583,12 @@ function ProvenanceSection({ trackId, track }: { trackId: string; track: Track }
               const from = resolveTitle(ev.mixedFrom)
               return (
                 <div key={ev.id} className="flex items-baseline gap-2 pl-1 border-l-2 border-border/30">
-                  <span className="font-mono text-[8px] text-muted/60 shrink-0">
+                  <span className="font-mono text-[11px] text-muted/60 shrink-0">
                     {relativeDate(ev.at)}
                     {ev.deckId ? ` · deck ${ev.deckId}` : ''}
                   </span>
                   {from && (
-                    <span className="font-mono text-[8px] text-muted/50 truncate">
+                    <span className="font-mono text-[11px] text-muted/50 truncate">
                       ← {from}
                     </span>
                   )}
@@ -604,8 +604,8 @@ function ProvenanceSection({ trackId, track }: { trackId: string; track: Track }
         <div className="space-y-0.5 mb-2">
           {trackOrders.map((o) => (
             <div key={o.id} className="flex items-center gap-1.5">
-              <span className="font-mono text-[7.5px] uppercase tracking-[0.1em] text-accent/50">N° {String(o.catalogNum).padStart(3,'0')}</span>
-              <span className="font-mono text-[8.5px] text-muted/60 truncate">{o.title}</span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-accent/50">N° {String(o.catalogNum).padStart(3,'0')}</span>
+              <span className="font-mono text-[11px] text-muted/60 truncate">{o.title}</span>
             </div>
           ))}
         </div>
@@ -614,16 +614,16 @@ function ProvenanceSection({ trackId, track }: { trackId: string; track: Track }
       {/* Edit lineage */}
       {lineage?.isEdit ? (
         <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t border-border/15">
-          <span className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent/70 bg-accent/8 px-1.5 py-0.5 rounded shrink-0">
+          <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-accent/70 bg-accent/8 px-1.5 py-0.5 rounded shrink-0">
             edit
           </span>
-          <span className="font-mono text-[9px] text-muted truncate">
+          <span className="font-mono text-[12px] text-muted truncate">
             of {originalTrack
               ? (originalTrack.title || originalTrack.artist || 'unknown')
               : lineage.originalId?.slice(0, 8) + '…'}
           </span>
           <button onClick={handleClearEdit}
-            className="ml-auto font-mono text-[8px] text-muted/50 hover:text-accent transition-colors shrink-0">
+            className="ml-auto font-mono text-[11px] text-muted/50 hover:text-accent transition-colors shrink-0">
             clear
           </button>
         </div>
@@ -636,27 +636,27 @@ function ProvenanceSection({ trackId, track }: { trackId: string; track: Track }
                 value={editSearch}
                 onChange={(e) => setEditSearch(e.target.value)}
                 placeholder="search for original track…"
-                className="w-full bg-transparent border border-border/40 rounded px-2 py-1 font-mono text-[9px] text-ink placeholder:text-muted/40 focus:outline-none focus:border-accent/50"
+                className="w-full bg-transparent border border-border/40 rounded px-2 py-1 font-mono text-[12px] text-ink placeholder:text-muted/40 focus:outline-none focus:border-accent/50"
               />
               {searchResults.length > 0 && (
                 <div className="bg-chassis border border-border/30 rounded overflow-hidden">
                   {searchResults.map((t) => (
                     <button key={t.id} onClick={() => handleMarkAsEdit(t)}
                       className="w-full text-left px-2 py-1.5 hover:bg-accent/5 border-b border-border/20 last:border-b-0 space-y-0">
-                      <p className="font-mono text-[9px] text-ink truncate">{t.title}</p>
-                      <p className="font-mono text-[8px] text-muted truncate">{t.artist}</p>
+                      <p className="font-mono text-[12px] text-ink truncate">{t.title}</p>
+                      <p className="font-mono text-[11px] text-muted truncate">{t.artist}</p>
                     </button>
                   ))}
                 </div>
               )}
               <button onClick={() => { setShowEditForm(false); setEditSearch('') }}
-                className="font-mono text-[8px] uppercase tracking-[0.1em] text-muted hover:text-ink transition-colors">
+                className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-ink transition-colors">
                 cancel
               </button>
             </div>
           ) : (
             <button onClick={() => setShowEditForm(true)}
-              className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted/60 hover:text-accent transition-colors">
+              className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted/60 hover:text-accent transition-colors">
               + mark as edit of…
             </button>
           )}
@@ -667,10 +667,20 @@ function ProvenanceSection({ trackId, track }: { trackId: string; track: Track }
 }
 
 function Spec({ label, value, accent }: { label: string; value: string; accent?: boolean }): JSX.Element {
+  // Stacked silk-screen label over the value. The old side-by-side layout had
+  // no column gutter, so a cell's value collided with its neighbour's label
+  // ("120.3KEY") and long values truncated to nothing.
   return (
-    <div className="flex justify-between items-baseline py-1.5 border-b border-border/20">
-      <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted shrink-0">{label}</span>
-      <span className={`font-mono text-[10px] font-bold ml-2 text-right truncate ${accent ? 'text-accent' : 'text-ink'}`}>{value}</span>
+    <div className="py-1.5 border-b border-border/20 min-w-0">
+      <span className="block font-mono text-[9px] uppercase tracking-[0.18em] text-muted leading-none mb-1">
+        {label}
+      </span>
+      <span
+        className={`block font-mono text-[13px] font-bold leading-tight truncate ${accent ? 'text-accent' : 'text-ink'}`}
+        title={value}
+      >
+        {value}
+      </span>
     </div>
   )
 }
@@ -689,14 +699,14 @@ function MoodBar({ mood }: { mood: number | null }): JSX.Element {
   return (
     <div className="py-1.5 border-b border-border/20 col-span-2">
       <div className="flex items-center justify-between mb-1">
-        <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">Mood</span>
+        <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted">Mood</span>
         {mood != null && (
-          <span className="font-mono text-[10px] font-bold text-ink">
+          <span className="font-mono text-[13px] font-bold text-ink">
             {MOOD_LABEL(mood)}
             <span className="text-muted font-normal ml-1.5">({mood > 0 ? '+' : ''}{mood.toFixed(2)})</span>
           </span>
         )}
-        {mood == null && <span className="font-mono text-[10px] text-muted">—</span>}
+        {mood == null && <span className="font-mono text-[13px] text-muted">—</span>}
       </div>
       {/* Gradient track */}
       <div className="relative h-2 rounded-full overflow-hidden"
@@ -711,7 +721,7 @@ function MoodBar({ mood }: { mood: number | null }): JSX.Element {
       {/* Scale labels */}
       <div className="flex justify-between mt-0.5">
         {['Dark', 'Melancholic', 'Neutral', 'Uplifting', 'Euphoric'].map((l) => (
-          <span key={l} className="font-mono text-[7px] text-muted/50">{l}</span>
+          <span key={l} className="font-mono text-[10px] text-muted/50">{l}</span>
         ))}
       </div>
     </div>
@@ -808,7 +818,7 @@ function EditTab({ draft, set }: { draft: Track; set: <K extends keyof Track>(ke
               />
             ))}
           </div>
-          <span className="font-mono text-[10px] text-muted w-5 text-right">{draft.energy ?? '—'}</span>
+          <span className="font-mono text-[13px] text-muted w-5 text-right">{draft.energy ?? '—'}</span>
         </div>
       </Field>
 
@@ -830,12 +840,12 @@ function EditTab({ draft, set }: { draft: Track; set: <K extends keyof Track>(ke
 
       <div className="border-t border-border/20 pt-3 space-y-2">
         <div className="flex items-center justify-between">
-          <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-muted">Cue Points</p>
+          <p className="font-mono text-[12px] font-bold uppercase tracking-[0.18em] text-muted">Cue Points</p>
           <button
             onClick={handleAutoCue}
             disabled={generatingCues}
             title="Analyse energy curve and auto-place structural cue points"
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-accent/10 hover:bg-accent/20 disabled:opacity-40 text-accent font-mono text-[9px] uppercase tracking-[0.1em] rounded border border-accent/25 transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-accent/10 hover:bg-accent/20 disabled:opacity-40 text-accent font-mono text-[12px] uppercase tracking-[0.1em] rounded border border-accent/25 transition-colors"
           >
             {generatingCues ? (
               <>
@@ -848,7 +858,7 @@ function EditTab({ draft, set }: { draft: Track; set: <K extends keyof Track>(ke
           </button>
         </div>
         {cueError && (
-          <p className="font-mono text-[9px] text-red-400">{cueError}</p>
+          <p className="font-mono text-[12px] text-red-400">{cueError}</p>
         )}
         <CuePointList cuePoints={draft.cuePoints} onChange={(cues) => set('cuePoints', cues)} />
       </div>
@@ -859,13 +869,13 @@ function EditTab({ draft, set }: { draft: Track; set: <K extends keyof Track>(ke
 function Field({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
     <div className="space-y-1">
-      <label className="block font-mono text-[9px] uppercase tracking-[0.15em] text-muted">{label}</label>
+      <label className="block font-mono text-[12px] uppercase tracking-[0.15em] text-muted">{label}</label>
       {children}
     </div>
   )
 }
 
-const INPUT = 'w-full bg-paper border border-border/40 rounded px-2.5 py-1.5 font-mono text-[10.5px] text-ink outline-none focus:border-accent transition-colors'
+const INPUT = 'w-full bg-paper border border-border/40 rounded px-2.5 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors'
 
 function StarEditor({ rating, onChange }: { rating: number; onChange: (r: number) => void }): JSX.Element {
   const [hover, setHover] = useState(0)
@@ -893,7 +903,7 @@ function TagEditor({ tags, onChange }: { tags: string[]; onChange: (t: string[])
     <div className="space-y-1.5">
       <div className="flex flex-wrap gap-1">
         {tags.map((tag) => (
-          <span key={tag} className="flex items-center gap-1 bg-accent/15 text-accent font-mono text-[9px] px-2 py-0.5 rounded">
+          <span key={tag} className="flex items-center gap-1 bg-accent/15 text-accent font-mono text-[12px] px-2 py-0.5 rounded">
             {tag}
             <button onClick={() => onChange(tags.filter((t) => t !== tag))} className="opacity-60 hover:opacity-100">×</button>
           </span>
@@ -924,12 +934,12 @@ function CustomTagEditor({ tags, onChange }: { tags: Record<string, string>; onC
     <div className="space-y-1.5">
       {entries.map(([k, v]) => (
         <div key={k} className="flex items-center gap-1.5 bg-ink/[0.03] border border-border/25 rounded px-2 py-1">
-          <span className="font-mono text-[9px] text-muted shrink-0 min-w-[60px] truncate" title={k}>{k}</span>
-          <span className="font-mono text-[8px] text-muted/50 shrink-0">·</span>
+          <span className="font-mono text-[12px] text-muted shrink-0 min-w-[60px] truncate" title={k}>{k}</span>
+          <span className="font-mono text-[11px] text-muted/50 shrink-0">·</span>
           <input
             value={v}
             onChange={(e) => onChange({ ...tags, [k]: e.target.value })}
-            className="flex-1 min-w-0 bg-transparent outline-none font-mono text-[10.5px] text-ink focus:text-ink border-b border-transparent focus:border-accent/50 transition-colors py-0.5"
+            className="flex-1 min-w-0 bg-transparent outline-none font-mono text-[13px] text-ink focus:text-ink border-b border-transparent focus:border-accent/50 transition-colors py-0.5"
           />
           <button
             onClick={() => { const { [k]: _, ...rest } = tags; onChange(rest) }}
@@ -955,11 +965,11 @@ function CustomTagEditor({ tags, onChange }: { tags: Record<string, string>; onC
         <button
           onClick={add}
           disabled={!newKey.trim()}
-          className="shrink-0 px-2 py-1 bg-accent/10 hover:bg-accent/20 text-accent rounded font-mono text-[10px] transition-colors disabled:opacity-40"
+          className="shrink-0 px-2 py-1 bg-accent/10 hover:bg-accent/20 text-accent rounded font-mono text-[13px] transition-colors disabled:opacity-40"
         >+</button>
       </div>
       {entries.length === 0 && (
-        <p className="font-mono text-[9px] text-muted/50 italic">no custom fields — add one above</p>
+        <p className="font-mono text-[12px] text-muted/50 italic">no custom fields — add one above</p>
       )}
     </div>
   )
@@ -972,22 +982,22 @@ function CuePointList({ cuePoints, onChange }: { cuePoints: CuePoint[]; onChange
     onChange(cuePoints.map((c) => c.index === updated.index && c.type === updated.type ? updated : c))
 
   if (cuePoints.length === 0)
-    return <p className="font-mono text-[9px] text-muted italic">no cue points</p>
+    return <p className="font-mono text-[12px] text-muted italic">no cue points</p>
 
   return (
     <div className="space-y-1">
       {[...hotcues, ...memory].map((cue, i) => (
         <div key={i} className="flex items-center gap-2 text-xs">
           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cue.color || '#D86A4A' }} />
-          <span className="font-mono text-[9px] text-muted w-7 shrink-0">
+          <span className="font-mono text-[12px] text-muted w-7 shrink-0">
             {cue.type === 'hotcue' ? `H${cue.index + 1}` : 'MEM'}
           </span>
-          <span className="font-mono text-[9px] text-ink-soft tabular-nums w-12 shrink-0">{formatMs(cue.positionMs)}</span>
+          <span className="font-mono text-[12px] text-ink-soft tabular-nums w-12 shrink-0">{formatMs(cue.positionMs)}</span>
           <input
             value={cue.label}
             onChange={(e) => update({ ...cue, label: e.target.value })}
             placeholder="label…"
-            className="flex-1 bg-transparent border-b border-border/30 focus:border-accent outline-none font-mono text-[10px] text-ink py-0.5"
+            className="flex-1 bg-transparent border-b border-border/30 focus:border-accent outline-none font-mono text-[13px] text-ink py-0.5"
           />
         </div>
       ))}
@@ -1009,7 +1019,7 @@ function ColourPicker({ value, onChange }: { value: string; onChange: (c: string
           boxShadow: !value ? '0 0 0 1px rgb(var(--accent-rgb))' : 'none'
         }}
       >
-        <span className="font-mono text-[8px] text-muted leading-none">—</span>
+        <span className="font-mono text-[11px] text-muted leading-none">—</span>
       </button>
       {TRACK_COLORS.map((c) => (
         <button
@@ -1150,7 +1160,7 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
     <div className="px-3 py-3 border-b border-border/30">
       {/* Header with MATCH / NEXT toggle */}
       <div className="flex items-center justify-between mb-2">
-        <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
+        <p className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted">
           <span className="text-accent mr-1">04</span>mixable tracks
         </p>
         <div className="flex items-center border border-border/35 rounded overflow-hidden">
@@ -1158,7 +1168,7 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`px-2 py-0.5 font-mono text-[8px] uppercase tracking-[0.1em] transition-colors ${
+              className={`px-2 py-0.5 font-mono text-[11px] uppercase tracking-[0.1em] transition-colors ${
                 mode === m ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink'
               }`}
             >
@@ -1169,7 +1179,7 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
       </div>
 
       {mode === 'next' && (
-        <p className="font-mono text-[8px] text-muted/50 mb-1.5">
+        <p className="font-mono text-[11px] text-muted/50 mb-1.5">
           what plays well <em>after</em> this track
         </p>
       )}
@@ -1179,7 +1189,7 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
           <div key={t.id} className="group">
             <div className="flex items-center gap-2 py-1 px-2 rounded hover:bg-ink/[0.05] transition-colors cursor-default">
               <div className="flex-1 min-w-0">
-                <p className="font-mono text-[10px] text-ink truncate">{t.title || '—'}</p>
+                <p className="font-mono text-[13px] text-ink truncate">{t.title || '—'}</p>
                 {/* Factor pills — Next Mode only */}
                 {mode === 'next' && next && (
                   <div className="flex items-center gap-1 mt-0.5 flex-wrap">
@@ -1189,7 +1199,7 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
                       .map((f) => (
                         <span
                           key={f.name}
-                          className="font-mono text-[7px] uppercase tracking-[0.06em] px-1 py-px rounded"
+                          className="font-mono text-[10px] uppercase tracking-[0.06em] px-1 py-px rounded"
                           style={{ color: f.color, background: f.color + '18' }}
                         >
                           {f.label}
@@ -1199,11 +1209,11 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
                   </div>
                 )}
                 {mode === 'match' && (
-                  <p className="font-mono text-[9px] text-muted truncate">{t.artist}</p>
+                  <p className="font-mono text-[12px] text-muted truncate">{t.artist}</p>
                 )}
               </div>
-              <span className="font-mono text-[9px] text-muted tabular-nums shrink-0">{t.key ?? '—'}</span>
-              <span className="font-mono text-[9px] text-muted tabular-nums shrink-0">{t.bpm?.toFixed(0) ?? '—'}</span>
+              <span className="font-mono text-[12px] text-muted tabular-nums shrink-0">{t.key ?? '—'}</span>
+              <span className="font-mono text-[12px] text-muted tabular-nums shrink-0">{t.bpm?.toFixed(0) ?? '—'}</span>
               {/* Score bar */}
               <div
                 className="w-8 h-1 rounded-full shrink-0"
@@ -1214,12 +1224,12 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={() => loadTrackA(t)}
-                  className="font-mono text-[8px] uppercase tracking-[0.1em] text-accent shrink-0"
+                  className="font-mono text-[11px] uppercase tracking-[0.1em] text-accent shrink-0"
                   title="Load to deck A"
                 >A</button>
                 <button
                   onClick={() => loadTrackB(t)}
-                  className="font-mono text-[8px] uppercase tracking-[0.1em] text-muted hover:text-ink shrink-0"
+                  className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-ink shrink-0"
                   title="Load to deck B"
                 >B</button>
               </div>
@@ -1230,15 +1240,15 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
               <div className="mx-2 mb-1 px-2 py-1.5 bg-ink/[0.03] rounded border border-border/20 space-y-1">
                 {next.factors.map((f) => (
                   <div key={f.name} className="flex items-center gap-2">
-                    <span className="font-mono text-[7.5px] uppercase tracking-[0.1em] text-muted/50 w-14 shrink-0">{f.name}</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted/50 w-14 shrink-0">{f.name}</span>
                     <div className="flex-1 h-0.5 bg-border/20 rounded-full overflow-hidden">
                       <div className="h-full rounded-full" style={{ width: `${f.value * 100}%`, background: f.color }} />
                     </div>
-                    <span className="font-mono text-[7.5px] shrink-0" style={{ color: f.color }}>{f.label}</span>
-                    <span className="font-mono text-[7px] text-muted/40 tabular-nums shrink-0">{Math.round(f.value * 100)}%</span>
+                    <span className="font-mono text-[10px] shrink-0" style={{ color: f.color }}>{f.label}</span>
+                    <span className="font-mono text-[10px] text-muted/40 tabular-nums shrink-0">{Math.round(f.value * 100)}%</span>
                   </div>
                 ))}
-                <p className="font-mono text-[7.5px] font-bold text-muted/60 pt-0.5">
+                <p className="font-mono text-[10px] font-bold text-muted/60 pt-0.5">
                   total · {Math.round(next.score * 100)}%
                 </p>
               </div>
@@ -1248,7 +1258,7 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
             {mode === 'next' && next && (
               <button
                 onClick={() => setShowFactors(showFactors === t.id ? null : t.id)}
-                className="w-full text-left px-4 font-mono text-[7px] text-muted/30 hover:text-muted/60 transition-colors"
+                className="w-full text-left px-4 font-mono text-[10px] text-muted/30 hover:text-muted/60 transition-colors"
               >
                 {showFactors === t.id ? '▲ less' : '▼ why?'}
               </button>

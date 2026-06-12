@@ -78,14 +78,31 @@ const STEM_ORDER: StemKind[] = ['drums', 'bass', 'vocals', 'other']
 
 interface Props {
   stems: Record<StemKind, StemState>
+  loaded: boolean
+  separating: boolean
+  progress: number
+  available: boolean
   onMute:   (kind: StemKind, muted: boolean) => void
   onSolo:   (kind: StemKind, soloed: boolean) => void
   onGain:   (kind: StemKind, gainDb: number) => void
+  onSeparate: () => void
+  onUnload:   () => void
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function StemPanel({ stems, onMute, onSolo, onGain }: Props): JSX.Element {
+export function StemPanel({
+  stems,
+  loaded,
+  separating,
+  progress,
+  available,
+  onMute,
+  onSolo,
+  onGain,
+  onSeparate,
+  onUnload
+}: Props): JSX.Element {
   const anySoloed = STEM_ORDER.some((k) => stems[k].soloed)
 
   return (
@@ -93,41 +110,79 @@ export function StemPanel({ stems, onMute, onSolo, onGain }: Props): JSX.Element
       className="shrink-0 border-t px-2 py-1.5 space-y-0.5"
       style={{ borderColor: 'rgba(110,101,83,0.3)', background: 'rgba(14,11,8,0.35)' }}
     >
-      {/* Header row */}
-      <div className="flex items-center justify-between mb-1">
+      {/* Header / action row */}
+      <div className="flex items-center justify-between mb-1 h-5">
         <span
-          className="text-[8px] uppercase tracking-[0.18em] font-bold"
+          className="text-[11px] uppercase tracking-[0.18em] font-bold flex items-center gap-1.5"
           style={{ color: 'rgba(110,101,83,0.7)' }}
         >
-          stem buses · mock
+          stem buses
+          {loaded && (
+            <span className="flex items-center gap-1" style={{ color: '#6fae84' }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#6fae84', boxShadow: '0 0 5px #6fae84aa' }} />
+              live
+            </span>
+          )}
         </span>
-        <span
-          className="text-[7px] font-mono"
-          style={{ color: 'rgba(110,101,83,0.35)' }}
-        >
-          engine phase 4
-        </span>
+
+        {separating ? (
+          <div className="flex items-center gap-2">
+            <div className="w-24 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(110,101,83,0.25)' }}>
+              <div className="h-full rounded-full" style={{ width: `${Math.max(4, progress)}%`, background: 'rgb(216,106,74)', transition: 'width .3s' }} />
+            </div>
+            <span className="text-[10px] font-mono tabular-nums" style={{ color: 'rgba(216,106,74,0.9)' }}>
+              {progress}%
+            </span>
+          </div>
+        ) : loaded ? (
+          <button
+            onClick={onUnload}
+            title="Drop stems, return to full mix"
+            className="text-[10px] font-mono uppercase tracking-[0.12em] px-1.5 py-0.5 rounded transition-colors"
+            style={{ color: 'rgba(110,101,83,0.6)', border: '1px solid rgba(110,101,83,0.3)' }}
+          >
+            unload
+          </button>
+        ) : (
+          <button
+            onClick={onSeparate}
+            title={available ? 'Separate this track into 4 stems with Demucs' : 'Demucs not detected — install with: pip install demucs'}
+            className="text-[10px] font-mono uppercase tracking-[0.12em] px-2 py-0.5 rounded transition-colors"
+            style={{ color: '#f0a583', border: '1px solid rgba(216,106,74,0.45)', background: 'rgba(216,106,74,0.1)' }}
+          >
+            ▶ separate{available ? '' : ' (needs demucs)'}
+          </button>
+        )}
       </div>
 
-      {STEM_ORDER.map((kind) => {
-        const meta  = STEM_META[kind]
-        const state = stems[kind]
-        const isActive = !state.muted && (!anySoloed || state.soloed)
+      <div style={{ opacity: loaded ? 1 : 0.4, pointerEvents: loaded ? 'auto' : 'none', transition: 'opacity .2s' }}>
+        {STEM_ORDER.map((kind) => {
+          const meta = STEM_META[kind]
+          const state = stems[kind]
+          const isActive = !state.muted && (!anySoloed || state.soloed)
+          return (
+            <StemRow
+              key={kind}
+              kind={kind}
+              meta={meta}
+              state={state}
+              isActive={isActive}
+              anySoloed={anySoloed}
+              onMute={onMute}
+              onSolo={onSolo}
+              onGain={onGain}
+            />
+          )
+        })}
+      </div>
 
-        return (
-          <StemRow
-            key={kind}
-            kind={kind}
-            meta={meta}
-            state={state}
-            isActive={isActive}
-            anySoloed={anySoloed}
-            onMute={onMute}
-            onSolo={onSolo}
-            onGain={onGain}
-          />
-        )
-      })}
+      {!loaded && !separating && (
+        <p className="text-[10px] font-mono leading-snug pt-0.5" style={{ color: 'rgba(110,101,83,0.5)' }}>
+          {available
+            ? 'Separate once (~30s–2min), cached after. Then mute/solo/trim each stem live.'
+            : 'Install Demucs to enable stems: pip install demucs soundfile (set Python path in Settings).'}
+        </p>
+      )}
     </div>
   )
 }
@@ -170,7 +225,7 @@ function StemRow({ kind, meta, state, isActive, onMute, onSolo, onGain }: RowPro
         style={{ color: isActive ? 'rgba(235,229,211,0.75)' : 'rgba(110,101,83,0.45)', transition: 'color 0.15s' }}
       >
         {meta.icon}
-        <span className="text-[8px] uppercase tracking-[0.14em]">{meta.label}</span>
+        <span className="text-[11px] uppercase tracking-[0.14em]">{meta.label}</span>
       </div>
 
       {/* MUTE — FN-BUS cell style */}
@@ -190,7 +245,7 @@ function StemRow({ kind, meta, state, isActive, onMute, onSolo, onGain }: RowPro
           className="absolute top-1 right-1 w-1 h-1 rounded-full"
           style={state.muted ? ledActive : ledInactive}
         />
-        <span className="text-[7px] font-bold" style={{ color: state.muted ? 'rgba(216,106,74,0.9)' : 'rgba(110,101,83,0.6)' }}>M</span>
+        <span className="text-[10px] font-bold" style={{ color: state.muted ? 'rgba(216,106,74,0.9)' : 'rgba(110,101,83,0.6)' }}>M</span>
       </button>
 
       {/* SOLO — FN-BUS cell style */}
@@ -212,7 +267,7 @@ function StemRow({ kind, meta, state, isActive, onMute, onSolo, onGain }: RowPro
             ? { background: 'rgb(201,160,44)', boxShadow: '0 0 5px rgba(201,160,44,0.7)' }
             : ledInactive}
         />
-        <span className="text-[7px] font-bold" style={{ color: state.soloed ? 'rgba(201,160,44,0.9)' : 'rgba(110,101,83,0.6)' }}>S</span>
+        <span className="text-[10px] font-bold" style={{ color: state.soloed ? 'rgba(201,160,44,0.9)' : 'rgba(110,101,83,0.6)' }}>S</span>
       </button>
 
       {/* Gain slider */}
@@ -230,7 +285,7 @@ function StemRow({ kind, meta, state, isActive, onMute, onSolo, onGain }: RowPro
           style={{ accentColor: meta.color, opacity: isActive ? 1 : 0.35 }}
         />
         <span
-          className="shrink-0 text-[7px] font-mono tabular-nums w-7 text-right"
+          className="shrink-0 text-[10px] font-mono tabular-nums w-7 text-right"
           style={{ color: 'rgba(110,101,83,0.5)' }}
         >
           {state.gainDb === 0 ? '0' : state.gainDb > 0 ? `+${state.gainDb}` : state.gainDb}dB

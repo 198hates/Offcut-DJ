@@ -16,8 +16,11 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
 import { usePreview } from '../../hooks/usePreview'
+import { useTrackMenuContext } from '../../hooks/useTrackMenu'
 import type { Playlist } from '@shared/types'
 import { keyBlipColor } from '../../components/CamelotWheel'
+import { acceptsTrackDrop, readTrackIds } from '../../lib/trackDrag'
+import { formatDuration, formatBpm } from '../../lib/format'
 import { compatibilityScore, camelotDistance, harmonicScore, magicSort } from '../../lib/compatibility'
 import { scoreLibrary, transitionContext } from '../../lib/roadNotTaken'
 import { scoreTransition, BAND_LABEL, BAND_GLYPH, BAND_COLOR, BAND_BG, BAND_BORDER } from '../../lib/automix'
@@ -199,6 +202,7 @@ function EntryRow({
   const [editingNote, setEditingNote] = useState(false)
   const [noteVal, setNoteVal] = useState(entry.note ?? '')
   const [showTrans, setShowTrans] = useState(false)
+  const openTrackMenu = useTrackMenuContext()
 
   return (
     <div
@@ -207,6 +211,10 @@ function EntryRow({
       style={{ borderColor: isDragOver ? undefined : 'rgba(var(--border-rgb)/0.2)' }}
       onDragOver={(e) => { e.preventDefault(); onDragOver(e) }}
       onDrop={(e) => { e.preventDefault(); onDrop() }}
+      onContextMenu={track ? (e) => openTrackMenu(e, {
+        ids: [track.id], track,
+        remove: { label: 'Remove from running order', action: onRemove }
+      }) : undefined}
     >
       <div className="flex items-center gap-2 px-3 py-1.5">
         {/* Drag handle + index */}
@@ -215,7 +223,7 @@ function EntryRow({
           draggable
           onDragStart={onDragStart}
         >
-          <span className="font-mono text-[8px] text-muted/40 w-5 text-right tabular-nums select-none">{index + 1}</span>
+          <span className="font-mono text-[11px] text-muted/40 w-5 text-right tabular-nums select-none">{index + 1}</span>
           <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="text-muted/25 shrink-0">
             <rect x="0" y="0" width="3" height="2" rx="0.5"/>
             <rect x="5" y="0" width="3" height="2" rx="0.5"/>
@@ -231,22 +239,22 @@ function EntryRow({
 
         {/* Title / artist */}
         <div className="flex-1 min-w-0">
-          <p className={`font-mono text-[10px] truncate ${entry.flexible ? 'text-muted/60 italic' : 'text-ink'}`}>
+          <p className={`font-mono text-[13px] truncate ${entry.flexible ? 'text-muted/60 italic' : 'text-ink'}`}>
             {track?.title ?? '?'}
-            {entry.flexible && <span className="ml-1 text-[8px] not-italic text-muted/40">[flex]</span>}
+            {entry.flexible && <span className="ml-1 text-[11px] not-italic text-muted/40">[flex]</span>}
           </p>
-          <p className="font-mono text-[8.5px] text-muted/60 truncate">{track?.artist ?? ''}</p>
+          <p className="font-mono text-[11px] text-muted/60 truncate">{track?.artist ?? ''}</p>
         </div>
 
         {/* BPM / Key */}
         <div className="shrink-0 text-right hidden sm:block">
-          <p className="font-mono text-[9px] text-ink-soft tabular-nums">{track?.bpm?.toFixed(1) ?? '—'}</p>
-          <p className="font-mono text-[8.5px] font-bold" style={{ color: keyBlipColor(track?.key ?? null) }}>{track?.key ?? '—'}</p>
+          <p className="font-mono text-[12px] text-ink-soft tabular-nums">{formatBpm(track?.bpm)}</p>
+          <p className="font-mono text-[11px] font-bold" style={{ color: keyBlipColor(track?.key ?? null) }}>{track?.key ?? '—'}</p>
         </div>
 
         {/* Duration */}
-        <span className="font-mono text-[9px] text-muted/50 tabular-nums shrink-0 hidden md:block">
-          {track?.durationSeconds ? `${Math.floor(track.durationSeconds/60)}:${String(Math.round(track.durationSeconds%60)).padStart(2,'0')}` : '—'}
+        <span className="font-mono text-[12px] text-muted/50 tabular-nums shrink-0 hidden md:block">
+          {formatDuration(track?.durationSeconds)}
         </span>
 
         {/* Flexible toggle */}
@@ -279,12 +287,12 @@ function EntryRow({
               onChange={(e) => setNoteVal(e.target.value)}
               onBlur={() => { onSetNote(noteVal); setEditingNote(false) }}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') { onSetNote(noteVal); setEditingNote(false) } }}
-              className="w-full bg-transparent border-b border-border/30 focus:border-accent/50 font-mono text-[9px] text-ink placeholder:text-muted/40 focus:outline-none pb-0.5"
+              className="w-full bg-transparent border-b border-border/30 focus:border-accent/50 font-mono text-[12px] text-ink placeholder:text-muted/40 focus:outline-none pb-0.5"
               placeholder="add a note…"
             />
           ) : (
             <p
-              className="font-mono text-[8.5px] text-muted/60 italic cursor-text hover:text-muted transition-colors"
+              className="font-mono text-[11px] text-muted/60 italic cursor-text hover:text-muted transition-colors"
               onClick={() => { setNoteVal(entry.note ?? ''); setEditingNote(true) }}
             >
               {entry.note}
@@ -302,7 +310,7 @@ function EntryRow({
               className="flex items-center gap-1"
             >
               <span
-                className="font-mono text-[7.5px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded"
+                className="font-mono text-[10px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded"
                 style={{
                   color: TRANSITION_COLORS[entry.plannedTransition.kind],
                   background: TRANSITION_COLORS[entry.plannedTransition.kind] + '18'
@@ -315,7 +323,7 @@ function EntryRow({
           ) : (
             <button
               onClick={() => setShowTrans((v) => !v)}
-              className="font-mono text-[7.5px] uppercase tracking-[0.1em] text-muted/25 hover:text-muted/60 transition-colors"
+              className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted/25 hover:text-muted/60 transition-colors"
             >
               + transition
             </button>
@@ -323,7 +331,7 @@ function EntryRow({
           {!editingNote && !entry.note && (
             <button
               onClick={() => { setNoteVal(''); setEditingNote(true) }}
-              className="font-mono text-[7.5px] uppercase tracking-[0.1em] text-muted/20 hover:text-muted/50 transition-colors"
+              className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted/20 hover:text-muted/50 transition-colors"
             >
               + note
             </button>
@@ -337,7 +345,7 @@ function EntryRow({
           {TRANSITION_KINDS.map((k) => (
             <button key={k}
               onClick={() => { onSetTransition(k); setShowTrans(false) }}
-              className={`font-mono text-[8px] uppercase tracking-[0.08em] px-2 py-1 rounded transition-colors
+              className={`font-mono text-[11px] uppercase tracking-[0.08em] px-2 py-1 rounded transition-colors
                 ${entry.plannedTransition?.kind === k ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink hover:bg-ink/[0.05]'}`}
               style={{ color: entry.plannedTransition?.kind === k ? TRANSITION_COLORS[k] : undefined }}
             >
@@ -346,7 +354,7 @@ function EntryRow({
           ))}
           {entry.plannedTransition && (
             <button onClick={() => { onSetTransition(null); setShowTrans(false) }}
-              className="font-mono text-[8px] text-muted/40 hover:text-red-400 px-1 rounded transition-colors">
+              className="font-mono text-[11px] text-muted/40 hover:text-red-400 px-1 rounded transition-colors">
               ×
             </button>
           )}
@@ -368,9 +376,9 @@ function EntryRow({
             {/* Key journey */}
             {fromKey && toKey ? (
               <>
-                <span className="font-mono text-[7.5px]" style={{ color: keyBlipColor(fromKey) }}>{fromKey}</span>
-                <span className="text-[7px] text-muted/25">→</span>
-                <span className="font-mono text-[7.5px]" style={{ color: keyBlipColor(toKey) }}>{toKey}</span>
+                <span className="font-mono text-[10px]" style={{ color: keyBlipColor(fromKey) }}>{fromKey}</span>
+                <span className="text-[10px] text-muted/25">→</span>
+                <span className="font-mono text-[10px]" style={{ color: keyBlipColor(toKey) }}>{toKey}</span>
                 {/* Compatibility dots (5 max) */}
                 <div className="flex items-center gap-0.5">
                   {[0,1,2,3,4].map((i) => (
@@ -378,23 +386,23 @@ function EntryRow({
                       style={{ background: i < Math.round(score * 5) ? dotColor : 'rgba(255,255,255,0.08)' }} />
                   ))}
                 </div>
-                {dist === 0 && <span className="font-mono text-[6.5px] text-emerald-500/60 uppercase tracking-[0.08em]">perfect</span>}
-                {dist === 1 && <span className="font-mono text-[6.5px] text-green-400/50 uppercase tracking-[0.08em]">compatible</span>}
-                {dist >= 3 && <span className="font-mono text-[6.5px] text-amber-500/50 uppercase tracking-[0.08em]">risky</span>}
+                {dist === 0 && <span className="font-mono text-[9px] text-emerald-500/60 uppercase tracking-[0.08em]">perfect</span>}
+                {dist === 1 && <span className="font-mono text-[9px] text-green-400/50 uppercase tracking-[0.08em]">compatible</span>}
+                {dist >= 3 && <span className="font-mono text-[9px] text-amber-500/50 uppercase tracking-[0.08em]">risky</span>}
               </>
             ) : (
-              <span className="font-mono text-[7px] text-muted/20">—</span>
+              <span className="font-mono text-[10px] text-muted/20">—</span>
             )}
             {/* BPM delta */}
             {bpmDelta != null && Math.abs(bpmDelta) > 0.5 && (
-              <span className="font-mono text-[7px] text-muted/30 ml-1 tabular-nums">
+              <span className="font-mono text-[10px] text-muted/30 ml-1 tabular-nums">
                 {bpmDelta > 0 ? '+' : ''}{bpmDelta.toFixed(0)} bpm
               </span>
             )}
             {/* AutoMix decision band pill */}
             {automix && (
               <span
-                className="ml-auto font-mono text-[7px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded shrink-0"
+                className="ml-auto font-mono text-[10px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded shrink-0"
                 style={{
                   color: BAND_COLOR[automix.band],
                   background: BAND_BG[automix.band],
@@ -615,17 +623,15 @@ export function OrdersPage(): JSX.Element {
   // ── Library drag-drop (from Library page) ────────────────────────────────────
 
   const handleContainerDragOver = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('application/x-crate-track-ids')) {
+    if (acceptsTrackDrop(e)) {
       e.preventDefault()
       setIsDraggingLibTracks(true)
     }
   }
   const handleContainerDrop = (e: React.DragEvent) => {
     setIsDraggingLibTracks(false)
-    try {
-      const ids = JSON.parse(e.dataTransfer.getData('application/x-crate-track-ids')) as string[]
-      addTracks(ids)
-    } catch { /* not our format */ }
+    const ids = readTrackIds(e)
+    if (ids.length) addTracks(ids)
   }
 
   // ── Total duration ───────────────────────────────────────────────────────────
@@ -752,22 +758,22 @@ export function OrdersPage(): JSX.Element {
   }, [active, tracks, trackMap])
 
   return (
-    <div className="flex-1 min-h-0 flex overflow-hidden">
+    <div className="h-full min-h-0 flex overflow-hidden">
       {/* ── Left panel — order list ──────────────────────────────────────── */}
       <div className="w-44 shrink-0 flex flex-col border-r border-border/30 bg-chassis">
         <div className="shrink-0 flex items-center justify-between px-3 py-2 border-b border-border/30">
-          <span className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-accent">Orders</span>
+          <span className="font-mono text-[12px] font-bold uppercase tracking-[0.18em] text-accent">Orders</span>
           <div className="flex items-center gap-1 relative">
             <button onClick={importFromUsb}
               title="Import from Pioneer USB"
-              className="font-mono text-[7.5px] text-muted/40 hover:text-accent transition-colors px-1">
+              className="font-mono text-[10px] text-muted/40 hover:text-accent transition-colors px-1">
               {usbLoading ? '…' : 'USB'}
             </button>
             {/* From playlist button */}
             <button
               onClick={() => setShowPlaylistPicker((v) => !v)}
               title="Create from playlist"
-              className="font-mono text-[7.5px] text-muted/40 hover:text-accent transition-colors px-1">
+              className="font-mono text-[10px] text-muted/40 hover:text-accent transition-colors px-1">
               PL
             </button>
             <button onClick={createOrder}
@@ -778,19 +784,19 @@ export function OrdersPage(): JSX.Element {
             {showPlaylistPicker && (
               <div className="absolute top-full right-0 z-30 mt-1 w-52 bg-chassis border border-border/40 rounded shadow-xl max-h-60 overflow-y-auto">
                 <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/30">
-                  <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-muted/50">create from playlist</span>
+                  <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted/50">create from playlist</span>
                   <button onClick={() => setShowPlaylistPicker(false)} className="text-muted/30 hover:text-muted text-xs">✕</button>
                 </div>
                 {playlists.filter((p) => !p.isFolder && !p.isSmart && p.trackIds.length > 0).map((pl) => (
                   <button key={pl.id}
                     onClick={() => createFromPlaylist(pl)}
                     className="w-full text-left px-3 py-1.5 hover:bg-accent/[0.05] border-b border-border/10 transition-colors">
-                    <p className="font-mono text-[9px] text-ink truncate">{pl.name}</p>
-                    <p className="font-mono text-[7.5px] text-muted/40">{pl.trackIds.length} tracks</p>
+                    <p className="font-mono text-[12px] text-ink truncate">{pl.name}</p>
+                    <p className="font-mono text-[10px] text-muted/40">{pl.trackIds.length} tracks</p>
                   </button>
                 ))}
                 {playlists.filter((p) => !p.isFolder && !p.isSmart && p.trackIds.length > 0).length === 0 && (
-                  <p className="font-mono text-[8px] text-muted/30 px-3 py-2 italic">no playlists found</p>
+                  <p className="font-mono text-[11px] text-muted/30 px-3 py-2 italic">no playlists found</p>
                 )}
               </div>
             )}
@@ -800,8 +806,8 @@ export function OrdersPage(): JSX.Element {
         {usbSets && (
           <div className="shrink-0 border-b border-border/30 bg-chassis-soft">
             <div className="flex items-center justify-between px-3 py-1.5">
-              <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-accent">USB history</span>
-              <button onClick={() => setUsbSets(null)} className="font-mono text-[8px] text-muted/40 hover:text-muted transition-colors">✕</button>
+              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-accent">USB history</span>
+              <button onClick={() => setUsbSets(null)} className="font-mono text-[11px] text-muted/40 hover:text-muted transition-colors">✕</button>
             </div>
             <div className="flex flex-col divide-y divide-border/20 max-h-40 overflow-y-auto">
               {usbSets.map((s) => {
@@ -810,8 +816,8 @@ export function OrdersPage(): JSX.Element {
                   <button key={s.usbId}
                     onClick={() => importUsbSet(s)}
                     className="w-full text-left px-3 py-1.5 hover:bg-accent/[0.05] transition-colors">
-                    <p className="font-mono text-[9px] text-ink">{s.name}</p>
-                    <p className="font-mono text-[7.5px] text-muted/50">{s.tracks.length} tracks · {matched} in library{s.date ? ` · ${s.date}` : ''}</p>
+                    <p className="font-mono text-[12px] text-ink">{s.name}</p>
+                    <p className="font-mono text-[10px] text-muted/50">{s.tracks.length} tracks · {matched} in library{s.date ? ` · ${s.date}` : ''}</p>
                   </button>
                 )
               })}
@@ -821,7 +827,7 @@ export function OrdersPage(): JSX.Element {
 
         <div className="flex-1 overflow-y-auto">
           {orders.length === 0 ? (
-            <p className="px-3 py-4 font-mono text-[9px] text-muted/40 italic">empty — create your first below</p>
+            <p className="px-3 py-4 font-mono text-[12px] text-muted/40 italic">empty — create your first below</p>
           ) : orders.map((o) => (
             <button
               key={o.id}
@@ -829,13 +835,13 @@ export function OrdersPage(): JSX.Element {
               className={`w-full text-left px-3 py-2 border-b border-border/20 transition-colors group
                 ${activeId === o.id ? 'bg-accent/[0.07]' : 'hover:bg-ink/[0.03]'}`}
             >
-              <p className="font-mono text-[8px] text-muted/50 uppercase tracking-[0.1em]">
+              <p className="font-mono text-[11px] text-muted/50 uppercase tracking-[0.1em]">
                 N° {String(o.catalogNum).padStart(3, '0')}
               </p>
-              <p className={`font-mono text-[9px] truncate ${activeId === o.id ? 'text-ink' : 'text-muted'}`}>
+              <p className={`font-mono text-[12px] truncate ${activeId === o.id ? 'text-ink' : 'text-muted'}`}>
                 {o.title || 'Untitled'}
               </p>
-              <p className="font-mono text-[7.5px] text-muted/35">{o.entries.length} cuts</p>
+              <p className="font-mono text-[10px] text-muted/35">{o.entries.length} cuts</p>
             </button>
           ))}
         </div>
@@ -850,7 +856,7 @@ export function OrdersPage(): JSX.Element {
         >
           {/* Header */}
           <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-border/30 bg-chassis">
-            <span className="font-mono text-[9px] text-muted/50 uppercase tracking-[0.12em] shrink-0">
+            <span className="font-mono text-[12px] text-muted/50 uppercase tracking-[0.12em] shrink-0">
               N° {String(active.catalogNum).padStart(3, '0')}
             </span>
             {editingTitle ? (
@@ -860,18 +866,18 @@ export function OrdersPage(): JSX.Element {
                 onChange={(e) => setTitleVal(e.target.value)}
                 onBlur={() => { update({ title: titleVal }); setEditingTitle(false) }}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') { update({ title: titleVal }); setEditingTitle(false) } }}
-                className="flex-1 bg-transparent border-b border-accent/40 font-mono text-[11px] text-ink focus:outline-none"
+                className="flex-1 bg-transparent border-b border-accent/40 font-mono text-[13px] text-ink focus:outline-none"
               />
             ) : (
               <h2
-                className="flex-1 font-mono text-[11px] text-ink cursor-text hover:text-accent transition-colors truncate"
+                className="flex-1 font-mono text-[13px] text-ink cursor-text hover:text-accent transition-colors truncate"
                 onClick={() => { setTitleVal(active.title); setEditingTitle(true) }}
               >
                 {active.title || <span className="text-muted/40 italic">click to name this order</span>}
               </h2>
             )}
 
-            <span className="font-mono text-[8.5px] text-muted/50 shrink-0 tabular-nums">
+            <span className="font-mono text-[11px] text-muted/50 shrink-0 tabular-nums">
               {active.entries.length} cuts · {fmtDur(totalDurSec)}
               {setStats?.bpmRange && <span className="text-muted/35"> · {setStats.bpmRange} bpm</span>}
               {setStats && (
@@ -885,7 +891,7 @@ export function OrdersPage(): JSX.Element {
             {/* Add playing track from deck */}
             {(deckATrack || deckBTrack) && (
               <div className="relative group shrink-0">
-                <span className="font-mono text-[8.5px] text-muted/40 group-hover:hidden">
+                <span className="font-mono text-[11px] text-muted/40 group-hover:hidden">
                   {deckATrack ? `A: ${deckATrack.title.slice(0, 10)}` : `B: ${deckBTrack!.title.slice(0, 10)}`}
                 </span>
                 <div className="hidden group-hover:flex items-center gap-1">
@@ -893,7 +899,7 @@ export function OrdersPage(): JSX.Element {
                     <button
                       onClick={() => addTracks([deckATrack.id])}
                       title={`Add Deck A: ${deckATrack.title}`}
-                      className="font-mono text-[7.5px] uppercase tracking-[0.08em] text-muted hover:text-accent border border-border/30 hover:border-accent/30 rounded px-1.5 py-0.5 transition-colors"
+                      className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted hover:text-accent border border-border/30 hover:border-accent/30 rounded px-1.5 py-0.5 transition-colors"
                     >
                       +A
                     </button>
@@ -902,7 +908,7 @@ export function OrdersPage(): JSX.Element {
                     <button
                       onClick={() => addTracks([deckBTrack.id])}
                       title={`Add Deck B: ${deckBTrack.title}`}
-                      className="font-mono text-[7.5px] uppercase tracking-[0.08em] text-muted hover:text-accent border border-border/30 hover:border-accent/30 rounded px-1.5 py-0.5 transition-colors"
+                      className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted hover:text-accent border border-border/30 hover:border-accent/30 rounded px-1.5 py-0.5 transition-colors"
                     >
                       +B
                     </button>
@@ -915,7 +921,7 @@ export function OrdersPage(): JSX.Element {
             {active.entries.length >= 2 && (
               <button
                 onClick={magicSortOrder}
-                className="shrink-0 font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded px-2 py-0.5 transition-colors"
+                className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded px-2 py-0.5 transition-colors"
                 title="Reorder by harmonic compatibility (greedy nearest-neighbour)"
               >
                 ⟳ sort
@@ -933,9 +939,7 @@ export function OrdersPage(): JSX.Element {
                     const bpm   = t.bpm   ? `${t.bpm.toFixed(0)} bpm` : ''
                     const key   = t.key   ?? ''
                     const nrg   = t.energy != null ? `nrg ${t.energy}` : ''
-                    const dur   = t.durationSeconds
-                      ? `${Math.floor(t.durationSeconds/60)}:${String(Math.round(t.durationSeconds%60)).padStart(2,'0')}`
-                      : ''
+                    const dur   = t.durationSeconds ? formatDuration(t.durationSeconds) : ''
                     const meta = [bpm, key, nrg].filter(Boolean).join(' · ')
                     return `${String(i+1).padStart(2,'0')} · ${t.title} – ${t.artist}${meta ? ` (${meta})` : ''}${dur ? ` · ${dur}` : ''}`
                   }),
@@ -944,7 +948,7 @@ export function OrdersPage(): JSX.Element {
                 ]
                 await navigator.clipboard.writeText(lines.join('\n'))
               }}
-              className="shrink-0 font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded px-2 py-0.5 transition-colors"
+              className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded px-2 py-0.5 transition-colors"
               title="Copy running order as plain text"
             >
               copy
@@ -971,7 +975,7 @@ export function OrdersPage(): JSX.Element {
                 a.click()
                 URL.revokeObjectURL(url)
               }}
-              className="shrink-0 font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded px-2 py-0.5 transition-colors"
+              className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded px-2 py-0.5 transition-colors"
               title="Export as M3U playlist"
             >
               M3U
@@ -983,7 +987,7 @@ export function OrdersPage(): JSX.Element {
                 const res = await window.api.library.exportOrderPDF(active.id)
                 if (res.saved) console.log('PDF saved:', res.path)
               }}
-              className="shrink-0 font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded px-2 py-0.5 transition-colors"
+              className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded px-2 py-0.5 transition-colors"
               title="Export as PDF programme"
             >
               PDF
@@ -992,7 +996,7 @@ export function OrdersPage(): JSX.Element {
             {/* Duplicate */}
             <button
               onClick={duplicateOrder}
-              className="shrink-0 font-mono text-[8.5px] text-muted/30 hover:text-muted transition-colors"
+              className="shrink-0 font-mono text-[11px] text-muted/30 hover:text-muted transition-colors"
               title="Duplicate this order"
             >
               copy
@@ -1001,7 +1005,7 @@ export function OrdersPage(): JSX.Element {
             {/* Delete */}
             <button
               onClick={() => deleteOrder(active.id)}
-              className="shrink-0 font-mono text-[8.5px] text-muted/30 hover:text-red-400 transition-colors"
+              className="shrink-0 font-mono text-[11px] text-muted/30 hover:text-red-400 transition-colors"
             >
               delete
             </button>
@@ -1014,26 +1018,26 @@ export function OrdersPage(): JSX.Element {
                 ? 'border-emerald-600/20 bg-emerald-600/[0.04]'
                 : 'border-amber-500/15 bg-amber-500/[0.03]'
             }`}>
-              <span className={`font-mono text-[8px] uppercase tracking-[0.15em] shrink-0 ${gigChecklist.ready ? 'text-emerald-500/70' : 'text-amber-400/70'}`}>
+              <span className={`font-mono text-[11px] uppercase tracking-[0.15em] shrink-0 ${gigChecklist.ready ? 'text-emerald-500/70' : 'text-amber-400/70'}`}>
                 {gigChecklist.ready ? '✓ set ready' : 'checklist'}
               </span>
               <div className="flex items-center gap-3 flex-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-                <span className={`font-mono text-[7.5px] shrink-0 ${gigChecklist.missingTracks === 0 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
+                <span className={`font-mono text-[10px] shrink-0 ${gigChecklist.missingTracks === 0 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
                   {gigChecklist.missingTracks === 0 ? `✓ ${gigChecklist.total} tracks matched` : `⚠ ${gigChecklist.missingTracks} tracks unresolved`}
                 </span>
-                <span className={`font-mono text-[7.5px] shrink-0 ${gigChecklist.missingAnalysis.length === 0 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
+                <span className={`font-mono text-[10px] shrink-0 ${gigChecklist.missingAnalysis.length === 0 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
                   {gigChecklist.missingAnalysis.length === 0 ? '✓ all tracks analysed' : `⚠ ${gigChecklist.missingAnalysis.length} missing BPM/key`}
                 </span>
-                <span className={`font-mono text-[7.5px] shrink-0 ${gigChecklist.riskyTransitions.length === 0 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
+                <span className={`font-mono text-[10px] shrink-0 ${gigChecklist.riskyTransitions.length === 0 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
                   {gigChecklist.riskyTransitions.length === 0 ? '✓ no risky transitions' : `⚠ ${gigChecklist.riskyTransitions.length} clashing keys`}
                 </span>
                 {setStats && (
-                  <span className={`font-mono text-[7.5px] shrink-0 ${setStats.avgHarm >= 0.70 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
+                  <span className={`font-mono text-[10px] shrink-0 ${setStats.avgHarm >= 0.70 ? 'text-emerald-500/60' : 'text-amber-400/70'}`}>
                     ⬡ {Math.round(setStats.avgHarm * 100)}% harmonic avg
                   </span>
                 )}
                 {setStats?.bpmRange && (
-                  <span className="font-mono text-[7.5px] text-muted/30 shrink-0">
+                  <span className="font-mono text-[10px] text-muted/30 shrink-0">
                     {setStats.bpmRange} bpm
                     {setStats.mode ? ` · ${setStats.mode}` : ''}
                     {setStats.uniqueKeyCount ? ` · ${setStats.uniqueKeyCount} keys` : ''}
@@ -1049,7 +1053,7 @@ export function OrdersPage(): JSX.Element {
             <div className="flex items-center gap-1 px-3 pt-2 pb-1">
               {(['bpm', 'energy', 'keys'] as Lens[]).map((l) => (
                 <button key={l} onClick={() => setLens(l)}
-                  className={`font-mono text-[8px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
+                  className={`font-mono text-[11px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
                     ${lens === l ? 'bg-accent/15 text-accent' : 'text-muted/50 hover:text-muted'}`}>
                   {l}
                 </button>
@@ -1059,13 +1063,13 @@ export function OrdersPage(): JSX.Element {
           </div>
 
           {/* Track list */}
-          <div className={`flex-1 overflow-y-auto transition-colors ${isDraggingLibTracks ? 'bg-accent/[0.03]' : ''}`}>
+          <div className={`flex-1 min-h-0 overflow-y-auto transition-colors ${isDraggingLibTracks ? 'bg-accent/[0.03]' : ''}`}>
             {active.entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full gap-3 pointer-events-none">
-                <p className="font-mono text-[11px] text-muted/30 uppercase tracking-[0.15em]">
+                <p className="font-mono text-[13px] text-muted/30 uppercase tracking-[0.15em]">
                   {isDraggingLibTracks ? 'drop tracks here' : 'no tracks yet'}
                 </p>
-                <p className="font-mono text-[9px] text-muted/20">drag from the library or use the search below</p>
+                <p className="font-mono text-[12px] text-muted/20">drag from the library or use the search below</p>
               </div>
             ) : (
               active.entries.map((entry, idx) => (
@@ -1104,8 +1108,8 @@ export function OrdersPage(): JSX.Element {
           {suggestions.length > 0 && (
             <div className="shrink-0 border-t border-border/25" style={{ background: '#0e0c09' }}>
               <div className="flex items-center justify-between px-3 py-1.5">
-                <span className="font-mono text-[8px] uppercase tracking-[0.18em] text-muted/50">what's next?</span>
-                <span className="font-mono text-[7.5px] text-muted/30">freshness-weighted · click to add</span>
+                <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted/50">what's next?</span>
+                <span className="font-mono text-[10px] text-muted/30">freshness-weighted · click to add</span>
               </div>
               <div className="flex overflow-x-auto gap-1.5 px-3 pb-2" style={{ scrollbarWidth: 'none' }}>
                 {suggestions.map(({ track: t, score, freshnessBonus }) => (
@@ -1120,24 +1124,24 @@ export function OrdersPage(): JSX.Element {
                   >
                     <div className="flex items-center gap-1.5 w-full mb-0.5">
                       <span className="w-1.5 h-1.5 rounded-sm shrink-0" style={{ background: keyBlipColor(t.key) }} />
-                      <span className="font-mono text-[8.5px] font-bold text-ink truncate flex-1">{t.title}</span>
+                      <span className="font-mono text-[11px] font-bold text-ink truncate flex-1">{t.title}</span>
                       {freshnessBonus > 0 && (
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'rgba(201,160,44,0.70)' }} title="Rediscovery" />
                       )}
                     </div>
-                    <p className="font-mono text-[7.5px] text-muted/60 truncate w-full">{t.artist}</p>
+                    <p className="font-mono text-[10px] text-muted/60 truncate w-full">{t.artist}</p>
                     <div className="flex items-center gap-1.5 mt-1 w-full">
                       <div className="flex-1 h-0.5 bg-border/20 rounded-full overflow-hidden">
                         <div className="h-full rounded-full" style={{ width: `${score * 100}%`, background: '#D86A4A' }} />
                       </div>
-                      <span className="font-mono text-[7px] text-muted/40 tabular-nums shrink-0">{Math.round(score * 100)}%</span>
+                      <span className="font-mono text-[10px] text-muted/40 tabular-nums shrink-0">{Math.round(score * 100)}%</span>
                     </div>
                   </button>
                   {/* Preview button */}
                   <div className="flex justify-end mt-0.5">
                     <button
                       onClick={(e) => { e.stopPropagation(); previewToggle(t) }}
-                      className="font-mono text-[7px] text-muted/30 hover:text-amber-400 transition-colors"
+                      className="font-mono text-[10px] text-muted/30 hover:text-amber-400 transition-colors"
                     >
                       {previewId === t.id ? '■' : '▶'}
                     </button>
@@ -1156,12 +1160,12 @@ export function OrdersPage(): JSX.Element {
                 className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/[0.02] transition-colors"
                 onClick={() => setShowRnt((v) => !v)}
               >
-                <span className="font-mono text-[8px] uppercase tracking-[0.18em] text-muted/40">
+                <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted/40">
                   the road not taken
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[7.5px] text-muted/25">what else in your bag would have fit here?</span>
-                  <span className="font-mono text-[8px] text-muted/30 transition-transform" style={{ display: 'inline-block', transform: showRnt ? 'rotate(90deg)' : 'none' }}>▸</span>
+                  <span className="font-mono text-[10px] text-muted/25">what else in your bag would have fit here?</span>
+                  <span className="font-mono text-[11px] text-muted/30 transition-transform" style={{ display: 'inline-block', transform: showRnt ? 'rotate(90deg)' : 'none' }}>▸</span>
                 </div>
               </button>
 
@@ -1175,7 +1179,7 @@ export function OrdersPage(): JSX.Element {
                           key={i}
                           onClick={() => setRntSlot(i)}
                           title={label}
-                          className={`font-mono text-[7.5px] px-2 py-0.5 rounded transition-colors border ${
+                          className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors border ${
                             rntSlot === i
                               ? 'bg-accent/15 text-accent border-accent/30'
                               : 'text-muted/40 border-border/20 hover:text-muted hover:border-border/40'
@@ -1190,7 +1194,7 @@ export function OrdersPage(): JSX.Element {
                       <select
                         value={rntSlot}
                         onChange={(e) => setRntSlot(Number(e.target.value))}
-                        className="bg-paper border border-border/40 rounded px-2 py-0.5 font-mono text-[9px] text-ink outline-none focus:border-accent cursor-pointer"
+                        className="bg-paper border border-border/40 rounded px-2 py-0.5 font-mono text-[12px] text-ink outline-none focus:border-accent cursor-pointer"
                       >
                         {rntSlotLabels.map((label, i) => (
                           <option key={i} value={i}>{i === 0 ? '⟨Opening slot⟩' : `${i}→${i+1} · ${label.slice(0, 60)}`}</option>
@@ -1204,7 +1208,7 @@ export function OrdersPage(): JSX.Element {
                     const from = rntSlot > 0 ? activeTrackList[rntSlot - 1] : null
                     const to   = activeTrackList[rntSlot] ?? null
                     return (
-                      <p className="font-mono text-[7.5px] text-muted/35 mb-2 truncate">
+                      <p className="font-mono text-[10px] text-muted/35 mb-2 truncate">
                         {from ? `"${from.title}" → ` : 'Opening → '}
                         {to ? `"${to.title}"` : 'close'}
                         {from?.bpm && to?.bpm ? ` · ${from.bpm.toFixed(0)}→${to.bpm.toFixed(0)} bpm` : ''}
@@ -1214,7 +1218,7 @@ export function OrdersPage(): JSX.Element {
 
                   {/* Candidate cards */}
                   {rntCandidates.length === 0 ? (
-                    <p className="font-mono text-[8px] text-muted/25 italic">no analysed tracks to compare</p>
+                    <p className="font-mono text-[11px] text-muted/25 italic">no analysed tracks to compare</p>
                   ) : (
                     <div className="flex flex-col gap-1">
                       {rntCandidates.map(({ track: t, totalScore, scores, reason }) => (
@@ -1226,10 +1230,10 @@ export function OrdersPage(): JSX.Element {
                           {/* Track info */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-baseline gap-1.5">
-                              <span className="font-mono text-[8.5px] font-bold text-ink truncate">{t.title}</span>
-                              <span className="font-mono text-[7px] text-muted/40 shrink-0">{t.artist}</span>
+                              <span className="font-mono text-[11px] font-bold text-ink truncate">{t.title}</span>
+                              <span className="font-mono text-[10px] text-muted/40 shrink-0">{t.artist}</span>
                             </div>
-                            <p className="font-mono text-[7px] text-muted/35 truncate mt-0.5">{reason}</p>
+                            <p className="font-mono text-[10px] text-muted/35 truncate mt-0.5">{reason}</p>
                           </div>
 
                           {/* Factor pills */}
@@ -1239,7 +1243,7 @@ export function OrdersPage(): JSX.Element {
                               const color = v >= 0.75 ? '#4A9B6F' : v >= 0.5 ? '#C9A02C' : '#B86E72'
                               return (
                                 <span key={f} title={`${f}: ${Math.round(v * 100)}%`}
-                                  className="font-mono text-[6.5px] uppercase tracking-[0.06em] px-1 py-0.5 rounded"
+                                  className="font-mono text-[9px] uppercase tracking-[0.06em] px-1 py-0.5 rounded"
                                   style={{ background: `${color}22`, color }}>
                                   {f[0]}
                                 </span>
@@ -1252,19 +1256,19 @@ export function OrdersPage(): JSX.Element {
                             <div className="flex-1 h-0.5 bg-border/20 rounded-full overflow-hidden">
                               <div className="h-full rounded-full" style={{ width: `${totalScore * 100}%`, background: '#9B6B4A' }} />
                             </div>
-                            <span className="font-mono text-[7px] text-muted/35 tabular-nums">{Math.round(totalScore * 100)}%</span>
+                            <span className="font-mono text-[10px] text-muted/35 tabular-nums">{Math.round(totalScore * 100)}%</span>
                           </div>
 
                           <button
                             onClick={() => previewToggle(t)}
-                            className="shrink-0 font-mono text-[7px] text-muted/30 hover:text-amber-400 group-hover:text-amber-400/60 transition-colors"
+                            className="shrink-0 font-mono text-[10px] text-muted/30 hover:text-amber-400 group-hover:text-amber-400/60 transition-colors"
                             title={previewId === t.id ? 'Stop preview' : 'Preview 30s'}
                           >
                             {previewId === t.id ? '■' : '▶'}
                           </button>
                           <button
                             onClick={() => addTracks([t.id])}
-                            className="shrink-0 font-mono text-[7px] text-muted/30 hover:text-accent group-hover:text-accent/60 transition-colors"
+                            className="shrink-0 font-mono text-[10px] text-muted/30 hover:text-accent group-hover:text-accent/60 transition-colors"
                             title="Add to order"
                           >
                             +add
@@ -1283,11 +1287,11 @@ export function OrdersPage(): JSX.Element {
           <div className="max-w-sm w-full space-y-6">
             {/* Heading */}
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-accent/60 mb-1.5">running orders</p>
-              <p className="font-mono text-[11px] text-ink leading-relaxed">
+              <p className="font-mono text-[12px] uppercase tracking-[0.2em] text-accent/60 mb-1.5">running orders</p>
+              <p className="font-mono text-[13px] text-ink leading-relaxed">
                 A running order is your pre-gig programme — the arc of the night, laid out track by track.
               </p>
-              <p className="font-mono text-[9.5px] text-muted/60 mt-2 leading-relaxed">
+              <p className="font-mono text-[12px] text-muted/60 mt-2 leading-relaxed">
                 Build it by dragging tracks from the library, importing a Pioneer USB history, or starting from an existing playlist. The arc canvas, gig checklist, and Road Not Taken suggestions update as you work.
               </p>
             </div>
@@ -1302,21 +1306,21 @@ export function OrdersPage(): JSX.Element {
                   onClick={action as () => void}
                   className="w-full text-left flex items-start gap-3 px-3 py-2.5 border border-border/25 hover:border-accent/40 rounded transition-colors group"
                 >
-                  <span className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent group-hover:text-ink transition-colors shrink-0 pt-0.5">{label as string}</span>
-                  <span className="font-mono text-[8.5px] text-muted/50 group-hover:text-muted/70 transition-colors leading-relaxed">{desc as string}</span>
+                  <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-accent group-hover:text-ink transition-colors shrink-0 pt-0.5">{label as string}</span>
+                  <span className="font-mono text-[11px] text-muted/50 group-hover:text-muted/70 transition-colors leading-relaxed">{desc as string}</span>
                 </button>
               ))}
               <button
                 onClick={() => setShowPlaylistPicker(true)}
                 className="w-full text-left flex items-start gap-3 px-3 py-2.5 border border-border/25 hover:border-accent/40 rounded transition-colors group"
               >
-                <span className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent group-hover:text-ink transition-colors shrink-0 pt-0.5">from playlist</span>
-                <span className="font-mono text-[8.5px] text-muted/50 group-hover:text-muted/70 transition-colors leading-relaxed">turn any existing playlist into a running order</span>
+                <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-accent group-hover:text-ink transition-colors shrink-0 pt-0.5">from playlist</span>
+                <span className="font-mono text-[11px] text-muted/50 group-hover:text-muted/70 transition-colors leading-relaxed">turn any existing playlist into a running order</span>
               </button>
             </div>
 
             {/* Tip */}
-            <p className="font-mono text-[7.5px] text-muted/30 uppercase tracking-[0.12em] border-t border-border/15 pt-4">
+            <p className="font-mono text-[10px] text-muted/30 uppercase tracking-[0.12em] border-t border-border/15 pt-4">
               tip — you can also drag tracks directly onto an empty order once it's created
             </p>
           </div>

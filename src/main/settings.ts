@@ -1,26 +1,9 @@
 import { app } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
+import type { AppSettings } from '../shared/types'
 
-export interface AppSettings {
-  // Integration paths
-  rekordboxXmlPath: string
-  rekordboxDbPath: string
-  traktorCollectionPath: string
-  seratoDir: string
-  appleMusicXmlPath: string
-  engineDjDbPath: string
-  m3uExportDir: string
-  // Preferences
-  theme: 'dark' | 'light' | 'system'
-  defaultExportDir: string
-  showWelcomeOnStartup: boolean
-  // Watch folders
-  watchFolders: string[]
-  // State
-  lastImportedAt: string | null
-  windowBounds: { x: number; y: number; width: number; height: number } | null
-}
+export type { AppSettings }
 
 const DEFAULTS: AppSettings = {
   rekordboxXmlPath: '',
@@ -30,6 +13,13 @@ const DEFAULTS: AppSettings = {
   appleMusicXmlPath: '',
   engineDjDbPath: autoDetectEngineDjDb(),
   m3uExportDir: '',
+  discogsToken: '',
+  acoustidKey: 'yVHjbHFuM7',   // shared app key — same default used by AcoustID lookups
+  lastfmKey: '',
+  tracklistsApiKey: '',
+  tracklistsApiBase: '',
+  enableTracklistsScrape: false,
+  pythonPath: 'python3',
   theme: 'dark',
   defaultExportDir: '',
   showWelcomeOnStartup: true,

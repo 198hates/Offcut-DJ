@@ -20,7 +20,15 @@ let _session: ort.InferenceSession | null = null
 let _runCount = 0
 
 export function getDefaultModelPath(): string {
-  return join(app.getPath('userData'), 'models', 'beat_this.onnx')
+  // Packaged builds ship the model under Resources/models; a user-supplied copy
+  // in userData/models still wins (lets people swap checkpoints without a rebuild).
+  const userCopy = join(app.getPath('userData'), 'models', 'beat_this.onnx')
+  if (existsSync(userCopy)) return userCopy
+  if (app.isPackaged) {
+    const bundled = join(process.resourcesPath, 'models', 'beat_this.onnx')
+    if (existsSync(bundled)) return bundled
+  }
+  return userCopy
 }
 
 export function isModelAvailable(modelPath?: string): boolean {

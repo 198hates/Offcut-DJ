@@ -11,7 +11,7 @@
   --paper-rgb:        251 247 236;  /* --panel  #FBF7EC */
   --ink-rgb:          31  27  20;   /* --ink    #1F1B14 */
   --ink-soft-rgb:     74  67  56;   /* --ink-soft #4A4338 */
-  --muted-rgb:        138 128 115;  /* --mute   #8A8073 */
+  --muted-rgb:        100 92  78;  /* --mute   #8A8073 */
   --border-rgb:       201 192 168;  /* --rule   #C9C0A8 */
   --accent-rgb:       184 74  43;   /* --spot   #B84A2B terracotta */
   --panel-deep:       #1F1B14;
@@ -27,7 +27,7 @@
   --paper-rgb:        20  17  12;   /* --paper   #14110C */
   --ink-rgb:          235 229 211;  /* --ink     #EBE5D3 */
   --ink-soft-rgb:     181 172 151;  /* --ink-soft #B5AC97 */
-  --muted-rgb:        110 101 83;   /* --mute    #6E6553 */
+  --muted-rgb:        163 152 130;  /* lifted — icons/labels were sub-legible at small sizes */
   --border-rgb:       42  36  28;   /* --rule    #2A241C */
   --accent-rgb:       216 106 74;   /* --spot    #D86A4A terracotta lifted */
   --panel-deep:       #060503;
@@ -47,10 +47,13 @@
   --deck-bg-2:  #1A1612;
   --deck-panel: #060503;
   --deck-ink:   #EBE5D3;
-  --deck-mute:  #6E6553;
+  --deck-mute:  #A59A82;   /* lifted from #968C77 — inactive controls must read at a glance */
   --deck-rule:  #2A241C;
   --deck-spot:  #D86A4A;
   --deck-glow:  rgba(216, 106, 74, 0.55);
+  /* Record red — hotter than the terracotta spot so "armed" is unmistakable */
+  --rec-red:    #E5484D;
+  --rec-glow:   rgba(229, 72, 77, 0.7);
   /* Waveform earthen bands — cream peaks, terracotta mid, earthen low */
   --wave-cream: #ECE3CC;
   --wave-mid:   #C2683E;
@@ -90,16 +93,65 @@
 /* Reusable deck-zone button variants (C3 — inactive must be clearly readable) */
 .deck-btn {
   color: var(--deck-mute);
-  border-color: rgba(110, 101, 83, 0.35);
+  border-color: rgba(140, 129, 106, 0.45);
 }
 .deck-btn:hover {
   color: var(--deck-ink);
-  border-color: rgba(110, 101, 83, 0.6);
+  border-color: rgba(165, 154, 130, 0.8);
 }
 .deck-btn-active {
   color: var(--deck-spot);
   border-color: var(--deck-spot);
   background: rgba(216, 106, 74, 0.12);
+  box-shadow: 0 0 6px rgba(216, 106, 74, 0.25);
+}
+
+/* ── REC module (mixer column, hardware-style arm switch) ───────── */
+.rec-module {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  height: 28px;
+  border-top: 1px solid var(--deck-rule);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.rec-module:hover { background: rgba(229, 72, 77, 0.08); }
+.rec-module .rec-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--rec-red) 55%, var(--deck-rule));
+  background: transparent;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.rec-module:hover .rec-dot { border-color: var(--rec-red); }
+.rec-module .rec-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--deck-mute);
+  transition: color 0.15s;
+}
+.rec-module:hover .rec-label { color: var(--deck-ink); }
+.rec-module.rec-live { background: rgba(229, 72, 77, 0.13); }
+.rec-module.rec-live .rec-dot {
+  border: none;
+  background: var(--rec-red);
+  box-shadow: 0 0 9px var(--rec-glow);
+  animation: rec-pulse 1.4s ease-in-out infinite;
+}
+.rec-module.rec-live .rec-label {
+  color: var(--rec-red);
+  text-shadow: 0 0 6px var(--rec-glow);
+}
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
 }
 
 /* ── EQ Knob — system pattern (H1) ─────────────────────
@@ -255,16 +307,14 @@
   position: relative;
   background: #0d0d14;
   border-radius: 3px;
-  padding: 2px 5px 1px;
+  padding: 2px 6px 1px;
   display: inline-block;
+  text-align: right;
 }
+/* The ghost (full placeholder, e.g. "000.0") sits in normal flow and defines
+   the segment's width/height; the live value is overlaid exactly on top of it.
+   This stops the wider ghost bleeding out of the box into the next readout. */
 .led-readout-ghost {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 5px;
   font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -272,22 +322,27 @@
   color: var(--led-ghost);
   pointer-events: none;
   user-select: none;
+  white-space: nowrap;
 }
 .led-readout-val {
+  position: absolute;
+  top: 2px;
+  right: 6px;
   font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
   letter-spacing: 0.05em;
   line-height: 1;
   color: var(--led-text);
   text-shadow: 0 0 6px var(--led-glow);
-  position: relative;
+  white-space: nowrap;
 }
 .led-readout-label {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 8px;
+  font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.15em;
-  color: rgba(255,255,255,0.2);
+  color: rgba(255, 255, 255, 0.28);
   margin-top: 2px;
   display: block;
+  text-align: right;
 }

@@ -59,7 +59,7 @@ export function Onboarding({ onComplete }: OnboardingProps): JSX.Element {
       >
         {/* Panel header */}
         <div className="mb-6 pb-4 border-b border-border/30">
-          <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted">
+          <p className="font-mono text-[12px] uppercase tracking-[0.22em] text-muted">
             <span className="text-accent font-bold mr-1.5">cr·8</span>od-1 · setup
           </p>
         </div>
@@ -87,8 +87,8 @@ function WelcomeStep({ onGetStarted, onSkip }: { onGetStarted: () => void; onSki
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-sans font-bold text-xl text-ink mb-1">welcome to crate</h1>
-        <p className="font-mono text-[10px] text-muted leading-relaxed">
+        <h1 className="font-sans font-bold text-xl text-ink mb-1">welcome to offcut</h1>
+        <p className="font-mono text-[13px] text-muted leading-relaxed">
           connect your existing dj software and manage everything in one place.
         </p>
       </div>
@@ -102,7 +102,7 @@ function WelcomeStep({ onGetStarted, onSkip }: { onGetStarted: () => void; onSki
         ].map((f) => (
           <div key={f.text} className="flex items-center gap-2.5 bg-ink/[0.03] border border-border/30 rounded px-3 py-2">
             <span className="text-accent font-mono text-xs shrink-0">{f.icon}</span>
-            <span className="font-mono text-[9.5px] text-ink-soft">{f.text}</span>
+            <span className="font-mono text-[12px] text-ink-soft">{f.text}</span>
           </div>
         ))}
       </div>
@@ -110,11 +110,11 @@ function WelcomeStep({ onGetStarted, onSkip }: { onGetStarted: () => void; onSki
       <div className="flex flex-col gap-2">
         <button
           onClick={onGetStarted}
-          className="w-full py-2.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[10px] uppercase tracking-[0.14em] rounded transition-colors"
+          className="w-full py-2.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[13px] uppercase tracking-[0.14em] rounded transition-colors"
         >
           detect my dj software →
         </button>
-        <button onClick={onSkip} className="font-mono text-[9.5px] text-muted hover:text-ink transition-colors text-center">
+        <button onClick={onSkip} className="font-mono text-[12px] text-muted hover:text-ink transition-colors text-center">
           skip · configure manually in settings
         </button>
       </div>
@@ -134,7 +134,7 @@ function DetectStep({
         <h2 className="font-sans font-bold text-lg text-ink mb-1">
           {detected.length > 0 ? 'dj software detected' : 'no software detected'}
         </h2>
-        <p className="font-mono text-[10px] text-muted">
+        <p className="font-mono text-[13px] text-muted">
           {detected.length > 0
             ? 'select which libraries to import'
             : 'no dj software found at default paths · add them manually in settings'}
@@ -154,9 +154,9 @@ function DetectStep({
             >
               <input type="checkbox" checked={selected.has(app.id)} onChange={() => onToggle(app.id)} className="mt-0.5 accent-accent" />
               <div className="flex-1 min-w-0">
-                <p className="font-mono text-[10.5px] font-bold text-ink">{app.label}</p>
-                <p className="font-mono text-[9.5px] text-muted mt-0.5">{app.description}</p>
-                <p className="font-mono text-[9px] text-muted/60 mt-0.5 truncate">{app.path.split('/').slice(-3).join('/')}</p>
+                <p className="font-mono text-[13px] font-bold text-ink">{app.label}</p>
+                <p className="font-mono text-[12px] text-muted mt-0.5">{app.description}</p>
+                <p className="font-mono text-[12px] text-muted/60 mt-0.5 truncate">{app.path.split('/').slice(-3).join('/')}</p>
               </div>
             </label>
           ))}
@@ -165,11 +165,11 @@ function DetectStep({
 
       <div className="flex flex-col gap-2">
         {detected.length > 0 && selected.size > 0 && (
-          <button onClick={onImport} className="w-full py-2.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[10px] uppercase tracking-[0.14em] rounded transition-colors">
+          <button onClick={onImport} className="w-full py-2.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[13px] uppercase tracking-[0.14em] rounded transition-colors">
             import {selected.size} librar{selected.size !== 1 ? 'ies' : 'y'} →
           </button>
         )}
-        <button onClick={onSkip} className="font-mono text-[9.5px] text-muted hover:text-ink transition-colors text-center">
+        <button onClick={onSkip} className="font-mono text-[12px] text-muted hover:text-ink transition-colors text-center">
           skip · import manually later
         </button>
       </div>
@@ -182,19 +182,19 @@ function ImportStep({ progress, importing }: { progress: string[]; importing: bo
     <div className="space-y-5">
       <div>
         <h2 className="font-sans font-bold text-lg text-ink mb-1">importing library</h2>
-        <p className="font-mono text-[10px] text-muted">may take a moment for large libraries</p>
+        <p className="font-mono text-[13px] text-muted">may take a moment for large libraries</p>
       </div>
       <div className="space-y-2">
         {progress.map((msg, i) => (
           <div key={i} className="flex items-center gap-2">
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${i === progress.length - 1 && importing ? 'bg-accent animate-pulse' : 'bg-green-500'}`} />
-            <span className="font-mono text-[10px] text-ink-soft">{msg}</span>
+            <span className="font-mono text-[13px] text-ink-soft">{msg}</span>
           </div>
         ))}
         {importing && (
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-accent animate-pulse" />
-            <span className="font-mono text-[10px] text-muted">working…</span>
+            <span className="font-mono text-[13px] text-muted">working…</span>
           </div>
         )}
       </div>
@@ -210,11 +210,11 @@ function DoneStep({ onFinish, trackCount }: { onFinish: () => void; trackCount: 
           <span className="text-green-600 dark:text-green-400 font-mono text-sm font-bold">✓</span>
         </div>
         <h2 className="font-sans font-bold text-lg text-ink mb-1">library ready</h2>
-        <p className="font-mono text-[10px] text-muted">
+        <p className="font-mono text-[13px] text-muted">
           {trackCount.toLocaleString()} track{trackCount !== 1 ? 's' : ''} imported
         </p>
       </div>
-      <button onClick={onFinish} className="w-full py-2.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[10px] uppercase tracking-[0.14em] rounded transition-colors">
+      <button onClick={onFinish} className="w-full py-2.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[13px] uppercase tracking-[0.14em] rounded transition-colors">
         open library →
       </button>
     </div>

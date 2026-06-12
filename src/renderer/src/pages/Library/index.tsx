@@ -5,29 +5,15 @@ import { FilterBar } from '../../components/FilterBar'
 import { BulkEditBar } from '../../components/BulkEditBar'
 import { SetTimeline } from '../../components/SetTimeline'
 import { keyBlipColor } from '../../components/CamelotWheel'
-import { ContextMenu } from '../../components/ContextMenu'
-import { analyzeAudio } from '../../lib/analyzer'
-import { magicSort, compatibilityScore, generateBeatgrid } from '../../lib/compatibility'
+import { magicSort, compatibilityScore } from '../../lib/compatibility'
 import { usePreview } from '../../hooks/usePreview'
+import { useTrackMenuContext } from '../../hooks/useTrackMenu'
 import { useToastStore } from '../../store/toastStore'
 import { useWaveformStore, displayKey } from '../../store/waveformStore'
+import { setTrackDragData } from '../../lib/trackDrag'
+import { formatDuration, formatBpm, formatFileSize, formatSampleRate } from '../../lib/format'
+import { useVirtualList } from '../../hooks/useVirtualList'
 import type { Track } from '@shared/types'
-
-async function writeTags(ids: string[], showToast: (msg: string, type: 'success' | 'info' | 'error') => void): Promise<void> {
-  if (ids.length === 1) {
-    const r = await window.api.library.writeTagsToFile(ids[0])
-    if (r.skipped)        showToast('Format not supported for tag writing', 'info')
-    else if (r.success)   showToast('Tags written to file', 'success')
-    else                  showToast(`Write failed: ${r.error}`, 'error')
-  } else {
-    const r = await window.api.library.writeTagsBulk(ids)
-    const parts: string[] = []
-    if (r.succeeded > 0) parts.push(`${r.succeeded} updated`)
-    if (r.failed > 0)    parts.push(`${r.failed} failed`)
-    if (r.skipped > 0)   parts.push(`${r.skipped} skipped`)
-    showToast(parts.join(' · ') || 'Nothing to write', r.failed > 0 ? 'error' : 'success')
-  }
-}
 
 const ROW_HEIGHT    = 32
 const HEADER_HEIGHT = 30
@@ -65,16 +51,6 @@ type SortDir = 'asc' | 'desc'
 interface SortLevel { key: SortKey; dir: SortDir }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
-function formatFileSize(bytes: number | null): string {
-  if (!bytes) return '—'
-  return bytes >= 1024 * 1024
-    ? `${(bytes / (1024 * 1024)).toFixed(1)}MB`
-    : `${Math.round(bytes / 1024)}KB`
-}
-function formatSampleRate(hz: number | null): string {
-  if (!hz) return '—'
-  return `${(hz / 1000).toFixed(1)}k`
-}
 function formatModified(iso: string | null): string {
   if (!iso) return '—'
   try {
@@ -84,15 +60,15 @@ function formatModified(iso: string | null): string {
 }
 
 export function LibraryPage(): JSX.Element {
-  const { isLoading, selectedTrackIds, setSelectedTrackIds, setDragging, clearDragging, activePlaylistId, playlists, deleteTracks, addTracksToPlaylist, updateTrack, reorderPlaylistTracks } = useLibraryStore()
+  const { isLoading, selectedTrackIds, setSelectedTrackIds, setDragging, clearDragging, activePlaylistId, playlists, addTracksToPlaylist, reorderPlaylistTracks } = useLibraryStore()
   const showToast = useToastStore((s) => s.show)
   const loadTrackA = useDeckAStore((s) => s.loadTrack)
   const loadTrackB = useDeckBStore((s) => s.loadTrack)
-  const { previewId, toggle: previewToggle } = usePreview()
+  const { toggle: previewToggle } = usePreview()
   const filteredTracks = useLibraryStore((s) => s.filteredTracks())
   const allTracks = useLibraryStore((s) => s.tracks)
 
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; trackId: string } | null>(null)
+  const openTrackMenu = useTrackMenuContext()
   const [showSuggest, setShowSuggest] = useState(false)
   const [showColPicker, setShowColPicker] = useState(false)
 
@@ -102,7 +78,7 @@ export function LibraryPage(): JSX.Element {
   // Column visibility — persisted to localStorage
   const [visibleColIds, setVisibleColIds] = useState<Set<string>>(() => {
     try {
-      const stored = localStorage.getItem('crate-col-visibility')
+      const stored = localStorage.getItem('offcut-col-visibility')
       if (stored) return new Set(JSON.parse(stored) as string[])
     } catch { /* ignore */ }
     return new Set(COLUMN_DEFS.filter((c) => c.defaultVisible).map((c) => c.id))
@@ -111,7 +87,7 @@ export function LibraryPage(): JSX.Element {
     setVisibleColIds((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
-      try { localStorage.setItem('crate-col-visibility', JSON.stringify([...next])) } catch { /* ignore */ }
+      try { localStorage.setItem('offcut-col-visibility', JSON.stringify([...next])) } catch { /* ignore */ }
       return next
     })
   }, [])
@@ -119,19 +95,6 @@ export function LibraryPage(): JSX.Element {
   const visibleCols = COLUMN_DEFS.filter((c) => visibleColIds.has(c.id))
 
   const containerRef = useRef<HTMLDivElement>(null)
-  const [scrollTop, setScrollTop]       = useState(0)
-  const [containerHeight, setContainerHeight] = useState(600)
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const onScroll = (): void => setScrollTop(el.scrollTop)
-    const ro = new ResizeObserver(() => setContainerHeight(el.clientHeight))
-    el.addEventListener('scroll', onScroll, { passive: true })
-    ro.observe(el)
-    setContainerHeight(el.clientHeight)
-    return () => { el.removeEventListener('scroll', onScroll); ro.disconnect() }
-  }, [])
 
   // Focus the outer container on mount so arrow keys work immediately
   useEffect(() => {
@@ -181,11 +144,13 @@ export function LibraryPage(): JSX.Element {
     }
   }, [])
 
-  const start     = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
-  const end       = Math.min(sorted.length, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN)
-  const visible   = sorted.slice(start, end)
-  const topPad    = start * ROW_HEIGHT
-  const bottomPad = Math.max(0, (sorted.length - end) * ROW_HEIGHT)
+  const { start, end, topPad, bottomPad, onScroll } = useVirtualList(
+    sorted.length,
+    ROW_HEIGHT,
+    OVERSCAN,
+    containerRef
+  )
+  const visible = sorted.slice(start, end)
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     const tag = (e.target as HTMLElement).tagName
@@ -277,152 +242,33 @@ export function LibraryPage(): JSX.Element {
 
   const handleDragStart = useCallback((e: React.DragEvent, track: Track) => {
     const ids = selectedTrackIds.has(track.id) ? [...selectedTrackIds] : [track.id]
-    e.dataTransfer.effectAllowed = 'copy'
-    e.dataTransfer.setData('application/x-crate-track-ids', JSON.stringify(ids))
+    setTrackDragData(e, ids)
     setDragging(ids)
   }, [selectedTrackIds, setDragging])
 
   const handleDragEnd = useCallback(() => clearDragging(), [clearDragging])
 
   const handleContextMenu = useCallback((e: React.MouseEvent, track: Track) => {
-    e.preventDefault()
     // If the right-clicked track isn't in the current selection, select only it
-    if (!selectedTrackIds.has(track.id)) {
+    let ids: string[]
+    if (selectedTrackIds.has(track.id)) {
+      ids = [...selectedTrackIds]
+    } else {
       setSelectedTrackIds(new Set([track.id]))
       setLastClickedId(track.id)
+      ids = [track.id]
     }
-    setCtxMenu({ x: e.clientX, y: e.clientY, trackId: track.id })
-  }, [selectedTrackIds, setSelectedTrackIds])
+    openTrackMenu(e, { ids, track, playlistId: activePlaylistId })
+  }, [selectedTrackIds, setSelectedTrackIds, openTrackMenu, activePlaylistId])
 
   const clearSelection = useCallback(() => {
     setSelectedTrackIds(new Set())
     setLastClickedId(null)
   }, [setSelectedTrackIds])
 
-  // ── Analysis progress ──────────────────────────────────────────────────────
-  const [analysisProgress, setAnalysisProgress] = useState<{
-    label: string; current: number; total: number; track: string
-  } | null>(null)
-
-  const trackLabel = useCallback((t: Track) =>
-    t.title || t.artist || t.filePath.split('/').pop() || t.id
-  , [])
-
-  const handleAnalyseBpm = useCallback(async (ids: string[]) => {
-    const ctx = new AudioContext()
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i]
-      const t = allTracks.find((x) => x.id === id)
-      if (!t) continue
-      setAnalysisProgress({ label: 'BPM + key', current: i + 1, total: ids.length, track: trackLabel(t) })
-      // Phase 1: embedded tags
-      try {
-        const tags = await window.api.audio.readTags(t.filePath)
-        if (tags) {
-          const newBpm = (!t.bpm && tags.bpm) ? tags.bpm : t.bpm
-          const newKey = (!t.key && tags.key) ? tags.key : t.key
-          if (newBpm !== t.bpm || newKey !== t.key)
-            await updateTrack({ id, bpm: newBpm, key: newKey })
-        }
-      } catch { /* continue */ }
-      // Phase 2: audio decode (if bpm, key, OR energy still missing)
-      const current = useLibraryStore.getState().tracks.find((x) => x.id === id) ?? t
-      if (!current.bpm || !current.key || current.energy == null || current.beatgrid.length === 0) {
-        try {
-          const ab = await window.api.audio.readFile(t.filePath)
-          const buf = await ctx.decodeAudioData(ab)
-          const result = await analyzeAudio(buf)
-          const newBpm   = result.bpm ?? current.bpm
-          const beatgrid = (newBpm && result.offsetMs != null)
-            ? generateBeatgrid(newBpm, result.offsetMs, buf.duration * 1000)
-            : current.beatgrid
-          const cuePoints = (current.cuePoints.length === 0 && result.suggestedCues.length > 0)
-            ? result.suggestedCues.map((c, i) => ({
-                index: i, type: 'hotcue' as const,
-                positionMs: c.positionMs, color: c.color, label: c.label,
-              }))
-            : current.cuePoints
-          await updateTrack({ id, bpm: newBpm, key: result.key ?? current.key, energy: result.energy ?? current.energy, beatgrid, cuePoints })
-        } catch { /* unreadable */ }
-      }
-    }
-    await ctx.close()
-    setAnalysisProgress(null)
-    showToast(`Analysed ${ids.length} track${ids.length !== 1 ? 's' : ''}`, 'success')
-  }, [allTracks, updateTrack, trackLabel, showToast])
-
-  const handleAnalyseEnergy = useCallback(async (ids: string[]) => {
-    const ctx = new AudioContext()
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i]
-      const t = allTracks.find((x) => x.id === id)
-      if (!t) continue
-      setAnalysisProgress({ label: 'energy', current: i + 1, total: ids.length, track: trackLabel(t) })
-      try {
-        const ab = await window.api.audio.readFile(t.filePath)
-        const buf = await ctx.decodeAudioData(ab)
-        const result = await analyzeAudio(buf)
-        // Always update energy; fill missing bpm/key/beatgrid as a bonus
-        const current = useLibraryStore.getState().tracks.find((x) => x.id === id) ?? t
-        const newBpm = result.bpm ?? current.bpm
-        const beatgrid = (current.beatgrid.length === 0 && newBpm && result.offsetMs != null)
-          ? generateBeatgrid(newBpm, result.offsetMs, buf.duration * 1000)
-          : current.beatgrid
-        await updateTrack({
-          id,
-          energy: result.energy ?? current.energy,
-          bpm: newBpm,
-          key: result.key ?? current.key,
-          beatgrid,
-        })
-      } catch { /* unreadable */ }
-    }
-    await ctx.close()
-    setAnalysisProgress(null)
-    showToast(`Energy scored for ${ids.length} track${ids.length !== 1 ? 's' : ''}`, 'success')
-  }, [allTracks, updateTrack, trackLabel, showToast])
-
-  const handleAnalyseBeats = useCallback(async (ids: string[]) => {
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i]
-      const t = allTracks.find((x) => x.id === id)
-      setAnalysisProgress({
-        label: 'beat grid',
-        current: i + 1,
-        total: ids.length,
-        track: t ? trackLabel(t) : ''
-      })
-      try { await window.api.library.analyzeBeats(id) } catch { /* model missing */ }
-    }
-    await useLibraryStore.getState().loadLibrary()
-    setAnalysisProgress(null)
-    showToast(`Beat grid analysed for ${ids.length} track${ids.length !== 1 ? 's' : ''}`, 'success')
-  }, [allTracks, trackLabel, showToast])
-
-  const handleAutoCue = useCallback(async (ids: string[]) => {
-    const actx = new AudioContext()
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i]
-      const t  = allTracks.find((x) => x.id === id)
-      if (!t) continue
-      setAnalysisProgress({ label: 'auto-cue', current: i + 1, total: ids.length, track: trackLabel(t) })
-      try {
-        const ab  = await window.api.audio.readFile(t.filePath)
-        const buf = await actx.decodeAudioData(ab)
-        const result = await analyzeAudio(buf)
-        if (result.suggestedCues.length > 0) {
-          const cuePoints = result.suggestedCues.map((c, idx) => ({
-            index: idx, type: 'hotcue' as const,
-            positionMs: c.positionMs, color: c.color, label: c.label,
-          }))
-          await updateTrack({ id, cuePoints })
-        }
-      } catch { /* unreadable */ }
-    }
-    await actx.close()
-    setAnalysisProgress(null)
-    showToast(`Auto-cued ${ids.length} track${ids.length !== 1 ? 's' : ''}`, 'success')
-  }, [allTracks, updateTrack, trackLabel, showToast])
+  // Track analysis (BPM/key, energy, beat grid, auto-cue) now lives in the
+  // shared analysisStore so every page's right-click menu can run it; the
+  // progress bar is rendered globally in App.
 
   const handleMagicSort = useCallback(async () => {
     if (!activePlaylistId) return
@@ -466,11 +312,11 @@ export function LibraryPage(): JSX.Element {
 
       {!showBulkBar && (
         <div className="relative flex items-center gap-1.5 px-3 py-1 border-b border-border/20 shrink-0">
-          <span className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
+          <span className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted">
             <span className="text-accent mr-1">02</span>
             {activePlaylist ? activePlaylist.name : 'all tracks'}
           </span>
-          <span className="font-mono text-[9px] text-muted ml-auto tabular-nums">
+          <span className="font-mono text-[12px] text-muted ml-auto tabular-nums">
             {sorted.length.toLocaleString()} trks
             {selectedTrackIds.size === 1 && ' · 1 selected'}
           </span>
@@ -478,7 +324,7 @@ export function LibraryPage(): JSX.Element {
             <button
               onClick={handleMagicSort}
               title="Magic Sort — reorder by harmonic + energy compatibility"
-              className="ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[9px] text-muted hover:text-accent hover:bg-accent/10 transition-colors"
+              className="ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[12px] text-muted hover:text-accent hover:bg-accent/10 transition-colors"
             >
               <svg width="9" height="9" viewBox="0 0 9 9" fill="currentColor" aria-hidden="true">
                 <path d="M0 1.5h6M0 4.5h4M0 7.5h2"/>
@@ -491,7 +337,7 @@ export function LibraryPage(): JSX.Element {
             <button
               onClick={() => setShowSuggest((v) => !v)}
               title="Find matching tracks — suggest library tracks that fit this playlist"
-              className={`ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[9px] transition-colors ${showSuggest ? 'bg-accent/10 text-accent' : 'text-muted hover:text-accent hover:bg-accent/10'}`}
+              className={`ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[12px] transition-colors ${showSuggest ? 'bg-accent/10 text-accent' : 'text-muted hover:text-accent hover:bg-accent/10'}`}
             >
               <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" aria-hidden="true">
                 <circle cx="4" cy="4" r="2.5"/>
@@ -505,7 +351,7 @@ export function LibraryPage(): JSX.Element {
           <button
             onClick={() => setShowColPicker((v) => !v)}
             title="Show / hide columns"
-            className={`ml-1 px-1.5 py-0.5 rounded font-mono text-[9px] transition-colors ${showColPicker ? 'bg-accent/10 text-accent' : 'text-muted hover:text-accent hover:bg-accent/10'}`}
+            className={`ml-1 px-1.5 py-0.5 rounded font-mono text-[12px] transition-colors ${showColPicker ? 'bg-accent/10 text-accent' : 'text-muted hover:text-accent hover:bg-accent/10'}`}
           >
             <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" aria-hidden="true">
               <circle cx="5" cy="5" r="1.5"/>
@@ -519,7 +365,7 @@ export function LibraryPage(): JSX.Element {
               className="absolute right-0 top-full z-30 mt-1 rounded border border-border/40 bg-chassis-soft shadow-lg p-2 min-w-[140px]"
               onMouseLeave={() => setShowColPicker(false)}
             >
-              <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-muted mb-1.5 px-1">columns</p>
+              <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted mb-1.5 px-1">columns</p>
               {COLUMN_DEFS.map((col) => (
                 <label key={col.id} className="flex items-center gap-1.5 px-1 py-0.5 rounded cursor-pointer hover:bg-ink/[0.06] transition-colors">
                   <input
@@ -528,9 +374,9 @@ export function LibraryPage(): JSX.Element {
                     onChange={() => toggleCol(col.id)}
                     className="accent-accent"
                   />
-                  <span className="font-mono text-[9px] text-ink-soft">{col.label}</span>
+                  <span className="font-mono text-[12px] text-ink-soft">{col.label}</span>
                   {!col.defaultVisible && (
-                    <span className="ml-auto font-mono text-[7px] text-muted/50 uppercase">+</span>
+                    <span className="ml-auto font-mono text-[10px] text-muted/50 uppercase">+</span>
                   )}
                 </label>
               ))}
@@ -539,27 +385,8 @@ export function LibraryPage(): JSX.Element {
         </div>
       )}
 
-      {analysisProgress && (
-        <div className="px-3 py-1.5 border-b border-border/20 shrink-0 flex items-center gap-3 bg-accent/[0.04]">
-          <span className="font-mono text-[9px] text-accent uppercase tracking-[0.12em] shrink-0 w-16">
-            {analysisProgress.label}
-          </span>
-          <div className="flex-1 h-0.5 bg-border/30 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-accent rounded-full transition-all duration-150"
-              style={{ width: `${analysisProgress.total > 0 ? (analysisProgress.current / analysisProgress.total) * 100 : 0}%` }}
-            />
-          </div>
-          <span className="font-mono text-[9px] text-muted tabular-nums shrink-0">
-            {analysisProgress.current}/{analysisProgress.total}
-          </span>
-          <span className="font-mono text-[9px] text-muted/60 truncate" style={{ maxWidth: 160 }}>
-            {analysisProgress.track}
-          </span>
-        </div>
-      )}
 
-      <div ref={containerRef} className="flex-1 overflow-auto outline-none">
+      <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-auto outline-none">
         <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
           <colgroup>
             <col style={{ width: 28 }} />   {/* checkbox */}
@@ -588,11 +415,11 @@ export function LibraryPage(): JSX.Element {
                     key={col.id}
                     onClick={(e) => handleSort(col.sortKey, e)}
                     title={sortSpec.length > 1 ? 'Click: primary sort · Shift+click: add/toggle secondary sort' : 'Click to sort · Shift+click to add secondary sort'}
-                    className="text-left px-2 text-[9px] font-mono font-bold uppercase tracking-[0.18em] text-muted cursor-pointer hover:text-ink transition-colors select-none border-b border-border/30 truncate"
+                    className="text-left px-2 text-[12px] font-mono font-bold uppercase tracking-[0.18em] text-muted cursor-pointer hover:text-ink transition-colors select-none border-b border-border/30 truncate"
                   >
                     {col.label}
                     {sortLevel && (
-                      <span className="ml-0.5 text-accent text-[8px]">
+                      <span className="ml-0.5 text-accent text-[11px]">
                         {sortSpec.length > 1 && sortIdx > 0 && <span style={{ opacity: 0.6 }}>{sortIdx + 1}</span>}
                         {sortLevel.dir === 'asc' ? '↑' : '↓'}
                       </span>
@@ -612,7 +439,7 @@ export function LibraryPage(): JSX.Element {
                 <td colSpan={visibleCols.length + 3} className="text-center py-16">
                   <div className="space-y-2">
                     <p className="text-muted text-xs font-mono">no tracks found</p>
-                    <p className="text-[10px] font-mono text-muted/60">try adjusting your search or import a library from the sidebar</p>
+                    <p className="text-[13px] font-mono text-muted/60">try adjusting your search or import a library from the sidebar</p>
                   </div>
                 </td>
               </tr>
@@ -665,115 +492,6 @@ export function LibraryPage(): JSX.Element {
         />
       )}
 
-      {ctxMenu && (() => {
-        const ctxIds = selectedTrackIds.size > 0 ? [...selectedTrackIds] : [ctxMenu.trackId]
-        const ctxTrack = allTracks.find((t) => t.id === ctxMenu.trackId) ?? null
-        const isMulti = ctxIds.length > 1
-        const nonSmartPlaylists = playlists.filter((p) => !p.isSmart && !p.isFolder)
-
-        return (
-          <ContextMenu
-            x={ctxMenu.x}
-            y={ctxMenu.y}
-            onClose={() => setCtxMenu(null)}
-            sections={[
-              {
-                items: [
-                  {
-                    label: previewId === ctxMenu?.trackId ? '■ stop preview' : '▶ preview 30s',
-                    disabled: isMulti,
-                    action: () => ctxTrack && previewToggle(ctxTrack)
-                  },
-                  {
-                    label: 'Load to Deck A',
-                    shortcut: '↵',
-                    disabled: isMulti,
-                    action: () => ctxTrack && loadTrackA(ctxTrack)
-                  },
-                  {
-                    label: 'Load to Deck B',
-                    shortcut: '⇧↵',
-                    disabled: isMulti,
-                    action: () => ctxTrack && loadTrackB(ctxTrack)
-                  }
-                ]
-              },
-              {
-                items: [
-                  {
-                    label: 'Add to playlist',
-                    submenu: nonSmartPlaylists.map((pl) => ({
-                      label: pl.name,
-                      action: () => addTracksToPlaylist(pl.id, ctxIds)
-                    }))
-                  },
-                  {
-                    label: 'Create playlist from selection',
-                    action: async () => {
-                      const name = window.prompt('New playlist name:', ctxTrack?.artist || 'New Playlist')
-                      if (!name?.trim()) return
-                      const { createPlaylist: cp, addTracksToPlaylist: atp } = useLibraryStore.getState()
-                      const newPl = await cp(name.trim())
-                      await atp(newPl.id, ctxIds)
-                    }
-                  },
-                  ...(activePlaylistId && !playlists.find((p) => p.id === activePlaylistId)?.isSmart ? [{
-                    label: 'Remove from playlist',
-                    action: () => window.api.library.removeTracksFromPlaylist(activePlaylistId, ctxIds)
-                      .then(() => useLibraryStore.getState().loadLibrary())
-                  }] : [])
-                ]
-              },
-              {
-                items: [
-                  {
-                    label: isMulti ? `Analyse ${ctxIds.length} tracks` : 'Analyse BPM + key',
-                    action: () => handleAnalyseBpm(ctxIds)
-                  },
-                  {
-                    label: isMulti ? `Analyse energy (${ctxIds.length})` : 'Analyse energy',
-                    action: () => handleAnalyseEnergy(ctxIds)
-                  },
-                  {
-                    label: isMulti ? `Detect beat grid (${ctxIds.length})` : 'Detect beat grid',
-                    action: () => handleAnalyseBeats(ctxIds)
-                  },
-                  {
-                    label: isMulti ? `Auto-cue (${ctxIds.length})` : 'Auto-cue',
-                    action: () => handleAutoCue(ctxIds)
-                  },
-                  {
-                    label: isMulti ? `Write tags to file (${ctxIds.length})` : 'Write tags to file',
-                    action: () => writeTags(ctxIds, showToast)
-                  }
-                ]
-              },
-              {
-                items: [
-                  {
-                    label: 'Open in Finder',
-                    disabled: isMulti || !ctxTrack,
-                    action: () => ctxTrack && window.api.settings.openInFinder(ctxTrack.filePath)
-                  }
-                ]
-              },
-              {
-                items: [
-                  {
-                    label: isMulti ? `Delete ${ctxIds.length} tracks` : 'Delete from library',
-                    danger: true,
-                    action: async () => {
-                      const label = isMulti ? `${ctxIds.length} tracks` : `"${ctxTrack?.title || 'this track'}"`
-                      if (!window.confirm(`Remove ${label} from library?`)) return
-                      await deleteTracks(ctxIds)
-                    }
-                  }
-                ]
-              }
-            ]}
-          />
-        )
-      })()}
     </div>
   )
 }
@@ -951,39 +669,39 @@ function TrackRow({ track, isSelected, visibleColIds, onClick, onDoubleClick, on
       {/* Artist */}
       {show('artist') && (
         <td className="px-2 max-w-0 overflow-hidden">
-          <span className="truncate block font-mono text-[10px] text-ink-soft">{track.artist || '—'}</span>
+          <span className="truncate block font-mono text-[13px] text-ink-soft">{track.artist || '—'}</span>
         </td>
       )}
 
       {/* Genre */}
       {show('genre') && (
         <td className="px-2 max-w-0 overflow-hidden">
-          <span className="truncate block font-mono text-[9px] text-muted">{track.genre || '—'}</span>
+          <span className="truncate block font-mono text-[12px] text-muted">{track.genre || '—'}</span>
         </td>
       )}
 
       {/* Label */}
       {show('label') && (
         <td className="px-2 max-w-0 overflow-hidden">
-          <span className="truncate block font-mono text-[9px] text-muted">{track.label || '—'}</span>
+          <span className="truncate block font-mono text-[12px] text-muted">{track.label || '—'}</span>
         </td>
       )}
 
       {/* Year */}
       {show('year') && (
-        <td className="px-2 font-mono text-[9px] text-muted tabular-nums">{track.year ?? '—'}</td>
+        <td className="px-2 font-mono text-[12px] text-muted tabular-nums">{track.year ?? '—'}</td>
       )}
 
       {/* BPM */}
       {show('bpm') && (
-        <td className="px-2 font-mono text-[10px] text-ink-soft tabular-nums">
-          {track.bpm ? track.bpm.toFixed(1) : '—'}
+        <td className="px-2 font-mono text-[13px] text-ink-soft tabular-nums">
+          {formatBpm(track.bpm)}
         </td>
       )}
 
       {/* Key */}
       {show('key') && (
-        <td className="px-2 font-mono text-[10px] font-bold tabular-nums" style={{ color: blipColor }}>
+        <td className="px-2 font-mono text-[13px] font-bold tabular-nums" style={{ color: blipColor }}>
           {displayKey(track.key, keyNotation) || '—'}
         </td>
       )}
@@ -1005,42 +723,42 @@ function TrackRow({ track, isSelected, visibleColIds, onClick, onDoubleClick, on
 
       {/* Duration */}
       {show('durationSeconds') && (
-        <td className="px-2 font-mono text-[10px] text-muted tabular-nums">
+        <td className="px-2 font-mono text-[13px] text-muted tabular-nums">
           {formatDuration(track.durationSeconds)}
         </td>
       )}
 
       {/* File format */}
       {show('fileType') && (
-        <td className="px-2 font-mono text-[9px] text-muted uppercase">
+        <td className="px-2 font-mono text-[12px] text-muted uppercase">
           {track.fileType?.replace('.', '') || '—'}
         </td>
       )}
 
       {/* File size */}
       {show('fileSize') && (
-        <td className="px-2 font-mono text-[9px] text-muted tabular-nums">
+        <td className="px-2 font-mono text-[12px] text-muted tabular-nums">
           {formatFileSize(track.fileSize)}
         </td>
       )}
 
       {/* Bit depth */}
       {show('bitDepth') && (
-        <td className="px-2 font-mono text-[9px] text-muted tabular-nums">
+        <td className="px-2 font-mono text-[12px] text-muted tabular-nums">
           {track.bitDepth ? `${track.bitDepth}b` : '—'}
         </td>
       )}
 
       {/* Sample rate */}
       {show('sampleRate') && (
-        <td className="px-2 font-mono text-[9px] text-muted tabular-nums">
+        <td className="px-2 font-mono text-[12px] text-muted tabular-nums">
           {formatSampleRate(track.sampleRate)}
         </td>
       )}
 
       {/* Date modified */}
       {show('updatedAt') && (
-        <td className="px-2 font-mono text-[9px] text-muted tabular-nums">
+        <td className="px-2 font-mono text-[12px] text-muted tabular-nums">
           {formatModified(track.updatedAt)}
         </td>
       )}
@@ -1104,19 +822,12 @@ function EnergyBar({ energy }: { energy: number | null }): JSX.Element {
 
 function StarRating({ rating }: { rating: number }): JSX.Element {
   return (
-    <span className="text-[11px] tracking-[-0.05em] leading-none">
+    <span className="text-[13px] tracking-[-0.05em] leading-none">
       {Array.from({ length: 5 }, (_, i) => (
         <span key={i} style={{ color: i < rating ? 'rgb(var(--accent-rgb))' : 'rgb(var(--ink-rgb) / 0.2)' }}>★</span>
       ))}
     </span>
   )
-}
-
-function formatDuration(secs: number | null): string {
-  if (!secs) return '—'
-  const m = Math.floor(secs / 60)
-  const s = Math.round(secs % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
 }
 
 // ── Playlist centroid: synthetic anchor track for compatibility scoring ────────
@@ -1163,13 +874,13 @@ function SuggestionsPanel({ playlistTracks, allTracks, playlistId, onClose, onAd
   return (
     <div className="shrink-0 border-t border-border/20 bg-chassis-soft">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/15">
-        <span className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-accent">suggest</span>
-        <span className="font-mono text-[9px] text-muted/60">
+        <span className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-accent">suggest</span>
+        <span className="font-mono text-[12px] text-muted/60">
           tracks that fit this playlist's harmonic + energy profile
         </span>
         <button
           onClick={() => onAdd(suggestions.map((s) => s.track.id))}
-          className="ml-auto font-mono text-[9px] text-muted hover:text-ink transition-colors px-2 py-0.5 rounded hover:bg-ink/[0.06]"
+          className="ml-auto font-mono text-[12px] text-muted hover:text-ink transition-colors px-2 py-0.5 rounded hover:bg-ink/[0.06]"
         >
           add all
         </button>
@@ -1182,11 +893,11 @@ function SuggestionsPanel({ playlistTracks, allTracks, playlistId, onClose, onAd
             className="shrink-0 flex flex-col gap-0.5 bg-ink/[0.04] border border-border/25 rounded px-2.5 py-2 group hover:border-border/50 transition-colors"
             style={{ width: 140 }}
           >
-            <p className="font-mono text-[10px] text-ink truncate">{track.title || '—'}</p>
-            <p className="font-mono text-[9px] text-muted truncate">{track.artist}</p>
+            <p className="font-mono text-[13px] text-ink truncate">{track.title || '—'}</p>
+            <p className="font-mono text-[12px] text-muted truncate">{track.artist}</p>
             <div className="flex items-center gap-1.5 mt-1">
-              <span className="font-mono text-[9px] text-muted tabular-nums">{track.key ?? '—'}</span>
-              <span className="font-mono text-[9px] text-muted tabular-nums">{track.bpm?.toFixed(0) ?? '—'}</span>
+              <span className="font-mono text-[12px] text-muted tabular-nums">{track.key ?? '—'}</span>
+              <span className="font-mono text-[12px] text-muted tabular-nums">{track.bpm?.toFixed(0) ?? '—'}</span>
               <div
                 className="flex-1 h-0.5 rounded-full"
                 style={{ background: `rgba(var(--accent-rgb), ${0.15 + score * 0.85})` }}
@@ -1195,13 +906,13 @@ function SuggestionsPanel({ playlistTracks, allTracks, playlistId, onClose, onAd
             <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 onClick={() => onAdd([track.id])}
-                className="flex-1 font-mono text-[8px] uppercase tracking-[0.08em] text-ink-soft hover:text-ink border border-border/40 rounded py-0.5 transition-colors"
+                className="flex-1 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-soft hover:text-ink border border-border/40 rounded py-0.5 transition-colors"
               >
                 + add
               </button>
               <button
                 onClick={() => onLoadA(track)}
-                className="font-mono text-[8px] uppercase tracking-[0.08em] text-accent border border-accent/30 rounded px-1.5 py-0.5 hover:bg-accent/10 transition-colors"
+                className="font-mono text-[11px] uppercase tracking-[0.08em] text-accent border border-accent/30 rounded px-1.5 py-0.5 hover:bg-accent/10 transition-colors"
               >
                 A
               </button>
@@ -1209,7 +920,7 @@ function SuggestionsPanel({ playlistTracks, allTracks, playlistId, onClose, onAd
           </div>
         ))}
         {suggestions.length === 0 && (
-          <p className="font-mono text-[10px] text-muted/50 italic py-1">No suggestions — library may lack BPM/key data.</p>
+          <p className="font-mono text-[13px] text-muted/50 italic py-1">No suggestions — library may lack BPM/key data.</p>
         )}
       </div>
     </div>

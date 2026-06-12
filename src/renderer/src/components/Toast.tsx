@@ -38,7 +38,7 @@ function ToastItem({ message, type, onDismiss }: ToastItemProps): JSX.Element {
     <div className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded border shadow-lg max-w-xs ${style}`}
          style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)' }}>
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1 ${dot}`} />
-      <span className="font-mono text-[10.5px] leading-snug flex-1">{message}</span>
+      <span className="font-mono text-[13px] leading-snug flex-1">{message}</span>
       <button onClick={onDismiss} className="shrink-0 text-muted hover:text-ink transition-colors text-sm leading-none ml-1">×</button>
     </div>
   )

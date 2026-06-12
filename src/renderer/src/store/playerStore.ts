@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { AudioEngine } from '../lib/audioEngine'
 import { NativeAudioEngine } from '../lib/nativeAudioEngine'
 import type { AudioEngineContract } from '../lib/audioEngineContract'
-import type { Track, CuePoint, StemKind, StemState } from '@shared/types'
+import type { Track, CuePoint, StemKind, StemState, BeatgridMarker, Beatgrid } from '@shared/types'
 
 export const HOT_CUE_COLORS = [
   '#e91e63', '#ff9800', '#ffeb3b', '#4caf50',
@@ -31,11 +31,15 @@ export interface DeckStore {
   // Pitch
   playbackRate: number
   pitchRange: number          // ±% — e.g. 8 means ±8%; controls slider clamp
-  keylockEnabled: boolean     // display-only until Web Audio pitch shift is added
+  keylockEnabled: boolean     // pitch-preserving tempo (native WSOLA)
+  synced: boolean             // slaved to the other deck's transport (shared clock)
   // EQ (dB, -24 to +6)
   eqHigh: number
   eqMid:  number
   eqLow:  number
+  /** Per-track auto-gain trim (linear). Applied by lib/mixBus.ts as
+   *  engine.volume = trimGain × channel fader × crossfader leg. */
+  trimGain: number
   // Performance modes
   isQuantized: boolean        // cues/loops snap to nearest beat
   slipMode: boolean           // playhead advances under loops; exits to real position
@@ -44,13 +48,26 @@ export interface DeckStore {
   // Stem UI state (actual bus routing lives in the engine; this drives the controls)
   stemsVisible: boolean
   stems: Record<StemKind, StemState>
+  /** True when four separated stem buses are loaded and driving playback. */
+  stemsLoaded: boolean
+  /** True while Demucs is separating the current track. */
+  stemsSeparating: boolean
+  /** Separation progress 0–100. */
+  stemsProgress: number
+  /** Whether Demucs is installed/available (probed on demand). */
+  stemsAvailable: boolean
+  separateStems: () => Promise<void>
+  unloadStems: () => void
+  checkStemsAvailable: () => Promise<void>
   // Analysis
   analysisState: AnalysisState
   analyzeCurrentTrack: () => Promise<void>
   loadTrack: (track: Track) => Promise<void>
   togglePlay: () => void
   seek: (time: number) => void
-  setVolume: (v: number) => void
+  /** Begin/end a scrub gesture (needle search) — produces audio while paused. */
+  scrubStart: () => void
+  scrubEnd: () => void
   setEq: (band: 'high' | 'mid' | 'low', db: number) => void
   pressCue: () => void
   setCue: (index: number) => Promise<void>
@@ -74,6 +91,8 @@ export interface DeckStore {
   setPlaybackRate: (rate: number) => void
   setPitchRange: (range: number) => void
   toggleKeylock: () => void
+  /** Beat-sync this deck to the other deck (shared clock), or release if synced. */
+  toggleSync: () => void
   // Performance mode toggles
   toggleQuantize: () => void
   toggleSlipMode: () => void
@@ -89,6 +108,16 @@ export interface DeckStore {
   // Quantiser
   quantiseCurrentTrack: () => Promise<void>
   /**
+   * Replace ONLY the loaded track's grid fields (beatgrid / bpm / analysed grid)
+   * so quantise, beat-jump and loops use an edited grid immediately — without
+   * reloading the audio. Cue points and other deck-local state are preserved.
+   * No-op if the id doesn't match the loaded track.
+   */
+  applyGridEdit: (
+    id: string,
+    grid: { beatgrid: BeatgridMarker[]; bpm: number; analysedBeatgrid: Beatgrid | null }
+  ) => void
+  /**
    * Swap this deck's engine to the native Rust backend.
    * Called once at startup when `window.api.engine.isAvailable()` resolves true.
    * No-op if native is already active.
@@ -99,6 +128,34 @@ export interface DeckStore {
 }
 
 // ── Beat / quantise helpers ───────────────────────────────────────────────────
+
+/**
+ * Fractional position within the current beat (0–1) from the v2 beatgrid,
+ * or null when the track has no usable grid. Used to beat-align SYNC.
+ */
+function beatPhaseFrac(track: Track | null, timeSec: number): number | null {
+  const grid = track?.analysedBeatgrid
+  const beats = grid?.beats
+  if (!grid || !beats || beats.length < 2) return null
+  const ms = timeSec * 1000
+  // Binary search for the last beat at or before `ms`.
+  let lo = 0
+  let hi = beats.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (beats[mid].positionMs <= ms) lo = mid
+    else hi = mid - 1
+  }
+  const cur = beats[lo].positionMs
+  if (ms < cur) return 0 // before the first beat
+  const next =
+    lo + 1 < beats.length
+      ? beats[lo + 1].positionMs
+      : cur + 60000 / (grid.medianBpm || track?.bpm || 120)
+  const len = next - cur
+  if (len <= 0) return null
+  return Math.min(1, (ms - cur) / len)
+}
 
 /** Snap a time (seconds) to the nearest beat in the track's beatgrid. */
 function snapToBeat(timeSeconds: number, track: Track | null): number {
@@ -160,6 +217,11 @@ function createDeckStore(deckId: 'A' | 'B') {
   // Previous track ID on this deck — used to populate mixedFrom in play events
   let _prevTrackId: string | null = null
 
+  // Monotonic load counter — a finished load only applies its result if no
+  // newer load started meanwhile (two in-flight loads used to interleave:
+  // track A's waveform/play under track B's title, depending on decode speed).
+  let _loadGen = 0
+
   // Slip mode — wall-clock tracking of "true" position under loops
   let _slipStartPos   = 0
   let _slipStartClock = 0
@@ -199,36 +261,81 @@ function createDeckStore(deckId: 'A' | 'B') {
       loopStart: null,
       loopEnd: null,
       isLooping: false,
+      synced: false,
       playbackRate: 1.0,
       pitchRange: 8,
       keylockEnabled: false,
       eqHigh: 0,
       eqMid:  0,
       eqLow:  0,
+      trimGain: 1,
       isQuantized: false,
       slipMode: false,
       fluxEnabled: false,
       stemsVisible: false,
       stems: { ...DEFAULT_STEMS },
+      stemsLoaded: false,
+      stemsSeparating: false,
+      stemsProgress: 0,
+      stemsAvailable: false,
       analysisState: 'idle' as AnalysisState,
       _engine: engine,
 
       loadTrack: async (track) => {
+        const gen = ++_loadGen
         _fluxStartPos = 0; _fluxStartClock = Date.now()
-        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, eqHigh: 0, eqMid: 0, eqLow: 0, analysisState: 'idle', keylockEnabled: false, fluxEnabled: false })
+        // A new track invalidates any active beat-sync (BPM/phase change).
+        if (get().synced) engine.clearSync()
+        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, eqHigh: 0, eqMid: 0, eqLow: 0, analysisState: 'idle', keylockEnabled: false, synced: false, fluxEnabled: false, stems: { ...DEFAULT_STEMS }, stemsLoaded: false, stemsSeparating: false, stemsProgress: 0 })
+
+        // Per-track auto-gain → trim stage (applied by lib/mixBus.ts as
+        // trim × fader × crossfader, so it never compounds across loads and
+        // survives fader moves). gainDb is the correction toward −14 dBFS.
+        let trim = 1
+        try {
+          const { useWaveformStore } = await import('./waveformStore')
+          if (useWaveformStore.getState().autoGainEnabled && track.gainDb != null) {
+            trim = Math.pow(10, track.gainDb / 20)
+          }
+        } catch { /* non-fatal */ }
+        if (gen !== _loadGen) return
+        set({ trimGain: Math.max(0, Math.min(4, trim)) })
+
         try {
           // Pass the file path — engine.load() handles reading internally.
           // Web Audio engine fetches via IPC; native engine reads from disk directly.
           const { peaks, detailPeaks, lowPeaks, midPeaks, highPeaks, duration } = await engine.load(track.filePath)
+          if (gen !== _loadGen) return // superseded by a newer load on this deck
           set({ waveformPeaks: peaks, detailPeaks, lowPeaks, midPeaks, highPeaks, duration, isLoading: false })
+          // Keep the engine in step with the state reset above — the UI shows
+          // keylock off / pitch 1.0 / EQ flat for a fresh track, so the audio
+          // must match regardless of which engine is active.
+          engine.keylockEnabled = false
+          engine.playbackRate = 1.0
+          engine.setEqGain('high', 0)
+          engine.setEqGain('mid', 0)
+          engine.setEqGain('low', 0)
           engine.play()
           set({ isPlaying: true })
+
+          // Auto-load cached stems for this track, if Demucs has already separated it.
+          window.api.stems
+            .cached(track.id)
+            .then((paths) => {
+              if (paths && gen === _loadGen && get().currentTrack?.id === track.id) {
+                engine.loadStems(paths).then(() => {
+                  if (gen === _loadGen) set({ stemsLoaded: true })
+                }).catch(() => {})
+              }
+            })
+            .catch(() => {})
 
           // Record play in DB with provenance (mixedFrom = previous track on this deck)
           const prevId = _prevTrackId
           _prevTrackId = track.id
           window.api.library.recordPlay(track.id, { mixedFrom: prevId ?? undefined, deckId }).then((updated) => {
-            set({ currentTrack: updated })
+            // Only patch the deck snapshot if this track is still loaded.
+            if (get().currentTrack?.id === updated.id) set({ currentTrack: updated })
             import('./libraryStore').then(({ useLibraryStore }) => {
               useLibraryStore.setState((s) => ({
                 tracks: s.tracks.map((t) => (t.id === updated.id ? updated : t))
@@ -242,21 +349,20 @@ function createDeckStore(deckId: 'A' | 'B') {
           }
           // Silently upgrade legacy beatgrid to v2 on first play
           get().quantiseCurrentTrack()
-
-          // Auto-gain: apply per-track gain correction if enabled and gainDb is stored
-          try {
-            const { useWaveformStore } = await import('./waveformStore')
-            if (useWaveformStore.getState().autoGainEnabled && track.gainDb != null) {
-              // gainDb is the correction needed to reach −14 dBFS
-              // Engine volume is linear [0, 1]; we apply a multiplicative correction
-              const correctionFactor = Math.pow(10, track.gainDb / 20)
-              const baseVolume = engine.volume
-              engine.volume = Math.max(0, Math.min(1, baseVolume * correctionFactor))
-            }
-          } catch { /* non-fatal */ }
         } catch (err) {
+          if (gen !== _loadGen) return
           console.error(`Deck ${deckId}: failed to load`, err)
           set({ isLoading: false })
+          const msg = (err as Error)?.message ?? String(err)
+          const denied = /EPERM|not permitted|EACCES|operation not permitted/i.test(msg)
+          void import('./toastStore').then(({ useToastStore }) => {
+            useToastStore.getState().show(
+              denied
+                ? `Can't read "${track.title || 'track'}" — macOS is blocking file access. Grant Offcut access in System Settings › Privacy & Security › Full Disk Access, then relaunch.`
+                : `Couldn't load "${track.title || 'track'}": ${msg.slice(0, 140)}`,
+              'error'
+            )
+          })
         }
       },
 
@@ -275,8 +381,8 @@ function createDeckStore(deckId: 'A' | 'B') {
         engine.seek(time)
         set({ currentTime: time })
       },
-
-      setVolume: (v) => { engine.volume = v },
+      scrubStart: () => engine.scrubBegin(),
+      scrubEnd: () => engine.scrubEnd(),
 
       setEq: (band, db) => {
         engine.setEqGain(band, db)
@@ -542,6 +648,53 @@ function createDeckStore(deckId: 'A' | 'B') {
         engine.keylockEnabled = next
         set({ keylockEnabled: next })
       },
+      toggleSync: () => {
+        if (get().synced) {
+          engine.clearSync()
+          set({ synced: false })
+          return
+        }
+        // Slave this deck to the other one: match its tempo (BPM ratio) and lock
+        // the current playhead offset (phase), so they stay in step from here.
+        const masterId = deckId === 'A' ? 'B' : 'A'
+        const masterStore = deckId === 'A' ? useDeckBStore : useDeckAStore
+        const master = masterStore.getState()
+        const slaveTrack = get().currentTrack
+        const masterBpm = master.currentTrack?.bpm ?? 0
+        const slaveBpm = slaveTrack?.bpm ?? 0
+        if (!masterBpm || !slaveBpm) {
+          import('./toastStore').then(({ useToastStore }) =>
+            useToastStore.getState().show('Both decks need a BPM to sync', 'error')
+          )
+          return
+        }
+        if (master.synced) {
+          // Avoid mutual sync (A→B and B→A would fight / cycle).
+          import('./toastStore').then(({ useToastStore }) =>
+            useToastStore.getState().show('Unsync the other deck first', 'error')
+          )
+          return
+        }
+        const ratio = masterBpm / slaveBpm
+        // Beat-align the lock when both tracks have analysed beatgrids: shift
+        // the slave by up to ±half a beat so its beat phase matches the
+        // master's (what BEAT SYNC does on a CDJ). Falls back to plain
+        // "lock from here" when either grid is missing.
+        let phase = get().currentTime - master.currentTime * ratio
+        const fm = beatPhaseFrac(master.currentTrack, master.currentTime)
+        const fs = beatPhaseFrac(slaveTrack, get().currentTime)
+        if (fm !== null && fs !== null) {
+          let d = fm - fs // slave shift in beats
+          if (d > 0.5) d -= 1
+          if (d < -0.5) d += 1
+          const target = get().currentTime + d * (60 / slaveBpm)
+          phase = target - master.currentTime * ratio
+        }
+        engine.syncTo(masterId, ratio, phase)
+        // Reflect the matched tempo on the slider; the engine clamps internally.
+        engine.playbackRate = ratio
+        set({ synced: true, playbackRate: ratio })
+      },
       toggleQuantize: () => set((s) => ({ isQuantized: !s.isQuantized })),
       toggleSlipMode: () => set((s) => ({ slipMode: !s.slipMode })),
 
@@ -586,6 +739,47 @@ function createDeckStore(deckId: 'A' | 'B') {
         set((s) => ({ stems: { ...s.stems, [kind]: { ...s.stems[kind], gainDb } } }))
       },
 
+      checkStemsAvailable: async () => {
+        try {
+          const s = await window.api.stems.status()
+          set({ stemsAvailable: s.available })
+        } catch {
+          set({ stemsAvailable: false })
+        }
+      },
+
+      separateStems: async () => {
+        const track = get().currentTrack
+        if (!track || get().stemsSeparating) return
+        set({ stemsSeparating: true, stemsProgress: 0 })
+        const off = window.api.stems.onProgress((p) => {
+          if (p.trackId === track.id) set({ stemsProgress: p.percent })
+        })
+        try {
+          const res = await window.api.stems.separate(track.id, track.filePath)
+          if (res.ok && res.paths && get().currentTrack?.id === track.id) {
+            await engine.loadStems(res.paths)
+            set({ stemsLoaded: true })
+            const { useToastStore } = await import('./toastStore')
+            useToastStore.getState().show(`Stems ready for "${track.title}"`, 'success')
+          } else if (!res.ok) {
+            const { useToastStore } = await import('./toastStore')
+            useToastStore.getState().show(res.error || 'Stem separation failed', 'error')
+          }
+        } catch (err) {
+          const { useToastStore } = await import('./toastStore')
+          useToastStore.getState().show((err as Error)?.message ?? 'Stem separation failed', 'error')
+        } finally {
+          off()
+          set({ stemsSeparating: false, stemsProgress: 0 })
+        }
+      },
+
+      unloadStems: () => {
+        engine.unloadStems()
+        set({ stemsLoaded: false })
+      },
+
       setMemoryCue: async () => {
         const { currentTrack, currentTime } = get()
         if (!currentTrack) return
@@ -627,6 +821,21 @@ function createDeckStore(deckId: 'A' | 'B') {
         } catch { /* non-fatal — legacy grid still works */ }
       },
 
+      applyGridEdit: (id, grid) => {
+        const { currentTrack } = get()
+        if (!currentTrack || currentTrack.id !== id) return
+        // Merge only the grid fields so beat-snap/jump/loop pick up the edit live;
+        // keep cuePoints and the rest of the loaded snapshot intact.
+        set({
+          currentTrack: {
+            ...currentTrack,
+            beatgrid: grid.beatgrid,
+            bpm: grid.bpm,
+            analysedBeatgrid: grid.analysedBeatgrid
+          }
+        })
+      },
+
       // ── Native engine activation ───────────────────────────────────────────
       activateNativeEngine: () => {
         // Already on native — nothing to do.
@@ -641,10 +850,10 @@ function createDeckStore(deckId: 'A' | 'B') {
         native.setEqGain('high', s.eqHigh)
         native.setEqGain('mid',  s.eqMid)
         native.setEqGain('low',  s.eqLow)
-        // Volume lives inside the engine (not in Zustand state); native engine
-        // defaults to 0.8 which matches AudioEngine's initial value.
 
-        // Swap the engine — all action closures pick up the new reference immediately.
+        // Swap the engine — all action closures pick up the new reference
+        // immediately, and the _engine change below makes lib/mixBus.ts push
+        // the current trim × fader × crossfader volume to the new backend.
         engine = native
         wireEngineEvents(native, set)
         set({ _engine: native })

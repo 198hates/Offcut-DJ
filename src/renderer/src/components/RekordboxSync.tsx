@@ -63,9 +63,9 @@ export function RekordboxSync(): JSX.Element {
           className="w-1.5 h-1.5 rounded-full shrink-0"
           style={{ background: available ? '#6FAE3E' : '#8A8474' }}
         />
-        <span className="font-mono text-[9.5px] text-ink-soft">rekordbox direct</span>
+        <span className="font-mono text-[12px] text-ink-soft">rekordbox direct</span>
         {available && dbPath && (
-          <span className="font-mono text-[9px] text-muted truncate ml-auto" title={dbPath}>
+          <span className="font-mono text-[12px] text-muted truncate ml-auto" title={dbPath}>
             {dbPath.split('/').pop()}
           </span>
         )}
@@ -75,14 +75,14 @@ export function RekordboxSync(): JSX.Element {
         <button
           onClick={importFromDb}
           disabled={syncState !== 'idle'}
-          className="flex-1 py-1 rounded font-mono text-[9px] uppercase tracking-[0.1em] bg-accent/10 hover:bg-accent/20 border border-accent/25 text-accent disabled:opacity-40 transition-colors"
+          className="flex-1 py-1 rounded font-mono text-[12px] uppercase tracking-[0.1em] bg-accent/10 hover:bg-accent/20 border border-accent/25 text-accent disabled:opacity-40 transition-colors"
         >
           {syncState === 'importing' ? 'importing…' : '↓ import'}
         </button>
         <button
           onClick={exportToDb}
           disabled={syncState !== 'idle'}
-          className="flex-1 py-1 rounded font-mono text-[9px] uppercase tracking-[0.1em] bg-ink/5 hover:bg-ink/10 border border-border/30 text-ink-soft hover:text-ink disabled:opacity-40 transition-colors"
+          className="flex-1 py-1 rounded font-mono text-[12px] uppercase tracking-[0.1em] bg-ink/5 hover:bg-ink/10 border border-border/30 text-ink-soft hover:text-ink disabled:opacity-40 transition-colors"
           title="Rekordbox must be closed"
         >
           {syncState === 'exporting' ? 'syncing…' : '↑ sync back'}
@@ -90,7 +90,7 @@ export function RekordboxSync(): JSX.Element {
       </div>
 
       {!available && (
-        <p className="font-mono text-[9px] text-muted/60 leading-tight px-1">
+        <p className="font-mono text-[12px] text-muted/60 leading-tight px-1">
           Set path in Settings → Rekordbox
         </p>
       )}

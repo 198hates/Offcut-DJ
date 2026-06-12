@@ -6,6 +6,7 @@
  */
 import { create } from 'zustand'
 import { useDeckAStore, useDeckBStore } from './playerStore'
+import { NativeAudioEngine } from '../lib/nativeAudioEngine'
 
 export type RecordingState = 'idle' | 'recording' | 'saving'
 
@@ -20,6 +21,12 @@ let _recorder: MediaRecorder | null = null
 let _chunks: Blob[] = []
 let _startTime = 0
 let _tickId = 0
+/** True while the active recording runs through the native master-bus tap. */
+let _nativeRec = false
+
+const toast = (msg: string, kind: 'success' | 'error'): void => {
+  void import('./toastStore').then(({ useToastStore }) => useToastStore.getState().show(msg, kind))
+}
 
 export const useRecordingStore = create<RecordingStore>((set) => ({
   state: 'idle',
@@ -29,10 +36,27 @@ export const useRecordingStore = create<RecordingStore>((set) => ({
     const engineA = useDeckAStore.getState()._engine
     const engineB = useDeckBStore.getState()._engine
 
+    // Native engine: record the master bus in Rust (16-bit WAV on disk).
+    if (engineA instanceof NativeAudioEngine) {
+      window.api.engine
+        .recordStart()
+        .then(() => {
+          _nativeRec = true
+          _startTime = Date.now()
+          _tickId = window.setInterval(() => {
+            set({ durationSeconds: Math.floor((Date.now() - _startTime) / 1000) })
+          }, 1000)
+          set({ state: 'recording', durationSeconds: 0 })
+        })
+        .catch((err) => toast((err as Error)?.message ?? 'Could not start recording', 'error'))
+      return
+    }
+
     const streamA = engineA.recordingStream
     const streamB = engineB.recordingStream
     if (!streamA || !streamB) {
-      console.warn('[Recording] Could not get recording streams from engines')
+      // Tell the user why instead of failing silently.
+      toast('Load a track on both decks before recording.', 'error')
       return
     }
 
@@ -66,6 +90,22 @@ export const useRecordingStore = create<RecordingStore>((set) => ({
   },
 
   stopRecording: async () => {
+    if (_nativeRec) {
+      _nativeRec = false
+      set({ state: 'saving' })
+      clearInterval(_tickId)
+      try {
+        const res = await window.api.engine.recordStop()
+        const mins = Math.floor(res.seconds / 60)
+        const secs = Math.round(res.seconds % 60)
+        toast(`Mix saved (${mins}:${secs.toString().padStart(2, '0')}) — ${res.path}`, 'success')
+      } catch (err) {
+        toast((err as Error)?.message ?? 'Could not save recording', 'error')
+      }
+      set({ state: 'idle', durationSeconds: 0 })
+      return
+    }
+
     if (!_recorder || _recorder.state === 'inactive') return
     set({ state: 'saving' })
     clearInterval(_tickId)

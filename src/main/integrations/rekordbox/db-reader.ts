@@ -126,7 +126,7 @@ export function importFromRekordboxDb(
           dateAdded: String(row.StockDate ?? new Date().toISOString()),
           comment: String(row.Commnt ?? ''),
           tags: [],
-        customTags: {},
+          customTags: {},
           cuePoints: cues.map((c, i) => rbCueToPoint(c, i)),
           beatgrid: [],
           energy: null,
@@ -137,6 +137,13 @@ export function importFromRekordboxDb(
           color: '',
           playCount: 0,
           lastPlayedAt: null,
+          updatedAt: null,
+          fileSize: null,
+          fileType: null,
+          sampleRate: null,
+          bitDepth: null,
+          gainDb: null,
+          phrases: null,
           sourceIds: { rekordbox: rbId }
         }
 

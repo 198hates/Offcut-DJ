@@ -23,8 +23,8 @@ interface BulkEditBarProps {
   onClearSelection: () => void
 }
 
-const SEL = 'bg-ink/5 border border-border/40 rounded px-2 py-1 font-mono text-[10px] text-ink outline-none focus:border-accent cursor-pointer'
-const INP = 'bg-paper border border-border/40 rounded px-2 py-1 font-mono text-[10px] text-ink outline-none focus:border-accent placeholder-muted'
+const SEL = 'bg-ink/5 border border-border/40 rounded px-2 py-1 font-mono text-[13px] text-ink outline-none focus:border-accent cursor-pointer'
+const INP = 'bg-paper border border-border/40 rounded px-2 py-1 font-mono text-[13px] text-ink outline-none focus:border-accent placeholder-muted'
 
 export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps): JSX.Element {
   const { bulkUpdateTracks, deleteTracks, playlists, addTracksToPlaylist, tracks, updateTrack } = useLibraryStore()
@@ -90,7 +90,7 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 bg-accent/[0.06] border-b border-accent/20 shrink-0">
-      <span className="font-mono text-[10px] font-bold text-accent shrink-0 uppercase tracking-[0.1em]">
+      <span className="font-mono text-[13px] font-bold text-accent shrink-0 uppercase tracking-[0.1em]">
         {n} selected
       </span>
 
@@ -182,7 +182,7 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
           <button
             onClick={applyEdit}
             disabled={applying || (field !== 'color' && !value)}
-            className="px-2.5 py-1 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.1em] rounded transition-colors"
+            className="px-2.5 py-1 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[13px] uppercase tracking-[0.1em] rounded transition-colors"
           >
             {applying ? 'applying…' : `apply to ${n}`}
           </button>
@@ -202,10 +202,10 @@ export function BulkEditBar({ selectedIds, onClearSelection }: BulkEditBarProps)
 
       <div className="w-px h-4 bg-border/40 mx-1 shrink-0" />
 
-      <button onClick={handleDelete} className="font-mono text-[10px] text-red-500/70 hover:text-red-500 transition-colors uppercase tracking-[0.1em]">
+      <button onClick={handleDelete} className="font-mono text-[13px] text-red-500/70 hover:text-red-500 transition-colors uppercase tracking-[0.1em]">
         remove
       </button>
-      <button onClick={onClearSelection} className="font-mono text-[10px] text-muted hover:text-ink transition-colors uppercase tracking-[0.1em]">
+      <button onClick={onClearSelection} className="font-mono text-[13px] text-muted hover:text-ink transition-colors uppercase tracking-[0.1em]">
         deselect
       </button>
     </div>

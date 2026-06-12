@@ -114,7 +114,7 @@ export function usbDbPath(usbRoot: string): string {
  * Read all HISTORY playlists from the Pioneer USB at `usbRoot`.
  *
  * @param usbRoot   Root of the Pioneer USB (the drive mount point)
- * @param appDb     The local Crate SQLite database (for cross-referencing tracks)
+ * @param appDb     The local Offcut SQLite database (for cross-referencing tracks)
  * @returns         Array of played sets, newest first
  */
 export function readUsbHistory(

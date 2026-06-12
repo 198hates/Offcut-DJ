@@ -15,33 +15,21 @@ import { useMixerStore } from '../store/mixerStore'
 
 // ── Value helpers ─────────────────────────────────────────────────────────────
 
-/** 0-127 CC → 0.0–1.0 */
-const ccToUnit = (v: number) => Math.max(0, Math.min(1, v / 127))
+/** Continuous control → 0.0–1.0. Handles 7-bit CC (0-127) and 14-bit
+ *  pitchbend (0-16383) — hardware pitch faders usually send pitchbend. */
+const toUnit = (v: number) => Math.max(0, Math.min(1, v > 127 ? v / 16383 : v / 127))
 
-/** 0-127 CC → EQ dB, centre-split: 64 = 0 dB, 0 = −24 dB, 127 = +6 dB */
-function ccToEqDb(v: number): number {
-  if (v <= 64) {
-    // 0→-24dB, 64→0dB
-    return (v / 64) * 24 - 24
-  } else {
-    // 64→0dB, 127→+6dB
-    return ((v - 64) / 63) * 6
-  }
+/** 0–1 → EQ dB, centre-split: 0.5 = 0 dB, 0 = −24 dB, 1 = +6 dB */
+function unitToEqDb(u: number): number {
+  return u <= 0.5 ? u * 2 * 24 - 24 : (u - 0.5) * 2 * 6
 }
 
-/** 0-127 CC → playback rate (0.5–1.5, centre 64 = 1.0) */
-function ccToPitch(v: number): number {
-  if (v <= 64) {
-    return 0.5 + (v / 64) * 0.5   // 0→0.5, 64→1.0
-  } else {
-    return 1.0 + ((v - 64) / 63) * 0.5  // 64→1.0, 127→1.5
-  }
-}
-
-/** 14-bit pitch bend (0–16383, centre 8192) → playback rate (0.5–1.5) */
-function pitchBendToRate(raw: number): number {
-  const n = raw / 16383      // 0-1, centre ~0.5
-  return 0.5 + n             // 0→0.5, 0.5→1.0, 1→1.5
+/** 0–1 → playback rate within the deck's pitch range (centre = 1.0).
+ *  Mapping the full 0.5–2.0 contract range here made ~84% of a hardware
+ *  fader's travel dead — setPlaybackRate clamps to ±pitchRange%. */
+function unitToPitch(u: number, rangePct: number): number {
+  const limit = rangePct / 100
+  return u <= 0.5 ? 1 - (1 - u * 2) * limit : 1 + (u - 0.5) * 2 * limit
 }
 
 // ── Action dispatch ───────────────────────────────────────────────────────────
@@ -63,11 +51,11 @@ function dispatch(actionId: string, rawValue: number): void {
     if (sub === 'beatloop-2' && rawValue > 0) { storeA.beatLoop(2); return }
     if (sub === 'beatloop-4' && rawValue > 0) { storeA.beatLoop(4); return }
     if (sub === 'beatloop-8' && rawValue > 0) { storeA.beatLoop(8); return }
-    if (sub === 'volume')                     { useMixerStore.getState().setVolA(ccToUnit(rawValue)); return }
-    if (sub === 'eq-high')                    { storeA.setEq('high', ccToEqDb(rawValue)); return }
-    if (sub === 'eq-mid')                     { storeA.setEq('mid',  ccToEqDb(rawValue)); return }
-    if (sub === 'eq-low')                     { storeA.setEq('low',  ccToEqDb(rawValue)); return }
-    if (sub === 'pitch')                      { storeA.setPlaybackRate(ccToPitch(rawValue)); return }
+    if (sub === 'volume')                     { useMixerStore.getState().setVolA(toUnit(rawValue)); return }
+    if (sub === 'eq-high')                    { storeA.setEq('high', unitToEqDb(toUnit(rawValue))); return }
+    if (sub === 'eq-mid')                     { storeA.setEq('mid',  unitToEqDb(toUnit(rawValue))); return }
+    if (sub === 'eq-low')                     { storeA.setEq('low',  unitToEqDb(toUnit(rawValue))); return }
+    if (sub === 'pitch')                      { storeA.setPlaybackRate(unitToPitch(toUnit(rawValue), storeA.pitchRange)); return }
 
     // Hot cues deck-A-hotcue-N
     const hcMatch = sub.match(/^hotcue-(\d)$/)
@@ -88,11 +76,11 @@ function dispatch(actionId: string, rawValue: number): void {
     if (sub === 'beatloop-2' && rawValue > 0) { storeB.beatLoop(2); return }
     if (sub === 'beatloop-4' && rawValue > 0) { storeB.beatLoop(4); return }
     if (sub === 'beatloop-8' && rawValue > 0) { storeB.beatLoop(8); return }
-    if (sub === 'volume')                     { useMixerStore.getState().setVolB(ccToUnit(rawValue)); return }
-    if (sub === 'eq-high')                    { storeB.setEq('high', ccToEqDb(rawValue)); return }
-    if (sub === 'eq-mid')                     { storeB.setEq('mid',  ccToEqDb(rawValue)); return }
-    if (sub === 'eq-low')                     { storeB.setEq('low',  ccToEqDb(rawValue)); return }
-    if (sub === 'pitch')                      { storeB.setPlaybackRate(ccToPitch(rawValue)); return }
+    if (sub === 'volume')                     { useMixerStore.getState().setVolB(toUnit(rawValue)); return }
+    if (sub === 'eq-high')                    { storeB.setEq('high', unitToEqDb(toUnit(rawValue))); return }
+    if (sub === 'eq-mid')                     { storeB.setEq('mid',  unitToEqDb(toUnit(rawValue))); return }
+    if (sub === 'eq-low')                     { storeB.setEq('low',  unitToEqDb(toUnit(rawValue))); return }
+    if (sub === 'pitch')                      { storeB.setPlaybackRate(unitToPitch(toUnit(rawValue), storeB.pitchRange)); return }
 
     const hcMatch = sub.match(/^hotcue-(\d)$/)
     if (hcMatch && rawValue > 0) { storeB.jumpToCue(parseInt(hcMatch[1])); return }
@@ -100,7 +88,7 @@ function dispatch(actionId: string, rawValue: number): void {
 
   // ── Mixer ────────────────────────────────────────────────────────────────────
   if (actionId === 'mixer-xfade') {
-    useMixerStore.getState().setXfade(ccToUnit(rawValue))
+    useMixerStore.getState().setXfade(toUnit(rawValue))
   }
 }
 
@@ -194,15 +182,8 @@ class MidiEngine {
         else if (msgType === 0xE)               { messageType = 'pitchbend'; number = 0 }
         else return  // unrecognised message type; keep waiting
 
-        // Find the device name that sent this
-        let deviceName: string | undefined
-        if (this.access) {
-          for (const input of this.access.inputs.values()) {
-            // MIDIMessageEvent doesn't expose the input directly, but we can check
-            // which input's handler was called by attaching identifiers
-            deviceName = input.name ?? undefined
-          }
-        }
+        // The event's target is the MIDIInput that delivered the message.
+        const deviceName = (e.target as MIDIInput | null)?.name ?? undefined
 
         setMapping(learningActionId, { channel: ch, messageType, number, deviceName })
         stopLearning()

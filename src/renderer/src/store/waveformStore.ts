@@ -71,6 +71,6 @@ export const useWaveformStore = create<WaveformStore>()(
       setKeyNotation:      (keyNotation)     => set({ keyNotation }),
       setAutoGainEnabled:  (autoGainEnabled) => set({ autoGainEnabled }),
     }),
-    { name: 'crate-waveform-style' }
+    { name: 'offcut-waveform-style' }
   )
 )

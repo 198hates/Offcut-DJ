@@ -14,6 +14,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
 import { keyBlipColor } from '../../components/CamelotWheel'
+import { useTrackMenuContext } from '../../hooks/useTrackMenu'
 import type { Track, SmartRule } from '@shared/types'
 
 // ── Dual-handle range slider ──────────────────────────────────────────────────
@@ -51,8 +52,8 @@ function RangeSlider({
   return (
     <div className="space-y-1">
       <div className="flex items-baseline justify-between">
-        <span className="font-mono text-[8.5px] uppercase tracking-[0.12em] text-muted">{label}</span>
-        <span className="font-mono text-[8.5px] text-ink/60 tabular-nums">
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">{label}</span>
+        <span className="font-mono text-[11px] text-ink/60 tabular-nums">
           {fmt(lo)} – {fmt(hi)}
         </span>
       </div>
@@ -95,7 +96,7 @@ function KeyGrid({ selected, onToggle }: { selected: Set<string>; onToggle: (k: 
         const on = selected.has(k)
         return (
           <button key={k} onClick={() => onToggle(k)}
-            className="font-mono text-[7.5px] py-0.5 rounded transition-colors"
+            className="font-mono text-[10px] py-0.5 rounded transition-colors"
             style={{
               background: on ? keyBlipColor(k) + '30' : 'rgba(255,255,255,0.03)',
               color: on ? keyBlipColor(k) : 'rgba(180,170,155,0.4)',
@@ -110,22 +111,25 @@ function KeyGrid({ selected, onToggle }: { selected: Set<string>; onToggle: (k: 
 
 // ── Search result row ─────────────────────────────────────────────────────────
 
-function ResultRow({ track, onLoadA, onLoadB }: { track: Track; onLoadA: (t: Track) => void; onLoadB: (t: Track) => void }): JSX.Element {
+function ResultRow({ track, onLoadA, onLoadB, onContextMenu }: { track: Track; onLoadA: (t: Track) => void; onLoadB: (t: Track) => void; onContextMenu: (e: React.MouseEvent, t: Track) => void }): JSX.Element {
   const fmt = (s: number | null) => s ? `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}` : '—'
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/15 hover:bg-ink/[0.03] group transition-colors">
+    <div
+      className="flex items-center gap-2 px-3 py-1.5 border-b border-border/15 hover:bg-ink/[0.03] group transition-colors"
+      onContextMenu={(e) => onContextMenu(e, track)}
+    >
       <span className="w-1.5 h-1.5 rounded-sm shrink-0" style={{ background: keyBlipColor(track.key) }} />
       <div className="flex-1 min-w-0">
-        <p className="font-mono text-[10px] text-ink truncate">{track.title || '—'}</p>
-        <p className="font-mono text-[8.5px] text-muted truncate">{track.artist}{track.album ? ` · ${track.album}` : ''}</p>
+        <p className="font-mono text-[13px] text-ink truncate">{track.title || '—'}</p>
+        <p className="font-mono text-[11px] text-muted truncate">{track.artist}{track.album ? ` · ${track.album}` : ''}</p>
       </div>
-      <span className="font-mono text-[9px] text-muted tabular-nums shrink-0 hidden md:block">{track.bpm?.toFixed(1) ?? '—'}</span>
-      <span className="font-mono text-[9px] font-bold shrink-0 hidden sm:block" style={{ color: keyBlipColor(track.key) }}>{track.key ?? '—'}</span>
-      <span className="font-mono text-[9px] text-muted tabular-nums shrink-0 hidden lg:block">{track.energy != null ? `${track.energy}/10` : '—'}</span>
-      <span className="font-mono text-[9px] text-muted tabular-nums shrink-0 hidden lg:block">{fmt(track.durationSeconds)}</span>
+      <span className="font-mono text-[12px] text-muted tabular-nums shrink-0 hidden md:block">{track.bpm?.toFixed(1) ?? '—'}</span>
+      <span className="font-mono text-[12px] font-bold shrink-0 hidden sm:block" style={{ color: keyBlipColor(track.key) }}>{track.key ?? '—'}</span>
+      <span className="font-mono text-[12px] text-muted tabular-nums shrink-0 hidden lg:block">{track.energy != null ? `${track.energy}/10` : '—'}</span>
+      <span className="font-mono text-[12px] text-muted tabular-nums shrink-0 hidden lg:block">{fmt(track.durationSeconds)}</span>
       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button onClick={() => onLoadA(track)} className="font-mono text-[8px] text-accent shrink-0" title="Load deck A">A</button>
-        <button onClick={() => onLoadB(track)} className="font-mono text-[8px] text-muted hover:text-ink shrink-0" title="Load deck B">B</button>
+        <button onClick={() => onLoadA(track)} className="font-mono text-[11px] text-accent shrink-0" title="Load deck A">A</button>
+        <button onClick={() => onLoadB(track)} className="font-mono text-[11px] text-muted hover:text-ink shrink-0" title="Load deck B">B</button>
       </div>
     </div>
   )
@@ -145,6 +149,7 @@ export function SearchPage(): JSX.Element {
   const { tracks, playlists, createSmartPlaylist, addTracksToPlaylist } = useLibraryStore()
   const loadTrackA = useDeckAStore((s) => s.loadTrack)
   const loadTrackB = useDeckBStore((s) => s.loadTrack)
+  const openTrackMenu = useTrackMenuContext()
 
   // ── Filter state ──────────────────────────────────────────────────────────
   const [bpm,         setBpm]         = useState<[number,number]>([60,  200])
@@ -247,9 +252,9 @@ export function SearchPage(): JSX.Element {
       {/* ── Filter sidebar ──────────────────────────────────────────────── */}
       <div className="w-56 shrink-0 flex flex-col border-r border-border/30 bg-chassis overflow-y-auto">
         <div className="shrink-0 flex items-center justify-between px-3 py-2 border-b border-border/30">
-          <span className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-accent">Filters</span>
+          <span className="font-mono text-[12px] font-bold uppercase tracking-[0.18em] text-accent">Filters</span>
           {isFiltered && (
-            <button onClick={reset} className="font-mono text-[8px] uppercase tracking-[0.1em] text-muted hover:text-accent transition-colors">
+            <button onClick={reset} className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-accent transition-colors">
               clear
             </button>
           )}
@@ -275,7 +280,7 @@ export function SearchPage(): JSX.Element {
                 const on = moodCats.has(i)
                 return (
                   <button key={m.label} onClick={() => setMoodCats((prev) => { const n = new Set(prev); on ? n.delete(i) : n.add(i); return n })}
-                    className="font-mono text-[7.5px] px-1.5 py-0.5 rounded transition-colors"
+                    className="font-mono text-[10px] px-1.5 py-0.5 rounded transition-colors"
                     style={{ color: on ? m.color : 'rgba(180,170,155,0.45)', background: on ? m.color + '18' : undefined, border: `1px solid ${on ? m.color + '50' : 'transparent'}` }}>
                     {m.label}
                   </button>
@@ -291,8 +296,8 @@ export function SearchPage(): JSX.Element {
           {/* Keys */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="font-mono text-[8.5px] uppercase tracking-[0.12em] text-muted">Key</span>
-              {keys.size > 0 && <button onClick={() => setKeys(new Set())} className="font-mono text-[7.5px] text-muted/40 hover:text-accent">clear</button>}
+              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">Key</span>
+              {keys.size > 0 && <button onClick={() => setKeys(new Set())} className="font-mono text-[10px] text-muted/40 hover:text-accent">clear</button>}
             </div>
             <KeyGrid selected={keys} onToggle={(k) => setKeys((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n })} />
           </div>
@@ -301,15 +306,15 @@ export function SearchPage(): JSX.Element {
           {allGenres.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <span className="font-mono text-[8.5px] uppercase tracking-[0.12em] text-muted">Genre</span>
-                {genres.size > 0 && <button onClick={() => setGenres(new Set())} className="font-mono text-[7.5px] text-muted/40 hover:text-accent">clear</button>}
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">Genre</span>
+                {genres.size > 0 && <button onClick={() => setGenres(new Set())} className="font-mono text-[10px] text-muted/40 hover:text-accent">clear</button>}
               </div>
               <div className="space-y-0.5 max-h-32 overflow-y-auto">
                 {allGenres.map((g) => {
                   const on = genres.has(g)
                   return (
                     <button key={g} onClick={() => setGenres((prev) => { const n = new Set(prev); on ? n.delete(g) : n.add(g); return n })}
-                      className={`w-full text-left font-mono text-[9px] px-1.5 py-0.5 rounded truncate transition-colors ${on ? 'bg-accent/10 text-ink' : 'text-muted hover:text-ink hover:bg-white/[0.03]'}`}>
+                      className={`w-full text-left font-mono text-[12px] px-1.5 py-0.5 rounded truncate transition-colors ${on ? 'bg-accent/10 text-ink' : 'text-muted hover:text-ink hover:bg-white/[0.03]'}`}>
                       {g}
                     </button>
                   )
@@ -320,13 +325,13 @@ export function SearchPage(): JSX.Element {
 
           {/* Flags */}
           <div>
-            <span className="font-mono text-[8.5px] uppercase tracking-[0.12em] text-muted block mb-1.5">Has</span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted block mb-1.5">Has</span>
             <div className="space-y-0.5">
               {([['hasBpm','BPM'],['hasKey','Key'],['hasCues','Cue Points'],['hasGrid','Beat Grid'],['unplayed','Unplayed']] as const).map(([k,l]) => (
                 <label key={k} className="flex items-center gap-2 cursor-pointer group">
                   <input type="checkbox" checked={flags[k]} onChange={(e) => setFlags((f) => ({...f,[k]:e.target.checked}))}
                     className="accent-accent w-3 h-3" />
-                  <span className={`font-mono text-[9px] ${flags[k] ? 'text-ink' : 'text-muted group-hover:text-ink'} transition-colors`}>{l}</span>
+                  <span className={`font-mono text-[12px] ${flags[k] ? 'text-ink' : 'text-muted group-hover:text-ink'} transition-colors`}>{l}</span>
                 </label>
               ))}
             </div>
@@ -338,17 +343,17 @@ export function SearchPage(): JSX.Element {
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Toolbar */}
         <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-border/30 bg-chassis">
-          <span className="font-mono text-[10px] font-bold text-ink tabular-nums">
+          <span className="font-mono text-[13px] font-bold text-ink tabular-nums">
             {results.length.toLocaleString()}
             <span className="text-muted font-normal"> track{results.length !== 1 ? 's' : ''} match</span>
           </span>
           <div className="flex-1" />
 
           {/* Sort */}
-          <span className="font-mono text-[8.5px] text-muted uppercase tracking-[0.1em]">sort</span>
+          <span className="font-mono text-[11px] text-muted uppercase tracking-[0.1em]">sort</span>
           {(['title','bpm','energy','rating'] as const).map((s) => (
             <button key={s} onClick={() => setSortBy(s)}
-              className={`font-mono text-[8.5px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
+              className={`font-mono text-[11px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors
                 ${sortBy === s ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink'}`}>
               {s}
             </button>
@@ -361,17 +366,17 @@ export function SearchPage(): JSX.Element {
             <button
               onClick={() => setShowSend((v) => !v)}
               disabled={results.length === 0}
-              className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 hover:border-border/70 rounded px-2 py-0.5 transition-colors disabled:opacity-30"
+              className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 hover:border-border/70 rounded px-2 py-0.5 transition-colors disabled:opacity-30"
             >
               add to playlist
             </button>
             {showSend && (
               <div className="absolute right-0 top-7 z-30 bg-chassis border border-border/40 rounded shadow-xl min-w-[200px] max-h-60 overflow-y-auto">
                 {nonFolderPlaylists.length === 0 ? (
-                  <p className="px-3 py-2 font-mono text-[9px] text-muted">no playlists</p>
+                  <p className="px-3 py-2 font-mono text-[12px] text-muted">no playlists</p>
                 ) : nonFolderPlaylists.map((pl) => (
                   <button key={pl.id} onClick={() => sendToPlaylist(pl.id)} disabled={sending}
-                    className="w-full text-left px-3 py-1.5 font-mono text-[9px] text-muted hover:text-ink hover:bg-ink/[0.05] transition-colors border-b border-border/20 last:border-b-0">
+                    className="w-full text-left px-3 py-1.5 font-mono text-[12px] text-muted hover:text-ink hover:bg-ink/[0.05] transition-colors border-b border-border/20 last:border-b-0">
                     {pl.name}
                   </button>
                 ))}
@@ -385,7 +390,7 @@ export function SearchPage(): JSX.Element {
               <button
                 onClick={() => setShowOrderSend((v) => !v)}
                 disabled={results.length === 0}
-                className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 hover:border-border/70 rounded px-2 py-0.5 transition-colors disabled:opacity-30"
+                className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/35 hover:border-border/70 rounded px-2 py-0.5 transition-colors disabled:opacity-30"
               >
                 add to order
               </button>
@@ -409,7 +414,7 @@ export function SearchPage(): JSX.Element {
                       }}
                       disabled={sending}
                       className="w-full text-left px-3 py-1.5 border-b border-border/20 last:border-b-0 transition-colors hover:bg-ink/[0.05]">
-                      <p className="font-mono text-[8.5px] text-ink">N° {String(ro.catalogNum).padStart(3,'0')} · {ro.title || 'Untitled'}</p>
+                      <p className="font-mono text-[11px] text-ink">N° {String(ro.catalogNum).padStart(3,'0')} · {ro.title || 'Untitled'}</p>
                     </button>
                   ))}
                 </div>
@@ -421,7 +426,7 @@ export function SearchPage(): JSX.Element {
           <button
             onClick={saveAsSmartPlaylist}
             disabled={results.length === 0 || !isFiltered}
-            className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-accent hover:text-ink border border-accent/30 hover:border-accent/60 rounded px-2 py-0.5 transition-colors disabled:opacity-30"
+            className="font-mono text-[11px] uppercase tracking-[0.1em] text-accent hover:text-ink border border-accent/30 hover:border-accent/60 rounded px-2 py-0.5 transition-colors disabled:opacity-30"
           >
             save as smart playlist
           </button>
@@ -430,11 +435,11 @@ export function SearchPage(): JSX.Element {
         {/* Column headers */}
         <div className="shrink-0 flex items-center gap-2 px-3 py-1 border-b border-border/20 bg-chassis/50">
           <span className="w-1.5 shrink-0" />
-          <span className="flex-1 font-mono text-[8px] uppercase tracking-[0.15em] text-muted/50">Title / Artist</span>
-          <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-muted/50 tabular-nums hidden md:block w-12 text-right">BPM</span>
-          <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-muted/50 hidden sm:block w-8 text-right">Key</span>
-          <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-muted/50 hidden lg:block w-10 text-right">Energy</span>
-          <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-muted/50 hidden lg:block w-10 text-right">Time</span>
+          <span className="flex-1 font-mono text-[11px] uppercase tracking-[0.15em] text-muted/50">Title / Artist</span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted/50 tabular-nums hidden md:block w-12 text-right">BPM</span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted/50 hidden sm:block w-8 text-right">Key</span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted/50 hidden lg:block w-10 text-right">Energy</span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted/50 hidden lg:block w-10 text-right">Time</span>
           <span className="w-8 shrink-0" />
         </div>
 
@@ -442,12 +447,13 @@ export function SearchPage(): JSX.Element {
         <div className="flex-1 overflow-y-auto">
           {results.length === 0 ? (
             <div className="flex items-center justify-center h-full">
-              <p className="font-mono text-[11px] text-muted/30 uppercase tracking-[0.15em]">
+              <p className="font-mono text-[13px] text-muted/30 uppercase tracking-[0.15em]">
                 {isFiltered ? 'no tracks match' : 'adjust filters to search'}
               </p>
             </div>
           ) : results.map((t) => (
-            <ResultRow key={t.id} track={t} onLoadA={loadTrackA} onLoadB={loadTrackB} />
+            <ResultRow key={t.id} track={t} onLoadA={loadTrackA} onLoadB={loadTrackB}
+              onContextMenu={(e, track) => openTrackMenu(e, { ids: [track.id], track })} />
           ))}
         </div>
       </div>

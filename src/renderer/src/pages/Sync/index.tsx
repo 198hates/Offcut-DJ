@@ -15,7 +15,7 @@ const INTEGRATIONS: { id: IntegrationId; label: string; canImport: boolean; canE
 
 function SectionLabel({ num, label }: { num: string; label: string }): JSX.Element {
   return (
-    <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted mb-3">
+    <p className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted mb-3">
       <span className="text-accent mr-1">{num}</span>{label}
     </p>
   )
@@ -34,7 +34,7 @@ function IntegrationGrid({ ids, busy, busyLabel, onClick }: {
           key={i.id}
           onClick={() => onClick(i.id)}
           disabled={busy}
-          className="flex items-center justify-center px-3 py-3 rounded border border-border/40 font-mono text-[11px] text-ink-soft hover:bg-ink/[0.05] hover:text-ink hover:border-border/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex items-center justify-center px-3 py-3 rounded border border-border/40 font-mono text-[13px] text-ink-soft hover:bg-ink/[0.05] hover:text-ink hover:border-border/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
         >
           {busy ? busyLabel : i.label}
         </button>
@@ -65,11 +65,11 @@ export function SyncPage(): JSX.Element {
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       <div className="px-5 pt-4 pb-2.5 border-b border-border/20 shrink-0 flex items-baseline gap-4">
-        <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
+        <p className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted">
           <span className="text-accent mr-1">02</span>sync
         </p>
         {fmtLastImport && (
-          <span className="font-mono text-[8.5px] text-muted/40">last import: {fmtLastImport}</span>
+          <span className="font-mono text-[11px] text-muted/40">last import: {fmtLastImport}</span>
         )}
       </div>
 
@@ -88,11 +88,11 @@ export function SyncPage(): JSX.Element {
         {/* Export */}
         <section>
           <div className="flex items-baseline gap-3 mb-3">
-            <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
+            <p className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted">
               <span className="text-accent mr-1">↑</span>export
             </p>
             {stats?.trackCount ? (
-              <span className="font-mono text-[9px] text-muted/60 tabular-nums">
+              <span className="font-mono text-[12px] text-muted/60 tabular-nums">
                 {stats.trackCount.toLocaleString()} tracks
               </span>
             ) : null}

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { midiEngine } from './lib/midiEngine'
-import { useRecordingStore } from './store/recordingStore'
+// Side-effect import: owns engine volumes (trim × fader × crossfader) at store
+// level, so the mix keeps working when the Mixer component is unmounted.
+import './lib/mixBus'
 import { LibraryPage } from './pages/Library'
 import { AnalysePage } from './pages/Analyse'
 import { HealthPage } from './pages/Health'
@@ -12,6 +14,8 @@ import { CompassPage } from './pages/Compass'
 import { OrdersPage } from './pages/Orders'
 import { SearchPage } from './pages/Search'
 import { ProLinkPage } from './pages/ProLink'
+import { LineagePage } from './pages/Lineage'
+import { UsbPage } from './pages/Usb'
 import { Sidebar } from './components/Sidebar'
 import { NavRail } from './components/NavRail'
 import type { Section } from './components/NavRail'
@@ -20,7 +24,11 @@ import { TrackDetail } from './components/TrackDetail'
 import { Toast } from './components/Toast'
 import { Onboarding } from './components/Onboarding'
 import { Player } from './components/Player'
+import { LineageLibraryTray } from './components/LineageLibraryTray'
+import { LibraryDock } from './components/LibraryDock'
 import { FnBus } from './components/FnBus'
+import { AnalysisProgressBar } from './components/AnalysisProgressBar'
+import { TrackMenuProvider } from './hooks/useTrackMenu'
 import { useLibraryStore } from './store/libraryStore'
 import { useDeckAStore, useDeckBStore } from './store/playerStore'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -85,6 +93,7 @@ export default function App(): JSX.Element {
   }, [selectedTrackIds])
 
   return (
+    <TrackMenuProvider>
     <div className="flex flex-col h-full bg-chassis relative">
       <Titlebar />
       {activePage === 'library' && <FnBus />}
@@ -104,6 +113,8 @@ export default function App(): JSX.Element {
             {activePage === 'orders'  && <ErrorBoundary name="orders"><OrdersPage /></ErrorBoundary>}
             {activePage === 'compass' && <ErrorBoundary name="compass"><CompassPage /></ErrorBoundary>}
             {activePage === 'prolink' && <ErrorBoundary name="prolink"><ProLinkPage /></ErrorBoundary>}
+            {activePage === 'lineage'   && <ErrorBoundary name="lineage"><LineagePage /></ErrorBoundary>}
+            {activePage === 'usb'     && <ErrorBoundary name="usb"><UsbPage /></ErrorBoundary>}
             {activePage === 'settings'&& <ErrorBoundary name="settings"><SettingsPage /></ErrorBoundary>}
           </div>
           {activePage === 'library' && detailTrackId && (
@@ -111,20 +122,26 @@ export default function App(): JSX.Element {
               <TrackDetail trackId={detailTrackId} onClose={() => setDetailTrackId(null)} />
             </ErrorBoundary>
           )}
+          {activePage === 'orders' && (
+            <ErrorBoundary name="library-dock" inline>
+              <LibraryDock />
+            </ErrorBoundary>
+          )}
         </main>
       </div>
 
-      <ErrorBoundary name="player" inline><Player /></ErrorBoundary>
+      {activePage === 'lineage' ? (
+        <ErrorBoundary name="lineage-tray" inline><LineageLibraryTray /></ErrorBoundary>
+      ) : (
+        <ErrorBoundary name="player" inline><Player /></ErrorBoundary>
+      )}
 
       {/* Colophon */}
       <div className="shrink-0 flex items-center justify-between px-4 border-t border-border/20 bg-chassis-soft"
            style={{ height: 16 }}>
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-[7.5px] tracking-[0.18em] uppercase text-muted/50">
-            offcut · od·01 / firmware 1.0.0 · build 0001
-          </span>
-          <RecordingButton />
-        </div>
+        <span className="font-mono text-[10px] tracking-[0.18em] uppercase text-muted/50">
+          offcut · od·01 / firmware 1.0.0 · build 0028
+        </span>
         <span className="text-muted/40" style={{
           fontFamily: "'Fraunces', serif",
           fontStyle: 'italic',
@@ -136,7 +153,7 @@ export default function App(): JSX.Element {
         </span>
         <button
           onClick={() => setShowShortcuts(true)}
-          className="font-mono text-[7.5px] tracking-[0.18em] uppercase text-muted/30 hover:text-muted/70 transition-colors"
+          className="font-mono text-[10px] tracking-[0.18em] uppercase text-muted/30 hover:text-muted/70 transition-colors"
           title="Keyboard shortcuts"
         >
           sn 2026·0001 / field unit · not for resale · ?
@@ -144,15 +161,16 @@ export default function App(): JSX.Element {
       </div>
 
       <Toast />
+      <AnalysisProgressBar />
       {showOnboarding && <Onboarding onComplete={() => setShowOnboarding(false)} />}
       {showShortcuts && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowShortcuts(false)}>
           <div className="bg-chassis border border-border/40 rounded-lg shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.15em] text-ink">Keyboard Shortcuts</h2>
+              <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.15em] text-ink">Keyboard Shortcuts</h2>
               <button onClick={() => setShowShortcuts(false)} className="text-muted hover:text-ink text-lg leading-none">×</button>
             </div>
-            <div className="space-y-3 font-mono text-[9.5px]">
+            <div className="space-y-3 font-mono text-[12px]">
               {[
                 ['Player', [
                   ['Space', 'Play / Pause Deck A'],
@@ -179,11 +197,11 @@ export default function App(): JSX.Element {
                 ]],
               ].map(([section, shortcuts]) => (
                 <div key={section as string}>
-                  <p className="text-accent/70 uppercase tracking-[0.12em] text-[8px] mb-1.5">{section as string}</p>
+                  <p className="text-accent/70 uppercase tracking-[0.12em] text-[11px] mb-1.5">{section as string}</p>
                   <div className="space-y-1">
                     {(shortcuts as [string, string][]).map(([key, desc]) => (
                       <div key={key} className="flex items-baseline justify-between gap-4">
-                        <code className="bg-ink/[0.07] border border-border/30 rounded px-1.5 py-0.5 text-ink-soft text-[8.5px] shrink-0">{key}</code>
+                        <code className="bg-ink/[0.07] border border-border/30 rounded px-1.5 py-0.5 text-ink-soft text-[11px] shrink-0">{key}</code>
                         <span className="text-muted/70 text-right">{desc}</span>
                       </div>
                     ))}
@@ -195,50 +213,7 @@ export default function App(): JSX.Element {
         </div>
       )}
     </div>
+    </TrackMenuProvider>
   )
 }
 
-// ── RecordingButton ────────────────────────────────────────────────────────────
-
-function RecordingButton(): JSX.Element {
-  const { state, durationSeconds, startRecording, stopRecording } = useRecordingStore()
-
-  const fmtDur = (s: number): string => {
-    const m = Math.floor(s / 60)
-    const sec = s % 60
-    return `${m}:${sec.toString().padStart(2, '0')}`
-  }
-
-  if (state === 'idle') {
-    return (
-      <button
-        onClick={startRecording}
-        title="Record mix to .webm"
-        className="flex items-center gap-1 font-mono text-[7.5px] uppercase tracking-[0.18em] text-muted/40 hover:text-red-500/70 transition-colors"
-      >
-        <span className="w-1.5 h-1.5 rounded-full bg-muted/25 group-hover:bg-red-500/40" />
-        REC
-      </button>
-    )
-  }
-
-  if (state === 'recording') {
-    return (
-      <button
-        onClick={() => stopRecording()}
-        title="Stop recording and save"
-        className="flex items-center gap-1 font-mono text-[7.5px] uppercase tracking-[0.18em] text-red-500 animate-pulse hover:animate-none transition-colors"
-      >
-        <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-        {fmtDur(durationSeconds)}
-      </button>
-    )
-  }
-
-  return (
-    <span className="flex items-center gap-1 font-mono text-[7.5px] uppercase tracking-[0.18em] text-muted/50">
-      <span className="w-1.5 h-1.5 rounded-full bg-muted/30" />
-      saving…
-    </span>
-  )
-}

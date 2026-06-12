@@ -73,10 +73,20 @@ export class NativeAudioEngine implements AudioEngineContract {
     if (source instanceof ArrayBuffer) {
       throw new Error('NativeAudioEngine: ArrayBuffer not supported — pass a file path string.')
     }
+    // A new track must never inherit the previous track's stem buses — the
+    // Rust engine also clears them in load(); this keeps the JS cache honest
+    // even if the load below fails partway.
+    if (this._hasStems) this.unloadStems()
     const result = await window.api.engine.load(this.deckId, source)
     this._duration     = result.duration
     this._currentTime  = 0
     this._isPlaying    = false
+    // Mirror the engine-side load resets (Rust clears looping and rate; the
+    // Web engine does the same internally) so the cached getters don't lie.
+    this._looping      = false
+    this._loopStart    = 0
+    this._loopEnd      = 0
+    this._rate         = 1.0
     // Convert plain number[] → Float32Array (IPC serialises typed arrays as plain arrays)
     return {
       duration:    result.duration,
@@ -90,8 +100,12 @@ export class NativeAudioEngine implements AudioEngineContract {
 
   // ── Playback ─────────────────────────────────────────────────────────────
 
+  // NOTE: the contract is in seconds; the engine IPC + Rust work in milliseconds,
+  // so every outgoing position/loop value is converted here (×1000). Incoming
+  // time-updates are already converted to seconds by the main process.
+
   play(from?: number): void {
-    window.api.engine.play(this.deckId, from)
+    window.api.engine.play(this.deckId, from === undefined ? undefined : from * 1000)
     this._isPlaying = true
   }
 
@@ -101,9 +115,12 @@ export class NativeAudioEngine implements AudioEngineContract {
   }
 
   seek(seconds: number): void {
-    window.api.engine.seek(this.deckId, seconds)
+    window.api.engine.seek(this.deckId, seconds * 1000)
     this._currentTime = seconds
   }
+
+  scrubBegin(): void { window.api.engine.scrubBegin(this.deckId) }
+  scrubEnd():   void { window.api.engine.scrubEnd(this.deckId) }
 
   get currentTime(): number { return this._currentTime }
   get duration():    number { return this._duration    }
@@ -115,7 +132,7 @@ export class NativeAudioEngine implements AudioEngineContract {
     this._looping   = true
     this._loopStart = start
     this._loopEnd   = end
-    window.api.engine.setLoop(this.deckId, start, end)
+    window.api.engine.setLoop(this.deckId, start * 1000, end * 1000)
   }
 
   clearLoop(): void {
@@ -176,18 +193,47 @@ export class NativeAudioEngine implements AudioEngineContract {
     window.api.engine.setStemSoloed(this.deckId, kind, soloed)
   }
 
+  // Real multi-bus stem playback: the four stem files are decoded in Rust and
+  // mixed on independent buses, so setStemGain/Muted/Soloed affect audio. The
+  // `urls` here are on-disk WAV paths (the native engine reads from disk).
+  private _hasStems = false
+  get hasStems(): boolean { return this._hasStems }
+
+  async loadStems(urls: Record<StemKind, string>): Promise<void> {
+    await window.api.engine.loadStems(this.deckId, urls)
+    this._hasStems = true
+  }
+
+  unloadStems(): void {
+    this._hasStems = false
+    window.api.engine.unloadStems(this.deckId)
+  }
+
   // ── Output routing ───────────────────────────────────────────────────────
 
   async setOutputDevice(deviceId: string): Promise<void> {
     await window.api.engine.setOutputDevice(this.deckId, deviceId)
   }
 
-  // ── Inter-deck sync ──────────────────────────────────────────────────────
+  // ── Inter-deck sync (shared clock) ─────────────────────────────────────────
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  syncTo(_master: AudioEngineContract): void {
-    // TODO (Phase 4): send deckId pair to main process, Rust engine locks clocks
+  private _synced = false
+
+  syncTo(masterId: string, ratio: number, phaseSeconds: number): void {
+    this._synced = true
+    window.api.engine.syncTo(this.deckId, masterId, ratio, phaseSeconds)
   }
+
+  updateSync(ratio: number, phaseSeconds: number): void {
+    window.api.engine.updateSync(this.deckId, ratio, phaseSeconds)
+  }
+
+  clearSync(): void {
+    this._synced = false
+    window.api.engine.clearSync(this.deckId)
+  }
+
+  get isSynced(): boolean { return this._synced }
 
   // ── Recording ────────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'compass' | 'orders' | 'search' | 'prolink' | 'settings'
+export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'compass' | 'orders' | 'search' | 'prolink' | 'lineage' | 'usb' | 'settings'
 
 interface Props {
   active: Section
@@ -135,6 +135,33 @@ function ProLinkIcon() {
   )
 }
 
+/** Lineage — a record crate: library expansion / crate-digging */
+function LineageIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2.5" y="4" width="11" height="9" rx="1" />
+      <line x1="2.5" y1="6.3" x2="13.5" y2="6.3" />
+      <circle cx="8" cy="9.6" r="2.1" />
+      <circle cx="8" cy="9.6" r="0.4" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+/** USB — a memory-stick: prepare Rekordbox USBs */
+function UsbIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {/* body */}
+      <rect x="5" y="6" width="6" height="9" rx="1" />
+      {/* connector */}
+      <rect x="6.25" y="2" width="3.5" height="4" rx="0.5" />
+      {/* contacts */}
+      <line x1="7" y1="3.2" x2="7" y2="4.6" />
+      <line x1="9" y1="3.2" x2="9" y2="4.6" />
+    </svg>
+  )
+}
+
 function GearIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -155,6 +182,7 @@ const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; l
   { id: 'orders',  Icon: OrdersIcon,   label: 'Running Orders'  },
   { id: 'compass', Icon: CompassIcon,  label: 'Library Compass' },
   { id: 'prolink', Icon: ProLinkIcon,  label: 'ProLink Capture' },
+  { id: 'lineage',   Icon: LineageIcon,    label: 'Lineage'    },
 ]
 
 export function NavRail({ active, onNavigate }: Props): JSX.Element {
@@ -174,6 +202,9 @@ export function NavRail({ active, onNavigate }: Props): JSX.Element {
           </button>
         ))}
       </div>
+      <button onClick={() => onNavigate('usb')} title="USB Export" className={`${cls('usb')} mb-1`}>
+        <UsbIcon />
+      </button>
       <button onClick={() => onNavigate('settings')} title="Settings" className={cls('settings')}>
         <GearIcon />
       </button>

@@ -1,5 +1,7 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
-import { existsSync, writeFileSync } from 'fs'
+import { ipcMain, dialog, BrowserWindow, app } from 'electron'
+import { existsSync, writeFileSync, mkdirSync, watch } from 'fs'
+import { execFile } from 'child_process'
+import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { getLibraryDb, rowToTrack, rowToPlaylist } from '../library/db'
 import { resolveSmartPlaylist } from '../library/smart-playlist'
@@ -26,9 +28,13 @@ import { exportToIntegration as exportVirtualDj } from '../integrations/virtuald
 import { analyzeBeats, isModelAvailable, getDefaultModelPath, warmModel } from '../integrations/beat-analysis'
 import { writeTagsToFile } from '../integrations/file-tags/writer'
 import { readUsbHistory, findPioneerUsbMount } from '../integrations/pioneer-usb/history-reader'
+import { findRekordboxUsbs, readRekordboxUsb, listUsbVolumes, resolveExportPdb } from '../integrations/rekordbox-usb/reader'
+import { writePlaylistToUsb, syncPlaylistsToUsb, initializeUsb } from '../integrations/rekordbox-usb/writer'
+import type { SyncTrackInput } from '../integrations/rekordbox-usb/writer'
+import { importFromUsbBackup } from '../integrations/rekordbox-usb/backup-import'
 import { startWatcher } from '../integrations/watch-folder'
 import { loadSettings, saveSettings } from '../settings'
-import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule } from '../../shared/types'
+import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule, UsbExport } from '../../shared/types'
 import type Database from 'better-sqlite3'
 
 type IntegrationReader = (db: Database.Database, path: string) => ImportResult
@@ -688,7 +694,7 @@ export function registerLibraryHandlers(): void {
 <tr><th>#</th><th>Cut</th><th>BPM</th><th>Key</th><th>Nrg</th><th>Time</th><th>Into</th><th>Notes</th></tr>
 ${rows}
 </table>
-<div class="footer">Crate · running order</div>
+<div class="footer">Offcut · running order</div>
 </body></html>`
 
     const win = new BrowserWindow({ show: false })
@@ -820,7 +826,7 @@ ${rows}
 
     try {
       const url = `https://api.discogs.com/database/search?q=${encodeURIComponent(query)}&type=release&per_page=3`
-      const res = await fetch(url, { headers: { 'User-Agent': 'Crate/1.0 +https://github.com/example/crate' } })
+      const res = await fetch(url, { headers: { 'User-Agent': 'Offcut/1.0 +https://betweenthebridges.co.uk' } })
       if (!res.ok) return { ok: false, error: `Discogs API error: ${res.status}` }
       const json = await res.json() as { results?: { year?: string; genre?: string[]; label?: string[]; catno?: string }[] }
       const hit = json.results?.[0]
@@ -899,6 +905,148 @@ ${rows}
       return { error: (err as Error).message }
     }
   })
+
+  // ── Rekordbox USB (prepared stick) — reads PIONEER/rekordbox/export.pdb ──
+  ipcMain.handle('rekordboxUsb:find', (): string[] => {
+    try {
+      return findRekordboxUsbs()
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('rekordboxUsb:browse', async (): Promise<string | null> => {
+    const res = await dialog.showOpenDialog({
+      title: 'Choose a Rekordbox USB (select the drive root)',
+      properties: ['openDirectory']
+    })
+    if (res.canceled || !res.filePaths.length) return null
+    return res.filePaths[0]
+  })
+
+  ipcMain.handle('rekordboxUsb:read', (_e, usbRoot: string): UsbExport | { error: string } => {
+    try {
+      return readRekordboxUsb(usbRoot)
+    } catch (err) {
+      return { error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(
+    'rekordboxUsb:writePlaylist',
+    (_e, usbRoot: string, name: string, trackIds: number[]) => {
+      try {
+        // Back up off the stick (internal disk) — never add files to the FAT volume.
+        const dir = join(app.getPath('userData'), 'usb-backups')
+        if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+        const vol = usbRoot.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'usb'
+        const backupPath = join(dir, `${vol}-${stamp}.export.pdb`)
+        const res = writePlaylistToUsb(usbRoot, { name, trackIds }, backupPath)
+        return res
+      } catch (err) {
+        return { error: (err as Error).message }
+      }
+    }
+  )
+
+  // Import a USB backup folder (export.pdb + Contents + ANLZ) into the library.
+  ipcMain.handle('rekordboxUsb:importBackup', async (e, backupRoot: string, includeAnalysis = true): Promise<ImportResult | { error: string }> => {
+    try {
+      return await importFromUsbBackup(getLibraryDb(), backupRoot, {
+        includeAnalysis,
+        onProgress: (p) => {
+          if (!e.sender.isDestroyed()) e.sender.send('rekordboxUsb:importProgress', p)
+        }
+      })
+    } catch (err) {
+      return { error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle('rekordboxUsb:listVolumes', () => {
+    try {
+      return listUsbVolumes()
+    } catch {
+      return []
+    }
+  })
+
+  // Is this USB still mounted with a readable export.pdb? (for detecting removal)
+  ipcMain.handle('rekordboxUsb:exists', (_e, usbRoot: string) => {
+    try {
+      return !!resolveExportPdb(usbRoot)
+    } catch {
+      return false
+    }
+  })
+
+  // Safely unmount/eject a USB so it can be physically removed.
+  ipcMain.handle('rekordboxUsb:eject', (_e, usbRoot: string): Promise<{ ejected: true } | { error: string }> =>
+    new Promise((resolve) => {
+      if (process.platform === 'darwin') {
+        execFile('diskutil', ['eject', usbRoot], (err, _out, stderr) => {
+          if (err) resolve({ error: (stderr || err.message).trim() || 'Eject failed' })
+          else resolve({ ejected: true })
+        })
+      } else if (process.platform === 'win32') {
+        const drive = usbRoot.replace(/\\+$/, '')
+        execFile(
+          'powershell',
+          ['-NoProfile', '-Command', `(New-Object -comObject Shell.Application).Namespace(17).ParseName('${drive}').InvokeVerb('Eject')`],
+          (err) => (err ? resolve({ error: 'Eject failed' }) : resolve({ ejected: true }))
+        )
+      } else {
+        resolve({ error: 'Eject is only supported on macOS and Windows' })
+      }
+    })
+  )
+
+  // Watch for volumes appearing/disappearing so the UI can react to removal.
+  if (process.platform === 'darwin') {
+    try {
+      let debounce: NodeJS.Timeout | null = null
+      watch('/Volumes', () => {
+        if (debounce) clearTimeout(debounce)
+        debounce = setTimeout(() => {
+          for (const w of BrowserWindow.getAllWindows()) {
+            if (!w.isDestroyed()) w.webContents.send('rekordboxUsb:volumesChanged')
+          }
+        }, 400)
+      })
+    } catch {
+      /* /Volumes not watchable */
+    }
+  }
+
+  ipcMain.handle('rekordboxUsb:initialize', (_e, usbRoot: string) => {
+    try {
+      const templatePath = app.isPackaged
+        ? join(process.resourcesPath, 'rekordbox', 'empty-export.pdb')
+        : join(app.getAppPath(), 'src', 'main', 'integrations', 'rekordbox-usb', 'templates', 'empty-export.pdb')
+      return initializeUsb(usbRoot, templatePath)
+    } catch (err) {
+      return { error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(
+    'rekordboxUsb:syncPlaylists',
+    (e, usbRoot: string, playlists: { name: string; tracks: SyncTrackInput[] }[]) => {
+      try {
+        const dir = join(app.getPath('userData'), 'usb-backups')
+        if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+        const vol = usbRoot.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'usb'
+        const backupPath = join(dir, `${vol}-${stamp}.export.pdb`)
+        return syncPlaylistsToUsb(usbRoot, playlists, backupPath, (p) => {
+          if (!e.sender.isDestroyed()) e.sender.send('rekordboxUsb:syncProgress', p)
+        })
+      } catch (err) {
+        return { error: (err as Error).message }
+      }
+    }
+  )
 }
 
 function getImportFilters(id: IntegrationId): Electron.FileFilter[] {

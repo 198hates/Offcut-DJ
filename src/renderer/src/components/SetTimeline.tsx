@@ -131,10 +131,10 @@ export function SetTimeline({ tracks, onSeekToTrack }: Props): JSX.Element {
   return (
     <div className="border-t border-border/30 bg-chassis-soft shrink-0 px-3 pt-2 pb-2 space-y-1.5">
       <div className="flex items-baseline justify-between">
-        <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-muted">
+        <span className="text-[12px] font-mono uppercase tracking-[0.18em] text-muted">
           <span className="text-accent font-bold mr-1">03</span>set timeline
         </span>
-        <span className="text-[9px] font-mono text-muted tabular-nums">
+        <span className="text-[12px] font-mono text-muted tabular-nums">
           {tracks.length} trks
           {avgBpm && <> · avg {avgBpm} bpm</>}
           {totalDuration > 0 && <> · {durationStr}</>}
@@ -142,7 +142,7 @@ export function SetTimeline({ tracks, onSeekToTrack }: Props): JSX.Element {
       </div>
 
       {tracksWithBpm.length < 2 ? (
-        <p className="text-[9px] font-mono text-muted/60 italic py-2">
+        <p className="text-[12px] font-mono text-muted/60 italic py-2">
           Add tracks with BPM data to see the curve
         </p>
       ) : (

@@ -62,8 +62,8 @@ interface Props {
   onClose: () => void
 }
 
-const SEL = 'bg-paper border border-border/40 rounded px-2 py-1.5 font-mono text-[10px] text-ink outline-none focus:border-accent cursor-pointer'
-const INP = 'bg-paper border border-border/40 rounded px-2 py-1.5 font-mono text-[10px] text-ink outline-none focus:border-accent placeholder-muted w-24'
+const SEL = 'bg-paper border border-border/40 rounded px-2 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent cursor-pointer'
+const INP = 'bg-paper border border-border/40 rounded px-2 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent placeholder-muted w-24'
 
 export function SmartPlaylistEditor({ playlist, onSave, onClose }: Props): JSX.Element {
   const [name, setName] = useState(playlist?.name ?? '')
@@ -115,7 +115,7 @@ export function SmartPlaylistEditor({ playlist, onSave, onClose }: Props): JSX.E
       >
         {/* Header */}
         <div className="px-5 py-3 border-b border-border/30 flex items-center justify-between bg-chassis-soft rounded-t-lg">
-          <h2 className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink">
+          <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.2em] text-ink">
             <span className="text-accent mr-1.5">⚡</span>
             {playlist ? 'edit smart playlist' : 'new smart playlist'}
           </h2>
@@ -125,20 +125,20 @@ export function SmartPlaylistEditor({ playlist, onSave, onClose }: Props): JSX.E
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {/* Name */}
           <div className="space-y-1">
-            <label className="font-mono text-[9px] uppercase tracking-[0.15em] text-muted block">name</label>
+            <label className="font-mono text-[12px] uppercase tracking-[0.15em] text-muted block">name</label>
             <input
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSave()}
               placeholder="playlist name…"
-              className="w-full bg-paper border border-border/40 rounded px-3 py-2 font-mono text-[11px] text-ink outline-none focus:border-accent placeholder-muted"
+              className="w-full bg-paper border border-border/40 rounded px-3 py-2 font-mono text-[13px] text-ink outline-none focus:border-accent placeholder-muted"
             />
           </div>
 
           {/* Rules */}
           <div className="space-y-2">
-            <label className="font-mono text-[9px] uppercase tracking-[0.15em] text-muted block">
+            <label className="font-mono text-[12px] uppercase tracking-[0.15em] text-muted block">
               rules — all must match
             </label>
             <div className="space-y-1.5">
@@ -157,7 +157,7 @@ export function SmartPlaylistEditor({ playlist, onSave, onClose }: Props): JSX.E
             </div>
             <button
               onClick={addRule}
-              className="font-mono text-[10px] uppercase tracking-[0.1em] text-accent hover:text-accent/80 transition-colors"
+              className="font-mono text-[13px] uppercase tracking-[0.1em] text-accent hover:text-accent/80 transition-colors"
             >
               + add rule
             </button>
@@ -168,14 +168,14 @@ export function SmartPlaylistEditor({ playlist, onSave, onClose }: Props): JSX.E
         <div className="px-5 py-3 border-t border-border/30 flex justify-end gap-2 bg-chassis-soft rounded-b-lg">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink rounded hover:bg-ink/5 transition-colors"
+            className="px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] text-muted hover:text-ink rounded hover:bg-ink/5 transition-colors"
           >
             cancel
           </button>
           <button
             onClick={handleSave}
             disabled={!name.trim()}
-            className="px-4 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] bg-accent hover:bg-accent/90 text-paper rounded transition-colors disabled:opacity-40"
+            className="px-4 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] bg-accent hover:bg-accent/90 text-paper rounded transition-colors disabled:opacity-40"
           >
             save
           </button>
@@ -223,13 +223,13 @@ function RuleRow({ rule, onFieldChange, onOpChange, onValueChange, onCustomTagKe
       {rule.op === 'between' && Array.isArray(rule.value) ? (
         <>
           <input type="number" value={rule.value[0]} onChange={(e) => onValueChange([Number(e.target.value), (rule.value as [number,number])[1]])} className={INP} />
-          <span className="font-mono text-[10px] text-muted">—</span>
+          <span className="font-mono text-[13px] text-muted">—</span>
           <input type="number" value={rule.value[1]} onChange={(e) => onValueChange([(rule.value as [number,number])[0], Number(e.target.value)])} className={INP} />
         </>
       ) : rule.op === 'in_last_days' ? (
         <>
           <input type="number" min={1} value={typeof rule.value === 'number' ? rule.value : 30} onChange={(e) => onValueChange(Number(e.target.value))} className={INP} />
-          <span className="font-mono text-[10px] text-muted">days</span>
+          <span className="font-mono text-[13px] text-muted">days</span>
         </>
       ) : type === 'numeric' ? (
         <input type="number" value={typeof rule.value === 'number' ? rule.value : 0} onChange={(e) => onValueChange(Number(e.target.value))} className={INP} />
@@ -238,7 +238,7 @@ function RuleRow({ rule, onFieldChange, onOpChange, onValueChange, onCustomTagKe
           type="text"
           value={String(rule.value)}
           onChange={(e) => onValueChange(e.target.value)}
-          className="bg-paper border border-border/40 rounded px-2 py-1.5 font-mono text-[10px] text-ink outline-none focus:border-accent flex-1 min-w-0 placeholder-muted"
+          className="bg-paper border border-border/40 rounded px-2 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent flex-1 min-w-0 placeholder-muted"
           placeholder={rule.field === 'customTag' ? 'expected value…' : 'value…'}
         />
       )}

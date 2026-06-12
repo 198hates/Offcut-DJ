@@ -64,7 +64,7 @@ export function importFromIntegration(appDb: Database.Database, dbPath: string):
           dateAdded: row.dateAdded ? String(row.dateAdded) : new Date().toISOString(),
           comment: String(row.comment ?? ''),
           tags: [],
-        customTags: {},
+          customTags: {},
           cuePoints: cues,
           beatgrid: [],
           energy: null,
@@ -75,6 +75,13 @@ export function importFromIntegration(appDb: Database.Database, dbPath: string):
           color: '',
           playCount: 0,
           lastPlayedAt: null,
+          updatedAt: null,
+          fileSize: null,
+          fileType: null,
+          sampleRate: null,
+          bitDepth: null,
+          gainDb: null,
+          phrases: null,
           sourceIds: { 'engine-dj': engId }
         }
 

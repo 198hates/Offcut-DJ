@@ -3,6 +3,7 @@ import { useLibraryStore } from '../store/libraryStore'
 import { useToastStore } from '../store/toastStore'
 import { ContextMenu } from './ContextMenu'
 import { SmartPlaylistEditor } from './SmartPlaylistEditor'
+import { acceptsTrackDrop, readTrackIds } from '../lib/trackDrag'
 import type { Playlist, SmartRule, Track } from '@shared/types'
 
 function fmtPlaylistDuration(secs: number): string {
@@ -126,7 +127,7 @@ export function Sidebar(): JSX.Element {
           >
             <span>all tracks</span>
             {stats && (
-              <span className="text-[9px] text-muted tabular-nums">{stats.trackCount.toLocaleString()}</span>
+              <span className="text-[12px] text-muted tabular-nums">{stats.trackCount.toLocaleString()}</span>
             )}
           </button>
         </nav>
@@ -137,7 +138,7 @@ export function Sidebar(): JSX.Element {
 
             {/* Sets header */}
             <div className="flex items-center justify-between px-2.5 pt-3 pb-1">
-              <p className="text-[9px] font-mono font-bold uppercase tracking-[0.2em] text-muted">
+              <p className="text-[12px] font-mono font-bold uppercase tracking-[0.2em] text-muted">
                 <span className="text-accent mr-1">01</span>playlists
                 <span className="ml-1 text-muted/60">· {regular.length}</span>
               </p>
@@ -145,21 +146,21 @@ export function Sidebar(): JSX.Element {
                 {/* Template picker */}
                 <button
                   onClick={() => setShowTemplates((v) => !v)}
-                  className="text-muted/50 hover:text-accent text-[11px] leading-none transition-colors"
+                  className="text-muted/50 hover:text-accent text-[13px] leading-none transition-colors"
                   title="Create from template"
                 >☰</button>
                 {showTemplates && (
                   <div className="absolute top-full right-0 z-30 mt-1 w-44 bg-chassis border border-border/40 rounded shadow-xl">
                     <div className="flex items-center justify-between px-2 py-1 border-b border-border/30">
-                      <span className="font-mono text-[7.5px] uppercase tracking-[0.12em] text-muted/50">smart templates</span>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted/50">smart templates</span>
                       <button onClick={() => setShowTemplates(false)} className="text-muted/30 hover:text-muted text-xs">✕</button>
                     </div>
                     {TEMPLATES.map((t) => (
                       <button key={t.name}
                         onClick={() => createFromTemplate(t)}
                         className="w-full text-left flex items-center gap-2 px-2 py-1 hover:bg-accent/[0.06] border-b border-border/10 transition-colors">
-                        <span className="text-[10px] text-muted/60 shrink-0 w-4">{t.icon}</span>
-                        <span className="font-mono text-[8.5px] text-ink truncate">{t.name}</span>
+                        <span className="text-[13px] text-muted/60 shrink-0 w-4">{t.icon}</span>
+                        <span className="font-mono text-[11px] text-ink truncate">{t.name}</span>
                       </button>
                     ))}
                   </div>
@@ -212,7 +213,7 @@ export function Sidebar(): JSX.Element {
                 />
               ))}
               {regular.length === 0 && !addingPlaylist && (
-                <p className="px-3 py-1 text-[10px] font-mono text-muted/50 italic">no playlists yet</p>
+                <p className="px-3 py-1 text-[13px] font-mono text-muted/50 italic">no playlists yet</p>
               )}
             </div>
 
@@ -220,7 +221,7 @@ export function Sidebar(): JSX.Element {
             {smart.length > 0 && (
               <>
                 <div className="px-2.5 pt-3 pb-1">
-                  <p className="text-[9px] font-mono font-bold uppercase tracking-[0.2em] text-muted">
+                  <p className="text-[12px] font-mono font-bold uppercase tracking-[0.2em] text-muted">
                     <span className="text-accent mr-1">02</span>smart
                     <span className="ml-1 text-muted/60">· {smart.length}</span>
                   </p>
@@ -368,7 +369,7 @@ function PlaylistItem({
 
   const handleDragOver = (e: React.DragEvent): void => {
     if (playlist.isSmart) return
-    if (!isDraggingTracks && !e.dataTransfer.types.includes('application/x-crate-track-ids')) return
+    if (!isDraggingTracks && !acceptsTrackDrop(e)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
     setIsDragOver(true)
@@ -378,10 +379,7 @@ function PlaylistItem({
     e.preventDefault()
     setIsDragOver(false)
     if (playlist.isSmart) return
-    let ids = draggingTrackIds
-    if (ids.length === 0) {
-      try { ids = JSON.parse(e.dataTransfer.getData('application/x-crate-track-ids')) } catch { /* ignore */ }
-    }
+    const ids = draggingTrackIds.length ? draggingTrackIds : readTrackIds(e)
     if (ids.length > 0) addTracksToPlaylist(playlist.id, ids)
   }
 
@@ -449,7 +447,7 @@ function PlaylistItem({
       <button
         onClick={onClick}
         onDoubleClick={playlist.isSmart ? onEditSmart : onStartRename}
-        className={`flex-1 text-left py-1 pr-1 font-mono text-[10.5px] transition-colors min-w-0 overflow-hidden ${
+        className={`flex-1 text-left py-1 pr-1 font-mono text-[13px] transition-colors min-w-0 overflow-hidden ${
           isActive ? 'text-ink font-bold' : 'text-ink-soft'
         }`}
         title={playlist.isSmart
@@ -461,11 +459,11 @@ function PlaylistItem({
           {playlist.name}
         </div>
         <div className="flex items-center gap-1 mt-0.5">
-          <span className="font-mono text-[8px] text-muted tabular-nums">
+          <span className="font-mono text-[11px] text-muted tabular-nums">
             {playlist.trackIds.length} trk{playlist.trackIds.length !== 1 ? 's' : ''}
           </span>
           {totalDurationSeconds != null && totalDurationSeconds > 0 && (
-            <span className="font-mono text-[8px] text-muted/60">· {fmtPlaylistDuration(totalDurationSeconds)}</span>
+            <span className="font-mono text-[11px] text-muted/60">· {fmtPlaylistDuration(totalDurationSeconds)}</span>
           )}
         </div>
       </button>
@@ -477,7 +475,7 @@ function PlaylistItem({
             const rect = e.currentTarget.getBoundingClientRect()
             setToolsMenuPos({ x: rect.left, y: rect.bottom + 4 })
           }}
-          className="shrink-0 px-1.5 mr-1 text-muted hover:text-ink transition-colors text-[11px] leading-none"
+          className="shrink-0 px-1.5 mr-1 text-muted hover:text-ink transition-colors text-[13px] leading-none"
           title="Playlist tools"
         >···</button>
       )}
@@ -570,7 +568,7 @@ function FoldersSection({ folders, playlists, activePlaylistId, onSelect }: {
       <div className="flex items-center justify-between px-2.5 pt-3 pb-1">
         <button
           onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1 text-[9px] font-mono font-bold uppercase tracking-[0.2em] text-muted hover:text-ink transition-colors"
+          className="flex items-center gap-1 text-[12px] font-mono font-bold uppercase tracking-[0.2em] text-muted hover:text-ink transition-colors"
         >
           <span className="text-accent mr-0.5">03</span>sets
           <span className="ml-1 text-muted/60">· {folders.length}</span>
@@ -589,9 +587,9 @@ function FoldersSection({ folders, playlists, activePlaylistId, onSelect }: {
                   onClick={() => toggleFolder(folder.id)}
                   className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left hover:bg-ink/[0.04] transition-colors group"
                 >
-                  <span className="font-mono text-[9px] text-muted/50">{isExpanded ? '▾' : '▸'}</span>
-                  <span className="font-mono text-[10px] font-bold text-ink-soft truncate flex-1">{folder.name}</span>
-                  <span className="font-mono text-[9px] text-muted/50 tabular-nums shrink-0">{children.length}</span>
+                  <span className="font-mono text-[12px] text-muted/50">{isExpanded ? '▾' : '▸'}</span>
+                  <span className="font-mono text-[13px] font-bold text-ink-soft truncate flex-1">{folder.name}</span>
+                  <span className="font-mono text-[12px] text-muted/50 tabular-nums shrink-0">{children.length}</span>
                 </button>
                 {/* Children */}
                 {isExpanded && children.map((ch) => (
@@ -608,8 +606,8 @@ function FoldersSection({ folders, playlists, activePlaylistId, onSelect }: {
                       className="w-1.5 h-1.5 rounded-sm shrink-0"
                       style={{ background: ch.color || '#8A8474' }}
                     />
-                    <span className="font-mono text-[10px] truncate flex-1">{ch.name}</span>
-                    <span className="font-mono text-[9px] text-muted/50 tabular-nums">{ch.trackIds.length}</span>
+                    <span className="font-mono text-[13px] truncate flex-1">{ch.name}</span>
+                    <span className="font-mono text-[12px] text-muted/50 tabular-nums">{ch.trackIds.length}</span>
                   </button>
                 ))}
               </div>
@@ -636,7 +634,7 @@ function AutoGroupsSection({ groups, activePlaylistId, onSelect, onDeleteAll }: 
       <div className="flex items-center justify-between px-2.5 pt-3 pb-1">
         <button
           onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1 text-[9px] font-mono font-bold uppercase tracking-[0.2em] text-muted hover:text-ink transition-colors"
+          className="flex items-center gap-1 text-[12px] font-mono font-bold uppercase tracking-[0.2em] text-muted hover:text-ink transition-colors"
         >
           <span className="text-accent mr-0.5">03</span>generated
           <span className="ml-1 text-muted/60">· {groups.length}</span>
@@ -645,7 +643,7 @@ function AutoGroupsSection({ groups, activePlaylistId, onSelect, onDeleteAll }: 
         <button
           onClick={onDeleteAll}
           title="Clear all auto groups"
-          className="text-muted/40 hover:text-red-500 transition-colors font-mono text-[9px]"
+          className="text-muted/40 hover:text-red-500 transition-colors font-mono text-[12px]"
         >✕</button>
       </div>
       {open && (
@@ -661,7 +659,7 @@ function AutoGroupsSection({ groups, activePlaylistId, onSelect, onDeleteAll }: 
               }`}
             >
               <span className="truncate flex-1">{pl.name}</span>
-              <span className="text-[9px] text-muted tabular-nums ml-1 shrink-0">
+              <span className="text-[12px] text-muted tabular-nums ml-1 shrink-0">
                 {pl.trackIds.length}
               </span>
             </button>

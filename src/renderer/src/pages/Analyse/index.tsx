@@ -19,9 +19,9 @@ function StatCard({ label, value, sub, accent }: {
 }): JSX.Element {
   return (
     <div className="bg-ink/[0.03] border border-border/25 rounded p-3 space-y-0.5">
-      <p className="font-mono text-[9px] uppercase tracking-[0.15em] text-muted">{label}</p>
+      <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-muted">{label}</p>
       <p className={`font-mono text-lg font-bold tabular-nums ${accent ? 'text-accent' : 'text-ink'}`}>{value}</p>
-      {sub && <p className="font-mono text-[9px] text-muted/70">{sub}</p>}
+      {sub && <p className="font-mono text-[12px] text-muted/70">{sub}</p>}
     </div>
   )
 }
@@ -41,10 +41,10 @@ function ProgressBar({ current, total, label, title, startTime }: {
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between">
-        <span className="font-mono text-[10px] text-accent uppercase tracking-[0.1em]">{label}</span>
+        <span className="font-mono text-[13px] text-accent uppercase tracking-[0.1em]">{label}</span>
         <div className="flex items-baseline gap-2">
-          {eta && <span className="font-mono text-[9px] text-muted/50">{eta} remaining</span>}
-          <span className="font-mono text-[10px] text-muted tabular-nums">{current} / {total}</span>
+          {eta && <span className="font-mono text-[12px] text-muted/50">{eta} remaining</span>}
+          <span className="font-mono text-[13px] text-muted tabular-nums">{current} / {total}</span>
         </div>
       </div>
       <div className="h-1 bg-border/30 rounded-full overflow-hidden">
@@ -53,7 +53,7 @@ function ProgressBar({ current, total, label, title, startTime }: {
           style={{ width: `${total ? (current / total) * 100 : 0}%` }}
         />
       </div>
-      <p className="font-mono text-[9px] text-muted truncate">{title}</p>
+      <p className="font-mono text-[12px] text-muted truncate">{title}</p>
     </div>
   )
 }
@@ -64,12 +64,12 @@ function FailedList({ tracks: failed }: { tracks: Track[] }): JSX.Element {
       {failed.map((t) => (
         <div key={t.id} className="flex items-center gap-3 px-3 py-1.5 bg-red-500/5 border border-red-500/15 rounded">
           <div className="flex-1 min-w-0">
-            <p className="font-mono text-[10px] text-ink truncate">{t.title || t.filePath.split('/').pop() || t.id}</p>
-            <p className="font-mono text-[8.5px] text-muted truncate">{t.artist || t.filePath}</p>
+            <p className="font-mono text-[13px] text-ink truncate">{t.title || t.filePath.split('/').pop() || t.id}</p>
+            <p className="font-mono text-[11px] text-muted truncate">{t.artist || t.filePath}</p>
           </div>
           <button
             onClick={() => window.api.settings.openInFinder(t.filePath)}
-            className="shrink-0 font-mono text-[9px] text-muted/60 hover:text-accent transition-colors"
+            className="shrink-0 font-mono text-[12px] text-muted/60 hover:text-accent transition-colors"
             title="Reveal in Finder"
           >↗</button>
         </div>
@@ -182,18 +182,18 @@ function BpmKeySection(): JSX.Element {
           <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
             <span className="text-accent mr-1.5">01</span>bpm + key + energy
           </h2>
-          <p className="font-mono text-[10px] text-muted mt-0.5">reads embedded tags first · falls back to audio analysis</p>
+          <p className="font-mono text-[13px] text-muted mt-0.5">reads embedded tags first · falls back to audio analysis</p>
         </div>
         <div className="flex items-center gap-2">
           {running && (
             <button onClick={() => { cancelRef.current = true }}
-              className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
+              className="px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
               cancel
             </button>
           )}
           <button onClick={start}
             disabled={running || needingAnalysis.length === 0}
-            className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors">
+            className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[13px] uppercase tracking-[0.12em] rounded transition-colors">
             {phase === 'tags' ? 'reading tags…' : phase === 'audio' ? 'analysing audio…' : phase === 'done' ? 're-analyse' : 'analyse library'}
           </button>
         </div>
@@ -214,7 +214,7 @@ function BpmKeySection(): JSX.Element {
 
       {phase === 'done' && result && (
         <div className="space-y-3">
-          <div className="flex items-center gap-4 font-mono text-[10px] flex-wrap">
+          <div className="flex items-center gap-4 font-mono text-[13px] flex-wrap">
             <span className="text-green-600 dark:text-green-400">✓ {result.updated} updated</span>
             {result.skipped > 0 && <span className="text-muted">{result.skipped} unchanged</span>}
             {result.failed.length > 0 && <span className="text-red-500">{result.failed.length} failed</span>}
@@ -228,7 +228,7 @@ function BpmKeySection(): JSX.Element {
                   setWritingTags(false)
                 }}
                 disabled={writingTags}
-                className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/30 rounded px-2 py-0.5 transition-colors disabled:opacity-40"
+                className="font-mono text-[12px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/30 rounded px-2 py-0.5 transition-colors disabled:opacity-40"
               >
                 {writingTags ? 'writing…' : `write ${result.updatedIds.length} to file tags`}
               </button>
@@ -239,7 +239,7 @@ function BpmKeySection(): JSX.Element {
       )}
 
       {needingAnalysis.length === 0 && phase === 'idle' && tracks.length > 0 && (
-        <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+        <p className="font-mono text-[13px] text-green-600 dark:text-green-400 flex items-center gap-2">
           <span>✓</span> all {tracks.length.toLocaleString()} tracks have bpm and key data
         </p>
       )}
@@ -337,7 +337,7 @@ function BeatGridSection(): JSX.Element {
           <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
             <span className="text-accent mr-1.5">02</span>beat grid analysis
           </h2>
-          <p className="font-mono text-[10px] text-muted mt-0.5">
+          <p className="font-mono text-[13px] text-muted mt-0.5">
             {modelStatus?.available
               ? 'beat this! onnx · per-bar tempo, downbeats, confidence'
               : 'essentia js fallback · spectral flux + dp beat tracker'}
@@ -346,11 +346,11 @@ function BeatGridSection(): JSX.Element {
         <div className="flex items-center gap-2">
           {phase === 'running' && (
             <button onClick={() => { cancelRef.current = true }}
-              className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">cancel</button>
+              className="px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">cancel</button>
           )}
           <button onClick={start}
             disabled={phase === 'running' || modelStatus === null || needingGrid.length === 0}
-            className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors">
+            className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[13px] uppercase tracking-[0.12em] rounded transition-colors">
             {phase === 'running' ? 'analysing…' : phase === 'done' ? 're-analyse' : 'analyse beats'}
           </button>
         </div>
@@ -358,11 +358,11 @@ function BeatGridSection(): JSX.Element {
 
       {modelStatus && !modelStatus.available && (
         <div className="bg-ink/[0.03] border border-accent/20 rounded px-4 py-3 space-y-1.5">
-          <p className="font-mono text-[10px] text-ink font-bold uppercase tracking-[0.1em]">using essentia js fallback</p>
-          <p className="font-mono text-[9.5px] text-muted leading-relaxed">
+          <p className="font-mono text-[13px] text-ink font-bold uppercase tracking-[0.1em]">using essentia js fallback</p>
+          <p className="font-mono text-[12px] text-muted leading-relaxed">
             Spectral flux + DP beat tracker runs in-browser — no model needed. For higher accuracy, install the Beat This! ONNX model:
           </p>
-          <p className="font-mono text-[8.5px] text-muted/70">
+          <p className="font-mono text-[11px] text-muted/70">
             Run <span className="text-ink bg-ink/10 px-1 rounded">python scripts/export-beat-this.py</span> then place <span className="text-ink">beat_this.onnx</span> at: <span className="break-all">{modelStatus.path}</span>
           </p>
         </div>
@@ -383,13 +383,13 @@ function BeatGridSection(): JSX.Element {
       {needingUpgrade.length > 0 && phase === 'idle' && (
         <div className="flex items-center justify-between bg-accent/5 border border-accent/20 rounded px-4 py-2.5">
           <div>
-            <p className="font-mono text-[10px] text-ink font-bold">
+            <p className="font-mono text-[13px] text-ink font-bold">
               {needingUpgrade.length.toLocaleString()} track{needingUpgrade.length !== 1 ? 's' : ''} need beatgrid v2 upgrade
             </p>
-            <p className="font-mono text-[9px] text-muted mt-0.5">converts legacy markers to beat/bar/downbeat structure · no model needed</p>
+            <p className="font-mono text-[12px] text-muted mt-0.5">converts legacy markers to beat/bar/downbeat structure · no model needed</p>
           </div>
           <button onClick={upgrade}
-            className="shrink-0 ml-4 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-accent border border-accent/40 hover:bg-accent/10 rounded transition-colors">
+            className="shrink-0 ml-4 px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] text-accent border border-accent/40 hover:bg-accent/10 rounded transition-colors">
             upgrade
           </button>
         </div>
@@ -398,8 +398,8 @@ function BeatGridSection(): JSX.Element {
       {phase === 'running' && (
         <div className="space-y-2">
           <div className="flex items-baseline justify-between">
-            <span className="font-mono text-[10px] text-accent uppercase tracking-[0.1em]">analysing beats</span>
-            <span className="font-mono text-[10px] text-muted tabular-nums">
+            <span className="font-mono text-[13px] text-accent uppercase tracking-[0.1em]">analysing beats</span>
+            <span className="font-mono text-[13px] text-muted tabular-nums">
               {progress.current + 1} / {progress.total}
             </span>
           </div>
@@ -409,13 +409,13 @@ function BeatGridSection(): JSX.Element {
               style={{ width: `${overallPct * 100}%` }}
             />
           </div>
-          <p className="font-mono text-[9px] text-muted truncate">{currentTitle}</p>
+          <p className="font-mono text-[12px] text-muted truncate">{currentTitle}</p>
         </div>
       )}
 
       {phase === 'done' && result && (
         <div className="space-y-3">
-          <div className="flex items-center gap-4 font-mono text-[10px]">
+          <div className="flex items-center gap-4 font-mono text-[13px]">
             <span className="text-green-600 dark:text-green-400">✓ {result.updated} analysed</span>
             {result.failed.length > 0 && <span className="text-red-500">{result.failed.length} failed</span>}
             {cancelRef.current && <span className="text-muted">· cancelled</span>}
@@ -471,16 +471,16 @@ function AutoCueSection(): JSX.Element {
           <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
             <span className="text-accent mr-1.5">03</span>auto-cue generation
           </h2>
-          <p className="font-mono text-[10px] text-muted mt-0.5">analyses energy curve to place mix-in, drop, breakdown and outro markers</p>
+          <p className="font-mono text-[13px] text-muted mt-0.5">analyses energy curve to place mix-in, drop, breakdown and outro markers</p>
         </div>
         <div className="flex items-center gap-2">
           {phase === 'running' && (
             <button onClick={() => { cancelRef.current = true }}
-              className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">cancel</button>
+              className="px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">cancel</button>
           )}
           <button onClick={start}
             disabled={phase === 'running' || needingCues.length === 0}
-            className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors">
+            className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[13px] uppercase tracking-[0.12em] rounded transition-colors">
             {phase === 'running' ? 'generating…' : phase === 'done' ? 're-run' : 'generate cues'}
           </button>
         </div>
@@ -499,7 +499,7 @@ function AutoCueSection(): JSX.Element {
 
       {/* Cue type legend */}
       <div className="bg-ink/[0.03] border border-border/20 rounded px-4 py-3 space-y-1">
-        <p className="font-mono text-[9px] uppercase tracking-[0.15em] text-muted">what gets placed</p>
+        <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-muted">what gets placed</p>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
           {[
             { color: '#3CA86A', label: 'Mix In', desc: 'first energy rise above intro' },
@@ -509,8 +509,8 @@ function AutoCueSection(): JSX.Element {
           ].map(({ color, label, desc }) => (
             <div key={label} className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-              <span className="font-mono text-[9px] font-bold text-ink w-12 shrink-0">{label}</span>
-              <span className="font-mono text-[9px] text-muted">{desc}</span>
+              <span className="font-mono text-[12px] font-bold text-ink w-12 shrink-0">{label}</span>
+              <span className="font-mono text-[12px] text-muted">{desc}</span>
             </div>
           ))}
         </div>
@@ -520,7 +520,7 @@ function AutoCueSection(): JSX.Element {
 
       {phase === 'done' && result && (
         <div className="space-y-3">
-          <div className="flex items-center gap-4 font-mono text-[10px]">
+          <div className="flex items-center gap-4 font-mono text-[13px]">
             <span className="text-green-600 dark:text-green-400">✓ {result.generated} track{result.generated !== 1 ? 's' : ''} got cues</span>
             {result.failed.length > 0 && <span className="text-red-500">{result.failed.length} failed</span>}
             {cancelRef.current && <span className="text-muted">· cancelled</span>}
@@ -530,7 +530,7 @@ function AutoCueSection(): JSX.Element {
       )}
 
       {needingCues.length === 0 && phase === 'idle' && tracks.length > 0 && (
-        <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+        <p className="font-mono text-[13px] text-green-600 dark:text-green-400 flex items-center gap-2">
           <span>✓</span> all analysed tracks have cue points
         </p>
       )}
@@ -583,27 +583,27 @@ function GenreSection(): JSX.Element {
           <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
             <span className="text-accent mr-1.5">04</span>genre inference
           </h2>
-          <p className="font-mono text-[10px] text-muted mt-0.5">
+          <p className="font-mono text-[13px] text-muted mt-0.5">
             rule-based · bpm + energy + mood + key → genre suggestion
           </p>
         </div>
         <div className="flex items-center gap-2">
           {phase === 'review' && suggestions.length > 0 && (
             <button onClick={() => { setSuggestions([]); setPhase('idle') }}
-              className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
+              className="px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
               cancel
             </button>
           )}
           {phase === 'review' && (
             <button onClick={apply} disabled={acceptedCount === 0}
-              className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors">
+              className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[13px] uppercase tracking-[0.12em] rounded transition-colors">
               apply {acceptedCount} suggestion{acceptedCount !== 1 ? 's' : ''}
             </button>
           )}
           {phase !== 'review' && phase !== 'applying' && (
             <button onClick={scan}
               disabled={phase === 'scanning' || noGenre.length === 0}
-              className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors">
+              className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[13px] uppercase tracking-[0.12em] rounded transition-colors">
               {phase === 'scanning' ? 'scanning…' : phase === 'done' ? 're-scan' : 'infer genres'}
             </button>
           )}
@@ -622,12 +622,12 @@ function GenreSection(): JSX.Element {
           {/* Header */}
           <div className="flex items-center gap-3 px-3 py-1.5 bg-ink/[0.03] border-b border-border/20">
             <button onClick={() => setSuggestions((p) => p.map((s) => ({ ...s, accepted: true })))}
-              className="font-mono text-[8px] text-accent hover:text-ink transition-colors">all</button>
+              className="font-mono text-[11px] text-accent hover:text-ink transition-colors">all</button>
             <button onClick={() => setSuggestions((p) => p.map((s) => ({ ...s, accepted: false })))}
-              className="font-mono text-[8px] text-muted hover:text-ink transition-colors">none</button>
+              className="font-mono text-[11px] text-muted hover:text-ink transition-colors">none</button>
             <span className="flex-1" />
-            <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-muted/50">genre</span>
-            <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-muted/50 w-8 text-right">conf</span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted/50">genre</span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted/50 w-8 text-right">conf</span>
           </div>
           {suggestions.map((s) => {
             const track = tracks.find((t) => t.id === s.trackId)
@@ -639,13 +639,13 @@ function GenreSection(): JSX.Element {
               >
                 <div className={`w-3 h-3 rounded border shrink-0 flex items-center justify-center transition-colors
                   ${s.accepted ? 'bg-accent border-accent' : 'border-border/40'}`}>
-                  {s.accepted && <span className="text-paper text-[8px]">✓</span>}
+                  {s.accepted && <span className="text-paper text-[11px]">✓</span>}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-mono text-[9.5px] text-ink truncate">{track?.title || s.trackId}</p>
-                  <p className="font-mono text-[8px] text-muted/50 truncate">{s.reasoning}</p>
+                  <p className="font-mono text-[12px] text-ink truncate">{track?.title || s.trackId}</p>
+                  <p className="font-mono text-[11px] text-muted/50 truncate">{s.reasoning}</p>
                 </div>
-                <span className="font-mono text-[9.5px] text-ink shrink-0">{s.genre}</span>
+                <span className="font-mono text-[12px] text-ink shrink-0">{s.genre}</span>
                 <div className="w-8 shrink-0">
                   <div className="h-1 bg-border/20 rounded-full overflow-hidden">
                     <div className="h-full rounded-full"
@@ -659,19 +659,19 @@ function GenreSection(): JSX.Element {
       )}
 
       {phase === 'review' && suggestions.length === 0 && (
-        <p className="font-mono text-[10px] text-muted">
+        <p className="font-mono text-[13px] text-muted">
           no confident inferences found — tracks may need BPM/energy analysis first
         </p>
       )}
 
       {phase === 'done' && (
-        <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+        <p className="font-mono text-[13px] text-green-600 dark:text-green-400 flex items-center gap-2">
           <span>✓</span> genres applied
         </p>
       )}
 
       {noGenre.length === 0 && phase === 'idle' && tracks.length > 0 && (
-        <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+        <p className="font-mono text-[13px] text-green-600 dark:text-green-400 flex items-center gap-2">
           <span>✓</span> all tracks have a genre
         </p>
       )}
@@ -725,14 +725,14 @@ function GainSection(): JSX.Element {
           <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
             <span className="text-accent mr-1.5">05</span>auto-gain (RMS normalisation)
           </h2>
-          <p className="font-mono text-[10px] text-muted mt-0.5">
+          <p className="font-mono text-[13px] text-muted mt-0.5">
             measures per-track loudness · stores gain_db correction to −14 dBFS target
           </p>
         </div>
         <div className="flex items-center gap-2">
           {running && (
             <button onClick={() => { cancelRef.current = true }}
-              className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
+              className="px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
               cancel
             </button>
           )}
@@ -740,7 +740,7 @@ function GainSection(): JSX.Element {
             <button
               onClick={run}
               disabled={unanalysed.length === 0}
-              className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[10px] uppercase tracking-[0.12em] rounded transition-colors"
+              className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[13px] uppercase tracking-[0.12em] rounded transition-colors"
             >
               {done ? 're-analyse' : `analyse ${unanalysed.length} track${unanalysed.length !== 1 ? 's' : ''}`}
             </button>
@@ -763,13 +763,13 @@ function GainSection(): JSX.Element {
       )}
 
       {done && !running && (
-        <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+        <p className="font-mono text-[13px] text-green-600 dark:text-green-400 flex items-center gap-2">
           <span>✓</span> gain_db stored · enable auto-gain in Settings → Preferences to apply on deck load
         </p>
       )}
 
       {unanalysed.length === 0 && !running && tracks.length > 0 && (
-        <p className="font-mono text-[10px] text-green-600 dark:text-green-400 flex items-center gap-2">
+        <p className="font-mono text-[13px] text-green-600 dark:text-green-400 flex items-center gap-2">
           <span>✓</span> all tracks have gain data
         </p>
       )}

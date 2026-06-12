@@ -84,12 +84,12 @@ export function SettingsPage(): JSX.Element {
           <h1 className="font-mono text-base font-bold uppercase tracking-[0.12em] text-ink">
             <span className="text-accent mr-2">01</span>settings
           </h1>
-          <p className="font-mono text-[10px] text-muted mt-0.5">configure integration paths and preferences</p>
+          <p className="font-mono text-[13px] text-muted mt-0.5">configure integration paths and preferences</p>
         </div>
         <button
           onClick={save}
           disabled={saving}
-          className={`px-4 py-2 rounded font-mono text-[10px] uppercase tracking-[0.12em] transition-colors ${
+          className={`px-4 py-2 rounded font-mono text-[13px] uppercase tracking-[0.12em] transition-colors ${
             saved
               ? 'bg-green-600/15 text-green-600 border border-green-600/25'
               : 'bg-accent hover:bg-accent/90 text-paper disabled:opacity-40'
@@ -116,7 +116,7 @@ export function SettingsPage(): JSX.Element {
           onChange={(v) => patch({ rekordboxDbPath: v })}
           isDirectory={false}
         />
-        <div className="flex items-start gap-2 font-mono text-[9.5px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
+        <div className="flex items-start gap-2 font-mono text-[12px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
           <span className="shrink-0 text-accent">ℹ</span>
           <span>close rekordbox before syncing directly to master.db · sqlcipher direct access available on windows and macos x64 · arm64 support coming soon</span>
         </div>
@@ -156,7 +156,7 @@ export function SettingsPage(): JSX.Element {
           onChange={(v) => patch({ appleMusicXmlPath: v })}
           isDirectory={false}
         />
-        <div className="flex items-start gap-2 font-mono text-[9.5px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
+        <div className="flex items-start gap-2 font-mono text-[12px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
           <span className="shrink-0 text-accent">ℹ</span>
           <span>Apple Music does not support write-back. Import only.</span>
         </div>
@@ -183,9 +183,134 @@ export function SettingsPage(): JSX.Element {
           onChange={(v) => patch({ m3uExportDir: v })}
           isDirectory
         />
-        <div className="flex items-start gap-2 font-mono text-[9.5px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
+        <div className="flex items-start gap-2 font-mono text-[12px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
           <span className="shrink-0 text-accent">ℹ</span>
           <span>M3U export only. Supported by VLC, djay Pro, and most media players.</span>
+        </div>
+      </Section>
+
+      {/* Lineage */}
+      <Section title="Lineage" icon="⛏">
+        <div className="space-y-1">
+          <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted block">
+            Discogs personal access token
+          </label>
+          <p className="font-mono text-[12px] text-muted/70">
+            Optional — discovery works without one but unauthenticated requests are slower (lower rate
+            limit). A free token raises the limit. Generate one at discogs.com › Settings › Developers.
+          </p>
+          <input
+            type="password"
+            value={settings.discogsToken}
+            onChange={(e) => patch({ discogsToken: e.target.value })}
+            placeholder="not set — running unauthenticated"
+            spellCheck={false}
+            autoComplete="off"
+            className="w-full bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/60"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted block">
+            AcoustID application key
+          </label>
+          <p className="font-mono text-[12px] text-muted/70">
+            Used for fingerprint-based track identity. A shared default ships with the app; override with
+            your own free key from acoustid.org if you hit limits.
+          </p>
+          <input
+            type="text"
+            value={settings.acoustidKey}
+            onChange={(e) => patch({ acoustidKey: e.target.value })}
+            placeholder="acoustid application key"
+            spellCheck={false}
+            autoComplete="off"
+            className="w-full bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/60"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted block">
+            Last.fm API key
+          </label>
+          <p className="font-mono text-[12px] text-muted/70">
+            Enables the “listeners also play” discovery route — Last.fm’s collaborative similarity data.
+            Free key from last.fm › api › account. Leave blank to skip that route.
+          </p>
+          <input
+            type="text"
+            value={settings.lastfmKey}
+            onChange={(e) => patch({ lastfmKey: e.target.value })}
+            placeholder="not set — listener route disabled"
+            spellCheck={false}
+            autoComplete="off"
+            className="w-full bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/60"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted block">
+            1001Tracklists partner API
+          </label>
+          <p className="font-mono text-[12px] text-muted/70">
+            Enables the “played alongside” route (DJ-set co-play). There is no open 1001TL API — this needs
+            their commercial/partner credentials. Leave blank to skip the route.
+          </p>
+          <input
+            type="text"
+            value={settings.tracklistsApiBase}
+            onChange={(e) => patch({ tracklistsApiBase: e.target.value })}
+            placeholder="partner API base URL (optional)"
+            spellCheck={false}
+            autoComplete="off"
+            className="w-full bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/60"
+          />
+          <input
+            type="password"
+            value={settings.tracklistsApiKey}
+            onChange={(e) => patch({ tracklistsApiKey: e.target.value })}
+            placeholder="partner API key (optional)"
+            spellCheck={false}
+            autoComplete="off"
+            className="w-full mt-1.5 bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/60"
+          />
+          <label className="flex items-center gap-2 pt-1.5 font-mono text-[12px] text-muted cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={settings.enableTracklistsScrape}
+              onChange={(e) => patch({ enableTracklistsScrape: e.target.checked })}
+              className="accent-accent"
+            />
+            Allow public fallback (fragile, best-effort — returns nothing rather than failing)
+          </label>
+        </div>
+        <div className="flex items-start gap-2 font-mono text-[12px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
+          <span className="shrink-0 text-accent">ℹ</span>
+          <span>
+            Keys are stored locally in your settings file and only used by the main process. Save settings
+            after editing, then re-open Lineage for changes to take effect.
+          </span>
+        </div>
+      </Section>
+
+      {/* Stems */}
+      <Section title="Stems (Demucs)" icon="◫">
+        <div className="space-y-1">
+          <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted block">
+            Python executable
+          </label>
+          <p className="font-mono text-[12px] text-muted/70">
+            Stem separation shells out to Demucs. Install it once with{' '}
+            <span className="text-accent">pip install demucs soundfile</span>, then point this at the Python that has it
+            (e.g. a venv’s <span className="text-accent">bin/python</span>). Separation runs once per track and is
+            cached. Toggle <span className="text-accent">STEMS</span> on a deck to separate.
+          </p>
+          <input
+            type="text"
+            value={settings.pythonPath}
+            onChange={(e) => patch({ pythonPath: e.target.value })}
+            placeholder="python3"
+            spellCheck={false}
+            autoComplete="off"
+            className="w-full bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/60"
+          />
         </div>
       </Section>
 
@@ -203,7 +328,7 @@ export function SettingsPage(): JSX.Element {
       {/* Waveform */}
       <Section title="Waveform" icon="〰">
         <div className="space-y-2">
-          <p className="font-mono text-[9.5px] text-muted uppercase tracking-[0.12em]">colour mode</p>
+          <p className="font-mono text-[12px] text-muted uppercase tracking-[0.12em]">colour mode</p>
           <div className="grid grid-cols-3 gap-2">
             {WAVEFORM_STYLES.map(({ value, label, desc }) => (
               <button
@@ -215,17 +340,17 @@ export function SettingsPage(): JSX.Element {
                     : 'border-border/40 text-muted hover:border-border hover:text-ink-soft'
                 }`}
               >
-                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em]">{label}</p>
-                <p className="font-mono text-[9px] text-muted mt-0.5 leading-tight">{desc}</p>
+                <p className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">{label}</p>
+                <p className="font-mono text-[12px] text-muted mt-0.5 leading-tight">{desc}</p>
               </button>
             ))}
           </div>
-          <p className="font-mono text-[9px] text-muted/60">takes effect next time a track is loaded</p>
+          <p className="font-mono text-[12px] text-muted/60">takes effect next time a track is loaded</p>
         </div>
 
         {/* Key notation */}
         <div className="space-y-2">
-          <p className="font-mono text-[9.5px] text-muted uppercase tracking-[0.12em]">key notation</p>
+          <p className="font-mono text-[12px] text-muted uppercase tracking-[0.12em]">key notation</p>
           <div className="flex gap-2">
             {([
               { value: 'camelot',  label: 'Camelot', example: '8A' },
@@ -241,12 +366,12 @@ export function SettingsPage(): JSX.Element {
                     : 'border-border/40 text-muted hover:border-border hover:text-ink-soft'
                 }`}
               >
-                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em]">{label}</p>
-                <p className="font-mono text-[9px] text-muted mt-0.5">{example}</p>
+                <p className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">{label}</p>
+                <p className="font-mono text-[12px] text-muted mt-0.5">{example}</p>
               </button>
             ))}
           </div>
-          <p className="font-mono text-[9px] text-muted/60">how keys are displayed in the library and deck headers</p>
+          <p className="font-mono text-[12px] text-muted/60">how keys are displayed in the library and deck headers</p>
         </div>
       </Section>
 
@@ -255,12 +380,12 @@ export function SettingsPage(): JSX.Element {
         <div className="space-y-4">
           {/* Theme */}
           <div>
-            <p className="font-mono text-[10.5px] text-ink mb-1.5">colour scheme</p>
+            <p className="font-mono text-[13px] text-ink mb-1.5">colour scheme</p>
             <div className="flex gap-2">
               {(['dark', 'light', 'system'] as const).map((t) => (
                 <button key={t}
                   onClick={() => applyTheme(t)}
-                  className={`font-mono text-[9px] uppercase tracking-[0.1em] px-3 py-1.5 rounded border transition-colors
+                  className={`font-mono text-[12px] uppercase tracking-[0.1em] px-3 py-1.5 rounded border transition-colors
                     ${currentTheme === t
                       ? 'border-accent/50 bg-accent/10 text-accent'
                       : 'border-border/30 text-muted hover:text-ink hover:border-border/60'}`}
@@ -269,14 +394,14 @@ export function SettingsPage(): JSX.Element {
                 </button>
               ))}
             </div>
-            <p className="font-mono text-[9.5px] text-muted/60 mt-1">'system' follows your OS light/dark preference</p>
+            <p className="font-mono text-[12px] text-muted/60 mt-1">'system' follows your OS light/dark preference</p>
           </div>
 
           {/* Auto-gain */}
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-mono text-[10.5px] text-ink">auto-gain normalisation</p>
-              <p className="font-mono text-[9.5px] text-muted mt-0.5">apply per-track gain trim on deck load to match loudness · requires gain_db to be analysed</p>
+              <p className="font-mono text-[13px] text-ink">auto-gain normalisation</p>
+              <p className="font-mono text-[12px] text-muted mt-0.5">apply per-track gain trim on deck load to match loudness · requires gain_db to be analysed</p>
             </div>
             <button
               onClick={() => setAutoGainEnabled(!autoGainEnabled)}
@@ -289,8 +414,8 @@ export function SettingsPage(): JSX.Element {
           {/* Welcome screen */}
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-mono text-[10.5px] text-ink">show welcome screen on startup</p>
-              <p className="font-mono text-[9.5px] text-muted mt-0.5">show the getting-started wizard when no library is loaded</p>
+              <p className="font-mono text-[13px] text-ink">show welcome screen on startup</p>
+              <p className="font-mono text-[12px] text-muted mt-0.5">show the getting-started wizard when no library is loaded</p>
             </div>
             <button
               onClick={() => patch({ showWelcomeOnStartup: !settings.showWelcomeOnStartup })}
@@ -325,7 +450,7 @@ export function SettingsPage(): JSX.Element {
       {/* Quick import shortcuts using saved paths */}
       {(settings.traktorCollectionPath || settings.seratoDir || settings.rekordboxXmlPath || settings.engineDjDbPath) && (
         <Section title="Quick Import" icon="↓">
-          <p className="font-mono text-[9.5px] text-muted mb-2">import directly from your detected integrations</p>
+          <p className="font-mono text-[12px] text-muted mb-2">import directly from your detected integrations</p>
           <div className="flex flex-wrap gap-2">
             {settings.rekordboxXmlPath && (
               <QuickImportButton
@@ -363,7 +488,7 @@ function Section({ title, icon, children }: { title: string; icon: string; child
     <section className="space-y-3">
       <div className="flex items-center gap-2 pb-1 border-b border-border/20">
         <span className="text-accent font-mono text-xs">{icon}</span>
-        <h2 className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-ink">{title}</h2>
+        <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.15em] text-ink">{title}</h2>
       </div>
       <div className="space-y-3 pl-4">{children}</div>
     </section>
@@ -378,26 +503,26 @@ function PathField({ label, description, value, isDirectory, onChange, detected 
 
   return (
     <div className="space-y-1">
-      <label className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted block">{label}</label>
-      <p className="font-mono text-[9px] text-muted/70">{description}</p>
+      <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted block">{label}</label>
+      <p className="font-mono text-[12px] text-muted/70">{description}</p>
       <div className="flex items-center gap-1.5">
         <input
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={detected ? `detected: ${detected.split('/').pop()}` : 'not set'}
-          className="flex-1 bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[10px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/60"
+          className="flex-1 bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/60"
         />
-        <button onClick={handleChoose} className="px-2.5 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[9.5px] text-ink-soft hover:text-ink transition-colors shrink-0">
+        <button onClick={handleChoose} className="px-2.5 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[12px] text-ink-soft hover:text-ink transition-colors shrink-0">
           browse
         </button>
         {detected && !value && (
-          <button onClick={() => onChange(detected)} className="px-2.5 py-1.5 bg-accent/10 hover:bg-accent/20 border border-accent/25 rounded font-mono text-[9.5px] text-accent transition-colors shrink-0">
+          <button onClick={() => onChange(detected)} className="px-2.5 py-1.5 bg-accent/10 hover:bg-accent/20 border border-accent/25 rounded font-mono text-[12px] text-accent transition-colors shrink-0">
             use detected
           </button>
         )}
         {value && (
-          <button onClick={() => window.api.settings.openInFinder(value)} className="px-2 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[9.5px] text-muted hover:text-ink transition-colors shrink-0" title="Reveal in Finder">
+          <button onClick={() => window.api.settings.openInFinder(value)} className="px-2 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[12px] text-muted hover:text-ink transition-colors shrink-0" title="Reveal in Finder">
             ↗
           </button>
         )}
@@ -438,14 +563,14 @@ function PathMappingTool(): JSX.Element {
 
   return (
     <div className="space-y-3">
-      <p className="font-mono text-[9.5px] text-muted/80 leading-relaxed">
+      <p className="font-mono text-[12px] text-muted/80 leading-relaxed">
         Use when a drive is renamed or your music folder moves. A single mapping fixes all affected track paths at once.
       </p>
 
       <div className="space-y-2">
         {(['from', 'to'] as const).map((which) => (
           <div key={which} className="flex items-center gap-1.5">
-            <span className="font-mono text-[9px] text-muted uppercase tracking-[0.1em] w-7 shrink-0">
+            <span className="font-mono text-[12px] text-muted uppercase tracking-[0.1em] w-7 shrink-0">
               {which === 'from' ? 'old' : 'new'}
             </span>
             <input
@@ -453,11 +578,11 @@ function PathMappingTool(): JSX.Element {
               value={which === 'from' ? from : to}
               onChange={(e) => { which === 'from' ? setFrom(e.target.value) : setTo(e.target.value); setPreview(null) }}
               placeholder={which === 'from' ? '/Volumes/OldDrive/Music' : '/Volumes/NewDrive/Music'}
-              className="flex-1 bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[10px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/50"
+              className="flex-1 bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/50"
             />
             <button
               onClick={() => handleBrowse(which)}
-              className="px-2.5 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[9.5px] text-ink-soft hover:text-ink transition-colors shrink-0"
+              className="px-2.5 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[12px] text-ink-soft hover:text-ink transition-colors shrink-0"
             >
               browse
             </button>
@@ -469,7 +594,7 @@ function PathMappingTool(): JSX.Element {
         <button
           onClick={handlePreview}
           disabled={!ready}
-          className="px-3 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[9.5px] text-ink-soft hover:text-ink transition-colors disabled:opacity-40"
+          className="px-3 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[12px] text-ink-soft hover:text-ink transition-colors disabled:opacity-40"
         >
           preview
         </button>
@@ -477,16 +602,16 @@ function PathMappingTool(): JSX.Element {
           <button
             onClick={handleApply}
             disabled={applying || preview === 0}
-            className="px-3 py-1.5 bg-accent hover:bg-accent/90 text-paper rounded font-mono text-[9.5px] transition-colors disabled:opacity-40"
+            className="px-3 py-1.5 bg-accent hover:bg-accent/90 text-paper rounded font-mono text-[12px] transition-colors disabled:opacity-40"
           >
             {applying ? 'applying…' : `apply to ${preview} tracks`}
           </button>
         )}
         {preview === 0 && (
-          <span className="font-mono text-[9.5px] text-muted">no tracks match that path prefix</span>
+          <span className="font-mono text-[12px] text-muted">no tracks match that path prefix</span>
         )}
         {result !== null && (
-          <span className="font-mono text-[9.5px] text-green-600 dark:text-green-400">
+          <span className="font-mono text-[12px] text-green-600 dark:text-green-400">
             ✓ {result} paths updated
           </span>
         )}
@@ -517,24 +642,24 @@ function WatchFoldersTool(): JSX.Element {
     await update((folders ?? []).filter((f) => f !== path))
   }
 
-  if (!folders) return <span className="font-mono text-[9.5px] text-muted">loading…</span>
+  if (!folders) return <span className="font-mono text-[12px] text-muted">loading…</span>
 
   return (
     <div className="space-y-3">
-      <p className="font-mono text-[9.5px] text-muted/80 leading-relaxed">
+      <p className="font-mono text-[12px] text-muted/80 leading-relaxed">
         Audio files added to a watched folder are automatically imported into the library. Supports .mp3, .flac, .aiff, .wav, .m4a, .ogg.
       </p>
 
       {folders.length === 0 ? (
-        <p className="font-mono text-[9.5px] text-muted/50 italic">No watch folders configured.</p>
+        <p className="font-mono text-[12px] text-muted/50 italic">No watch folders configured.</p>
       ) : (
         <ul className="space-y-1.5">
           {folders.map((f) => (
             <li key={f} className="flex items-center gap-2 bg-ink/[0.03] border border-border/30 rounded px-3 py-2">
-              <span className="flex-1 font-mono text-[10px] text-ink truncate">{f}</span>
+              <span className="flex-1 font-mono text-[13px] text-ink truncate">{f}</span>
               <button
                 onClick={() => window.api.settings.openInFinder(f)}
-                className="text-muted hover:text-ink transition-colors font-mono text-[9.5px]"
+                className="text-muted hover:text-ink transition-colors font-mono text-[12px]"
                 title="Reveal in Finder"
               >↗</button>
               <button
@@ -549,7 +674,7 @@ function WatchFoldersTool(): JSX.Element {
 
       <button
         onClick={add}
-        className="px-3 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[9.5px] text-ink-soft hover:text-ink transition-colors"
+        className="px-3 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[12px] text-ink-soft hover:text-ink transition-colors"
       >
         + add folder
       </button>
@@ -563,7 +688,7 @@ function WatchFoldersTool(): JSX.Element {
 function PreListenSettings(): JSX.Element {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [selectedId, setSelectedId] = useState<string>(() =>
-    localStorage.getItem('crate-prelisten-device') ?? ''
+    localStorage.getItem('offcut-prelisten-device') ?? ''
   )
   const [permissionDenied, setPermissionDenied] = useState(false)
 
@@ -579,12 +704,12 @@ function PreListenSettings(): JSX.Element {
 
   const selectDevice = (deviceId: string): void => {
     setSelectedId(deviceId)
-    localStorage.setItem('crate-prelisten-device', deviceId)
+    localStorage.setItem('offcut-prelisten-device', deviceId)
   }
 
   if (permissionDenied) {
     return (
-      <p className="font-mono text-[9.5px] text-muted/70">
+      <p className="font-mono text-[12px] text-muted/70">
         Audio device access was denied. Grant permission in System Settings → Privacy → Microphone.
       </p>
     )
@@ -592,11 +717,11 @@ function PreListenSettings(): JSX.Element {
 
   return (
     <div className="space-y-3">
-      <p className="font-mono text-[9.5px] text-muted/80 leading-relaxed">
+      <p className="font-mono text-[12px] text-muted/80 leading-relaxed">
         Select the audio output used for headphone pre-listen (CUE). Use the CUE button on each deck to route that deck to this output.
       </p>
       {devices.length === 0 ? (
-        <p className="font-mono text-[9.5px] text-muted/50 italic">No additional audio outputs detected.</p>
+        <p className="font-mono text-[12px] text-muted/50 italic">No additional audio outputs detected.</p>
       ) : (
         <div className="space-y-1.5">
           {/* Default system output */}
@@ -607,7 +732,7 @@ function PreListenSettings(): JSX.Element {
               onChange={() => selectDevice('')}
               className="accent-accent"
             />
-            <span className="font-mono text-[10px] text-ink-soft">System default</span>
+            <span className="font-mono text-[13px] text-ink-soft">System default</span>
           </label>
           {devices.map((d) => (
             <label key={d.deviceId} className="flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors hover:border-border/60 border-border/30">
@@ -617,7 +742,7 @@ function PreListenSettings(): JSX.Element {
                 onChange={() => selectDevice(d.deviceId)}
                 className="accent-accent"
               />
-              <span className="font-mono text-[10px] text-ink-soft truncate flex-1">
+              <span className="font-mono text-[13px] text-ink-soft truncate flex-1">
                 {d.label || `Output ${d.deviceId.slice(0, 8)}`}
               </span>
             </label>
@@ -626,11 +751,11 @@ function PreListenSettings(): JSX.Element {
       )}
       <button
         onClick={loadDevices}
-        className="font-mono text-[9px] text-muted hover:text-ink transition-colors uppercase tracking-[0.1em]"
+        className="font-mono text-[12px] text-muted hover:text-ink transition-colors uppercase tracking-[0.1em]"
       >
         refresh devices
       </button>
-      <p className="font-mono text-[9px] text-muted/60">
+      <p className="font-mono text-[12px] text-muted/60">
         requires a second audio output device (e.g. USB audio interface, bluetooth headphones) · setSinkId routing applied at playback
       </p>
     </div>
@@ -643,7 +768,7 @@ function QuickImportButton({ label, onClick }: { label: string; onClick: () => P
     <button
       onClick={async () => { setLoading(true); await onClick(); setLoading(false) }}
       disabled={loading}
-      className="px-3 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[10px] text-ink-soft hover:text-ink transition-colors disabled:opacity-40"
+      className="px-3 py-1.5 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[13px] text-ink-soft hover:text-ink transition-colors disabled:opacity-40"
     >
       {loading ? 'importing…' : `import from ${label}`}
     </button>
