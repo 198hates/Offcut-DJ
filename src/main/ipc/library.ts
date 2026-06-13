@@ -1097,7 +1097,7 @@ ${rows}
 
   ipcMain.handle(
     'rekordboxUsb:syncPlaylists',
-    (e, usbRoot: string, playlists: { name: string; tracks: SyncTrackInput[] }[]) => {
+    async (e, usbRoot: string, playlists: { name: string; tracks: SyncTrackInput[] }[]) => {
       try {
         const dir = join(app.getPath('userData'), 'usb-backups')
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
@@ -1114,7 +1114,7 @@ ${rows}
           p40: readFileSync(join(tdir, 'history-p40.bin'))
         }
         const today = new Date().toISOString().slice(0, 10)
-        return exportPlaylistsToUsb(usbRoot, playlists, {
+        return await exportPlaylistsToUsb(usbRoot, playlists, {
           settingsDir: tdir, history, today, backupPath,
           onProgress: (p) => { if (!e.sender.isDestroyed()) e.sender.send('rekordboxUsb:syncProgress', p) }
         })

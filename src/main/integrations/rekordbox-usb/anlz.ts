@@ -132,16 +132,33 @@ function pwav(mono: Uint8Array): Buffer {
 }
 
 // ── .EXT colour-waveform sections ─────────────────────────────────────────────
-// Colour data is derived from the monochrome preview (white/full-spectrum tint)
-// since we don't run spectral analysis — enough for the CDJ to treat the track
-// as analysed and render a waveform instead of re-analysing on load.
+// When real 3-band spectral envelopes are supplied (see waveform.ts) the colour
+// waveforms encode true bass/mid/treble; otherwise they fall back to a white
+// (full-spectrum) tint derived from the monochrome preview — still enough for
+// the CDJ to treat the track as analysed and render a waveform.
+
+/** Per-bucket amplitude envelopes (0..1). Length is independent of section size. */
+export interface AnlzBands {
+  peaks: ArrayLike<number>
+  low: ArrayLike<number>
+  mid: ArrayLike<number>
+  high: ArrayLike<number>
+}
 
 function monoAt(mono: Uint8Array, i: number, count: number): number {
   return mono[Math.min(mono.length - 1, Math.floor((i * mono.length) / Math.max(1, count)))]
 }
 
+/** Resample a 0..1 envelope to entry `i` of `count` and scale to 0..255. */
+function bandByte(arr: ArrayLike<number>, i: number, count: number): number {
+  const idx = Math.min(arr.length - 1, Math.floor((i * arr.length) / Math.max(1, count)))
+  return Math.max(0, Math.min(255, Math.round(arr[idx] * 255)))
+}
+
 // PWV3 — colour preview waveform (1 byte/entry; duration_secs * 150 entries).
-function pwv3(mono: Uint8Array, count: number): Buffer {
+// Byte: bits 7-5 = colour (1=red/bass, 2=blue/treble, 4=green/mid, 7=white),
+// bits 4-0 = height.
+function pwv3(mono: Uint8Array, count: number, bands?: AnlzBands): Buffer {
   const head = Buffer.alloc(24)
   head.write('PWV3', 0, 'ascii')
   head.writeUInt32BE(24, 4)
@@ -151,14 +168,23 @@ function pwv3(mono: Uint8Array, count: number): Buffer {
   head.writeUInt32BE(0x0096_0000, 20)
   const body = Buffer.alloc(count)
   for (let i = 0; i < count; i++) {
-    const height = monoAt(mono, i, count) & 0x1f
-    body[i] = (7 << 5) | height // 7 = white / full-spectrum
+    if (bands) {
+      const lo = bandByte(bands.low, i, count)
+      const md = bandByte(bands.mid, i, count)
+      const hi = bandByte(bands.high, i, count)
+      const height = Math.floor((Math.max(lo, md, hi) * 31) / 255) // 0..31
+      const colour = lo >= md && lo >= hi ? 1 : hi >= lo && hi >= md ? 2 : 4
+      body[i] = (colour << 5) | (height & 0x1f)
+    } else {
+      const height = monoAt(mono, i, count) & 0x1f
+      body[i] = (7 << 5) | height // white / full-spectrum
+    }
   }
   return Buffer.concat([head, body])
 }
 
 // PWV5 — detailed colour waveform (2 bytes/entry; duration_secs * 150 entries).
-function pwv5(mono: Uint8Array, count: number): Buffer {
+function pwv5(mono: Uint8Array, count: number, bands?: AnlzBands): Buffer {
   const head = Buffer.alloc(24)
   head.write('PWV5', 0, 'ascii')
   head.writeUInt32BE(24, 4)
@@ -168,15 +194,20 @@ function pwv5(mono: Uint8Array, count: number): Buffer {
   head.writeUInt32BE(0x0096_0305, 20)
   const body = Buffer.alloc(count * 2)
   for (let i = 0; i < count; i++) {
-    const height = monoAt(mono, i, count) & 0x1f
-    body[i * 2] = Math.round((height * 255) / 31) & 0xff
+    if (bands) {
+      const amp = Math.max(bandByte(bands.low, i, count), bandByte(bands.mid, i, count), bandByte(bands.high, i, count))
+      body[i * 2] = amp & 0xff
+    } else {
+      const height = monoAt(mono, i, count) & 0x1f
+      body[i * 2] = Math.round((height * 255) / 31) & 0xff
+    }
     body[i * 2 + 1] = 0x80
   }
   return Buffer.concat([head, body])
 }
 
 // PWV4 — colour waveform preview (6 bytes/entry; 1200 entries).
-function pwv4(mono: Uint8Array): Buffer {
+function pwv4(mono: Uint8Array, bands?: AnlzBands): Buffer {
   const n = 1200
   const head = Buffer.alloc(24)
   head.write('PWV4', 0, 'ascii')
@@ -187,20 +218,32 @@ function pwv4(mono: Uint8Array): Buffer {
   // 0x14: unknown (4 zero bytes)
   const body = Buffer.alloc(n * 6)
   for (let i = 0; i < n; i++) {
-    const height = monoAt(mono, i, n) & 0x1f
     const o = i * 6
-    body[o] = Math.floor(height / 2) // red
-    body[o + 1] = height // green
-    body[o + 2] = Math.floor(height / 2) // blue
-    body[o + 3] = height // height
-    body[o + 4] = Math.floor(height / 3) // blue2
-    body[o + 5] = 0 // whiteness
+    if (bands) {
+      const lo = bandByte(bands.low, i, n)
+      const md = bandByte(bands.mid, i, n)
+      const hi = bandByte(bands.high, i, n)
+      body[o] = lo // red — bass
+      body[o + 1] = md // green — mid
+      body[o + 2] = hi // blue — treble
+      body[o + 3] = Math.max(lo, md, hi) // height
+      body[o + 4] = hi >> 1 // blue2
+      body[o + 5] = 0 // whiteness
+    } else {
+      const height = monoAt(mono, i, n) & 0x1f
+      body[o] = Math.floor(height / 2)
+      body[o + 1] = height
+      body[o + 2] = Math.floor(height / 2)
+      body[o + 3] = height
+      body[o + 4] = Math.floor(height / 3)
+      body[o + 5] = 0
+    }
   }
   return Buffer.concat([head, body])
 }
 
 // PWV7 — full-resolution 3-band waveform (3 bytes/entry; duration_secs * 150).
-function pwv7(count: number): Buffer {
+function pwv7(count: number, bands?: AnlzBands): Buffer {
   const head = Buffer.alloc(24)
   head.write('PWV7', 0, 'ascii')
   head.writeUInt32BE(24, 4)
@@ -208,11 +251,19 @@ function pwv7(count: number): Buffer {
   head.writeUInt32BE(3, 12)
   head.writeUInt32BE(count, 16)
   head.writeUInt32BE(0x0096_0000, 20)
-  return Buffer.concat([head, Buffer.alloc(count * 3)])
+  const body = Buffer.alloc(count * 3)
+  if (bands) {
+    for (let i = 0; i < count; i++) {
+      body[i * 3] = bandByte(bands.low, i, count)
+      body[i * 3 + 1] = bandByte(bands.mid, i, count)
+      body[i * 3 + 2] = bandByte(bands.high, i, count)
+    }
+  }
+  return Buffer.concat([head, body])
 }
 
 // PWV6 — overview 3-band waveform (3 bytes/entry; 1200 entries).
-function pwv6(): Buffer {
+function pwv6(bands?: AnlzBands): Buffer {
   const n = 1200
   const head = Buffer.alloc(20)
   head.write('PWV6', 0, 'ascii')
@@ -220,7 +271,15 @@ function pwv6(): Buffer {
   head.writeUInt32BE(20 + n * 3, 8)
   head.writeUInt32BE(3, 12)
   head.writeUInt32BE(n, 16)
-  return Buffer.concat([head, Buffer.alloc(n * 3)])
+  const body = Buffer.alloc(n * 3)
+  if (bands) {
+    for (let i = 0; i < n; i++) {
+      body[i * 3] = bandByte(bands.low, i, n)
+      body[i * 3 + 1] = bandByte(bands.mid, i, n)
+      body[i * 3 + 2] = bandByte(bands.high, i, n)
+    }
+  }
+  return Buffer.concat([head, body])
 }
 
 // PCO2 — extended cue/loop list with PCP2 entries.
@@ -284,7 +343,7 @@ function pvb2(): Buffer {
 // ── Monochrome preview helper ────────────────────────────────────────────────
 
 /** Build the 400-byte monochrome preview shared by the .DAT and .EXT files. */
-function buildMonoPreview(peaks?: number[]): Uint8Array {
+function buildMonoPreview(peaks?: ArrayLike<number>): Uint8Array {
   const len = 400
   const prev = new Uint8Array(len)
   for (let i = 0; i < len; i++) {
@@ -367,6 +426,8 @@ export interface BuildAnlzOptions {
   durationSecs?: number
   /** Optional amplitude peaks (0..1) to render the preview; flat otherwise. */
   peaks?: number[]
+  /** Optional 3-band spectral envelopes for true-colour waveforms (see waveform.ts). */
+  bands?: AnlzBands
   /** Hot cues + memory cues; defaults to none. */
   cues?: AnlzCue[]
 }
@@ -377,7 +438,7 @@ export interface BuildAnlzOptions {
  * → PCOB memory).
  */
 export function buildDatAnlz(opts: BuildAnlzOptions): Buffer {
-  const mono = buildMonoPreview(opts.peaks)
+  const mono = buildMonoPreview(opts.bands?.peaks ?? opts.peaks)
   const cues = opts.cues ?? []
   const hot = cues.filter((c) => c.hotCueNumber > 0)
   const memory = cues.filter((c) => c.hotCueNumber === 0)
@@ -391,7 +452,8 @@ export function buildDatAnlz(opts: BuildAnlzOptions): Buffer {
  * → PQT2 → PWV5 → PWV4 → PWV7 → PWV6 → PVB2.
  */
 export function buildExtAnlz(opts: BuildAnlzOptions): Buffer {
-  const mono = buildMonoPreview(opts.peaks)
+  const mono = buildMonoPreview(opts.bands?.peaks ?? opts.peaks)
+  const bands = opts.bands
   const duration = opts.durationSecs ?? 0
   const count = Math.max(0, Math.round(duration * 150))
   const cues = opts.cues ?? []
@@ -399,16 +461,16 @@ export function buildExtAnlz(opts: BuildAnlzOptions): Buffer {
   const memory = cues.filter((c) => c.hotCueNumber === 0)
   return pmaiFile([
     ppth(opts.audioPath),
-    pwv3(mono, count),
+    pwv3(mono, count, bands),
     pcob(1, []), // EXT PCOBs are always empty; real cues go in PCO2
     pcob(0, []),
     pco2(1, hot),
     pco2(0, memory),
     pqt2(opts.beats, duration),
-    pwv5(mono, count),
-    pwv4(mono),
-    pwv7(count),
-    pwv6(),
+    pwv5(mono, count, bands),
+    pwv4(mono, bands),
+    pwv7(count, bands),
+    pwv6(bands),
     pvb2()
   ])
 }

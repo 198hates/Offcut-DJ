@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, copyFileSync, mkdirSync, statSync, existsS
 import { join, basename, dirname } from 'path'
 import { resolveExportPdb, parseExportPdb } from './reader'
 import { buildDatAnlz, buildExtAnlz, anlzDirForPath, beatsFromMarkers, beatsFromBpm, type AnlzBeat } from './anlz'
+import { analyzeWaveform } from './waveform'
 import { buildExportPdb, type PdbTrack, type PdbPlaylist, type HistoryBlobs } from './pdb-builder'
 import type { UsbPlaylistNode, UsbTrack } from './types'
 import type { BeatgridMarker } from '../../../shared/types'
@@ -680,11 +681,11 @@ export interface ExportToUsbResult {
  * ANLZ, lays down export.pdb + the Pioneer settings files. Replaces the stick's
  * database (backed up off-stick first). `today` is YYYY-MM-DD.
  */
-export function exportPlaylistsToUsb(
+export async function exportPlaylistsToUsb(
   usbRoot: string,
   playlists: { name: string; tracks: SyncTrackInput[] }[],
   opts: { settingsDir: string; history: HistoryBlobs; today: string; backupPath?: string; onProgress?: (p: SyncProgress) => void }
-): ExportToUsbResult {
+): Promise<ExportToUsbResult> {
   const rbDir = join(usbRoot, 'PIONEER', 'rekordbox')
   mkdirSync(rbDir, { recursive: true })
   const pdbPath = join(rbDir, 'export.pdb')
@@ -704,7 +705,7 @@ export function exportPlaylistsToUsb(
   const skipped: string[] = []
   let nextId = 1
 
-  const resolveTrack = (t: SyncTrackInput): number | null => {
+  const resolveTrack = async (t: SyncTrackInput): Promise<number | null> => {
     const existing = trackIdByPath.get(t.audioFilePath)
     if (existing != null) return existing
     let fileSize = 0
@@ -720,6 +721,10 @@ export function exportPlaylistsToUsb(
     const deviceFilePath = `/Contents/Offcut/${safeFileName}`
     copyFileSync(t.audioFilePath, join(contentsDir, safeFileName))
 
+    // Spectral analysis for true-colour waveforms (bass/mid/treble). Falls back
+    // to a flat waveform if decoding fails — never aborts the export.
+    const bands = (await analyzeWaveform(t.audioFilePath, t.durationSec)) ?? undefined
+
     // ANLZ files MUST live at the hash-computed path — the CDJ recomputes the
     // path from the audio file's USB path and ignores analyze_path. Write both
     // .DAT and .EXT (the CDJ-3000 re-analyses every track without the .EXT).
@@ -727,7 +732,7 @@ export function exportPlaylistsToUsb(
     const analyzePath = `/${anlzDir}/ANLZ0000.DAT`
     mkdirSync(join(usbRoot, anlzDir), { recursive: true })
     const beats: AnlzBeat[] = t.beatgrid?.length ? beatsFromMarkers(t.beatgrid, t.bpm) : beatsFromBpm(t.bpm, t.durationSec)
-    const anlzOpts = { audioPath: deviceFilePath, beats, durationSecs: t.durationSec }
+    const anlzOpts = { audioPath: deviceFilePath, beats, durationSecs: t.durationSec, bands }
     writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.DAT'), buildDatAnlz(anlzOpts))
     writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.EXT'), buildExtAnlz(anlzOpts))
 
@@ -744,20 +749,20 @@ export function exportPlaylistsToUsb(
 
   const pdbPlaylists: PdbPlaylist[] = []
   const resultPlaylists: { name: string; tracks: number }[] = []
-  playlists.forEach((pl, pi) => {
+  for (const [pi, pl] of playlists.entries()) {
     const ids: number[] = []
-    pl.tracks.forEach((t, ti) => {
+    for (const [ti, t] of pl.tracks.entries()) {
       opts.onProgress?.({
         playlist: pl.name, playlistIndex: pi, playlistTotal: playlists.length,
         track: `${t.artist} – ${t.title}`, trackIndex: ti, trackTotal: pl.tracks.length,
         action: trackIdByPath.has(t.audioFilePath) ? 'link' : 'copy'
       })
-      const id = resolveTrack(t)
+      const id = await resolveTrack(t)
       if (id != null) ids.push(id)
-    })
+    }
     pdbPlaylists.push({ id: pi + 1, name: pl.name, trackIds: ids })
     resultPlaylists.push({ name: pl.name, tracks: ids.length })
-  })
+  }
 
   writeFileSync(pdbPath, buildExportPdb(pdbTracks, pdbPlaylists, opts.history, opts.today))
   writeRekordboxStructure(usbRoot, opts.settingsDir)
