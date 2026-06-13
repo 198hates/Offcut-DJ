@@ -5,7 +5,7 @@ import type {
   PlayerStatus, CapturedTrack, ProLinkNetworkIface, ProLinkSessionState,
   EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed,
   StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef,
-  StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, BeatgridMarker,
+  StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, BeatgridMarker, CuePoint,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -98,7 +98,7 @@ declare global {
         >
         syncPlaylists: (
           usbRoot: string,
-          playlists: { name: string; tracks: { artist: string; title: string; audioFilePath: string; bpm: number; durationSec: number; beatgrid?: BeatgridMarker[]; bitrate?: number; year?: number }[] }[]
+          playlists: { name: string; tracks: { artist: string; title: string; audioFilePath: string; bpm: number; durationSec: number; beatgrid?: BeatgridMarker[]; bitrate?: number; year?: number; key?: string; album?: string; genre?: string; cuePoints?: CuePoint[] }[] }[]
         ) => Promise<
           { backupPath: string; totalAdded: number; totalLinked: number; playlists: { name: string; linked: number; added: number; newEntries: number; updatedExisting: boolean; skipped: string[] }[] } | { error: string }
         >

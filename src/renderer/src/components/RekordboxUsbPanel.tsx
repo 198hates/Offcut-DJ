@@ -270,7 +270,11 @@ export function RekordboxUsbPanel(): JSX.Element {
           bpm: t.bpm ?? 0,
           durationSec: Math.round(t.durationSeconds ?? 0),
           beatgrid: t.beatgrid,
-          year: t.year ?? undefined
+          year: t.year ?? undefined,
+          key: t.key ?? undefined,
+          album: t.album || undefined,
+          genre: t.genre || undefined,
+          cuePoints: t.cuePoints
         }))
     }))
     const res = await window.api.rekordboxUsb.syncPlaylists(usbRoot, payload)

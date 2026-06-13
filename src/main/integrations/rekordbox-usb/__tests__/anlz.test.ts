@@ -60,6 +60,31 @@ describe('ANLZ .DAT', () => {
     expect(s.find((x) => x.tag === 'PVBR')!.total).toBe(1620)
     expect(s.find((x) => x.tag === 'PWAV')!.total).toBe(420) // 20 header + 400
   })
+
+  it('writes hot + memory cues into PCOB with valid cue_type/positions', () => {
+    const cues = [
+      { hotCueNumber: 1, timeMs: 5000 }, // hot cue A
+      { hotCueNumber: 0, timeMs: 30000 }, // memory cue
+      { hotCueNumber: 0, timeMs: 60000, loopTimeMs: 64000 } // memory loop
+    ]
+    const dat = buildDatAnlz({ ...opts, cues })
+    const sec = sections(dat).filter((s) => s.tag === 'PCOB')
+    // hot list (1 entry) then memory list (2 entries): 24 hdr + n*56.
+    expect(sec[0].total).toBe(24 + 56) // hot: 1 cue
+    expect(sec[1].total).toBe(24 + 2 * 56) // memory: 2 cues
+    // First PCPT of the hot list: cue_type (0x1c) = 0 (point), time (0x20) = 5000.
+    let off = 0x1c
+    let pcobStart = -1
+    while (off < dat.length) {
+      const tag = dat.toString('ascii', off, off + 4)
+      if (tag === 'PCOB') { pcobStart = off; break }
+      off += dat.readUInt32BE(off + 8)
+    }
+    const e = pcobStart + 24 // first PCPT
+    expect(dat.toString('ascii', e, e + 4)).toBe('PCPT')
+    expect(dat.readUInt8(e + 0x1c)).toBe(0) // cue_type = point (NOT 1)
+    expect(dat.readUInt32BE(e + 0x20)).toBe(5000) // time
+  })
 })
 
 describe('ANLZ .EXT', () => {

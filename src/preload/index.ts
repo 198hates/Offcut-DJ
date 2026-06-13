@@ -146,6 +146,7 @@ const api = {
         tracks: {
           artist: string; title: string; audioFilePath: string; bpm: number; durationSec: number
           beatgrid?: import('../shared/types').BeatgridMarker[]; bitrate?: number; year?: number
+          key?: string; album?: string; genre?: string; cuePoints?: import('../shared/types').CuePoint[]
         }[]
       }[]
     ): Promise<

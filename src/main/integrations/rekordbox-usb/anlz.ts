@@ -62,30 +62,34 @@ function ppth(usbPath: string): Buffer {
 }
 
 // PCOB — cue/loop list with PCPT entries (type 1 = hot cues, 0 = memory cues).
+// Header: list_type(u32) + unknown(u16) + len_cues(u16) + memory_count(u32);
+// cues begin at 0x18. Each PCPT entry is 56 bytes. cue_type is 0 (point) or 2
+// (loop) — NOT 1 (the parser rejects any other value).
 function pcob(type: 0 | 1, cues: AnlzCue[]): Buffer {
   const head = Buffer.alloc(24)
   head.write('PCOB', 0, 'ascii')
-  head.writeUInt32BE(24, 4)
+  head.writeUInt32BE(24, 4) // size — cues begin here
   head.writeUInt32BE(24 + cues.length * 56, 8)
-  head.writeUInt32BE(type, 12)
-  head.writeUInt32BE(cues.length, 16)
-  // hot cues always 0xFFFFFFFF; memory cues use 0 when entries are present.
-  head.writeUInt32BE(cues.length && type === 0 ? 0 : 0xffffffff, 20)
+  head.writeUInt32BE(type, 12) // list_type
+  head.writeUInt16BE(0, 16) // unknown
+  head.writeUInt16BE(cues.length & 0xffff, 18) // len_cues
+  head.writeUInt32BE(type === 1 ? 0xffffffff : 0, 20) // memory_count
 
-  const entries = cues.map((cue) => {
+  const entries = cues.map((cue, i) => {
     const e = Buffer.alloc(56)
     e.write('PCPT', 0, 'ascii')
-    e.writeUInt32BE(28, 4) // header_len
-    e.writeUInt32BE(56, 8) // entry_len
-    e.writeUInt32BE(cue.hotCueNumber, 12)
-    // 0x10: status (4 zero bytes)
-    e.writeUInt16BE(0x0001, 20)
-    // 0x16: unknown (2 zero bytes)
-    e.writeUInt32BE(0xffffffff, 24) // 0x18 sentinel
-    e.writeUInt8(0x01, 28) // 0x1c type (1 = cue)
-    e.writeUInt16BE(0x03e8, 30) // 0x1e loop denominator
-    e.writeUInt32BE(Math.round(cue.timeMs) >>> 0, 32) // 0x20 time_ms
-    e.writeUInt32BE(cue.loopTimeMs != null ? Math.round(cue.loopTimeMs) >>> 0 : 0xffffffff, 36) // 0x24 loop_time
+    e.writeUInt32BE(0x1c, 4) // size
+    e.writeUInt32BE(56, 8) // total_size
+    e.writeUInt32BE(cue.hotCueNumber, 12) // hot_cue
+    e.writeUInt32BE(0, 16) // status
+    e.writeUInt32BE(0x0010_0000, 20) // unknown1
+    e.writeUInt16BE(0xffff, 24) // order_first
+    e.writeUInt16BE((i + 1) & 0xffff, 26) // order_last
+    e.writeUInt8(cue.loopTimeMs != null ? 2 : 0, 28) // cue_type (0 point, 2 loop)
+    // 0x1d unknown2 = 0
+    e.writeUInt16BE(0x03e8, 30) // unknown3
+    e.writeUInt32BE(Math.round(cue.timeMs) >>> 0, 32) // time
+    e.writeUInt32BE(cue.loopTimeMs != null ? Math.round(cue.loopTimeMs) >>> 0 : 0xffffffff, 36) // loop_time
     return e
   })
   return Buffer.concat([head, ...entries])
@@ -318,27 +322,36 @@ function pwvc(bands: AnlzBands): Buffer {
   return buf
 }
 
-// PCO2 — extended cue/loop list with PCP2 entries.
+// PCO2 — extended cue/loop list with PCP2 entries (Nexus2+; adds colour +
+// comment). Header: list_type(u32) + len_cues(u16) + unknown(u16=0); cues begin
+// at 0x14. Each PCP2 entry is 70 bytes with an empty comment (just its 2-byte
+// null terminator → len_comment = 2). cue_type is 0 (point) or 2 (loop).
+const PCP2_LEN = 70
 function pco2(type: 0 | 1, cues: AnlzCue[]): Buffer {
   const head = Buffer.alloc(20)
   head.write('PCO2', 0, 'ascii')
-  head.writeUInt32BE(20, 4)
-  head.writeUInt32BE(20 + cues.length * 88, 8)
-  head.writeUInt32BE(type, 12)
-  head.writeUInt16BE(cues.length & 0xffff, 16)
-  // 0x12: padding (2 zero bytes)
+  head.writeUInt32BE(20, 4) // size — cues begin here
+  head.writeUInt32BE(20 + cues.length * PCP2_LEN, 8)
+  head.writeUInt32BE(type, 12) // list_type
+  head.writeUInt16BE(cues.length & 0xffff, 16) // len_cues
+  head.writeUInt16BE(0, 18) // unknown (must be 0)
 
   const entries = cues.map((cue) => {
-    const e = Buffer.alloc(88)
+    const e = Buffer.alloc(PCP2_LEN)
     e.write('PCP2', 0, 'ascii')
-    e.writeUInt32BE(16, 4) // header_len
-    e.writeUInt32BE(88, 8) // entry_len
-    e.writeUInt32BE(cue.hotCueNumber, 12)
-    e.writeUInt8(0x01, 16) // type (1 = cue)
-    e.writeUInt16BE(0x03e8, 18) // loop denominator
-    e.writeUInt32BE(Math.round(cue.timeMs) >>> 0, 20)
-    e.writeUInt32BE(cue.loopTimeMs != null ? Math.round(cue.loopTimeMs) >>> 0 : 0xffffffff, 24)
-    e.writeUInt16BE(0x0001, 28)
+    e.writeUInt32BE(0x10, 4) // size
+    e.writeUInt32BE(PCP2_LEN, 8) // total_size
+    e.writeUInt32BE(cue.hotCueNumber, 12) // hot_cue
+    e.writeUInt8(cue.loopTimeMs != null ? 2 : 0, 16) // cue_type (0 point, 2 loop)
+    // 0x11 unknown1 = 0
+    e.writeUInt16BE(0x03e8, 18) // unknown2
+    e.writeUInt32BE(Math.round(cue.timeMs) >>> 0, 20) // time
+    e.writeUInt32BE(cue.loopTimeMs != null ? Math.round(cue.loopTimeMs) >>> 0 : 0xffffffff, 24) // loop_time
+    // 0x1c color, 0x1d unknown3, 0x1e unknown4, 0x20 unknown5,
+    // 0x24 loop_numerator, 0x26 loop_denominator — all zero
+    e.writeUInt32BE(2, 40) // 0x28 len_comment = 2 (empty comment + null terminator)
+    // 0x2c comment = 0x0000 (null terminator, already zero)
+    // 0x2e hot_cue_color_index, 0x2f rgb, 0x32 unknown6-10 — all zero
     return e
   })
   return Buffer.concat([head, ...entries])

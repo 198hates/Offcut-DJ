@@ -13,11 +13,25 @@
 import { readFileSync, writeFileSync, copyFileSync, mkdirSync, statSync, existsSync } from 'fs'
 import { join, basename, dirname } from 'path'
 import { resolveExportPdb, parseExportPdb } from './reader'
-import { buildDatAnlz, buildExtAnlz, build2exAnlz, anlzDirForPath, beatsFromMarkers, beatsFromBpm, type AnlzBeat } from './anlz'
+import { buildDatAnlz, buildExtAnlz, build2exAnlz, anlzDirForPath, beatsFromMarkers, beatsFromBpm, type AnlzBeat, type AnlzCue } from './anlz'
 import { analyzeWaveform } from './waveform'
 import { buildExportPdb, type PdbTrack, type PdbPlaylist, type HistoryBlobs } from './pdb-builder'
 import type { UsbPlaylistNode, UsbTrack } from './types'
-import type { BeatgridMarker } from '../../../shared/types'
+import type { BeatgridMarker, CuePoint } from '../../../shared/types'
+
+/**
+ * Map Offcut cue points to ANLZ cues. Hot cues become numbered hot cues
+ * (A=1, B=2…); memory cues and loops become memory cues (hotCueNumber 0). Loops
+ * carry their end position so the CDJ restores the loop length.
+ */
+function toAnlzCues(cues: CuePoint[] | undefined): AnlzCue[] {
+  if (!cues?.length) return []
+  return cues.map((c) => ({
+    hotCueNumber: c.type === 'hotcue' ? Math.max(1, c.index + 1) : 0,
+    timeMs: c.positionMs,
+    loopTimeMs: c.type === 'loop' ? c.endMs : undefined
+  }))
+}
 // Generated Kaitai parser — used here only for its PageType enum.
 import RekordboxPdb from './kaitai/RekordboxPdb.cjs'
 
@@ -453,6 +467,8 @@ export interface SyncTrackInput {
   key?: string
   album?: string
   genre?: string
+  /** Hot cues, memory cues and loops from Offcut, written into the ANLZ files. */
+  cuePoints?: CuePoint[]
 }
 
 export interface SyncPlaylistResult {
@@ -732,7 +748,7 @@ export async function exportPlaylistsToUsb(
     const analyzePath = `/${anlzDir}/ANLZ0000.DAT`
     mkdirSync(join(usbRoot, anlzDir), { recursive: true })
     const beats: AnlzBeat[] = t.beatgrid?.length ? beatsFromMarkers(t.beatgrid, t.bpm) : beatsFromBpm(t.bpm, t.durationSec)
-    const anlzOpts = { audioPath: deviceFilePath, beats, durationSecs: t.durationSec, bands }
+    const anlzOpts = { audioPath: deviceFilePath, beats, durationSecs: t.durationSec, bands, cues: toAnlzCues(t.cuePoints) }
     writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.DAT'), buildDatAnlz(anlzOpts))
     writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.EXT'), buildExtAnlz(anlzOpts))
     // .2EX holds the CDJ-3000's native 3-band waveforms (only when we have bands).
