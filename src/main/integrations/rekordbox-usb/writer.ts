@@ -13,7 +13,7 @@
 import { readFileSync, writeFileSync, copyFileSync, mkdirSync, statSync, existsSync } from 'fs'
 import { join, basename, dirname } from 'path'
 import { resolveExportPdb, parseExportPdb } from './reader'
-import { buildDatAnlz, beatsFromMarkers, beatsFromBpm, type AnlzBeat } from './anlz'
+import { buildDatAnlz, buildExtAnlz, anlzDirForPath, beatsFromMarkers, beatsFromBpm, type AnlzBeat } from './anlz'
 import { buildExportPdb, type PdbTrack, type PdbPlaylist, type HistoryBlobs } from './pdb-builder'
 import type { UsbPlaylistNode, UsbTrack } from './types'
 import type { BeatgridMarker } from '../../../shared/types'
@@ -720,10 +720,16 @@ export function exportPlaylistsToUsb(
     const deviceFilePath = `/Contents/Offcut/${safeFileName}`
     copyFileSync(t.audioFilePath, join(contentsDir, safeFileName))
 
-    const analyzePath = `/PIONEER/USBANLZ/OFCT/${hex}/ANLZ0000.DAT`
-    mkdirSync(join(usbRoot, 'PIONEER', 'USBANLZ', 'OFCT', hex), { recursive: true })
+    // ANLZ files MUST live at the hash-computed path — the CDJ recomputes the
+    // path from the audio file's USB path and ignores analyze_path. Write both
+    // .DAT and .EXT (the CDJ-3000 re-analyses every track without the .EXT).
+    const anlzDir = anlzDirForPath(deviceFilePath)
+    const analyzePath = `/${anlzDir}/ANLZ0000.DAT`
+    mkdirSync(join(usbRoot, anlzDir), { recursive: true })
     const beats: AnlzBeat[] = t.beatgrid?.length ? beatsFromMarkers(t.beatgrid, t.bpm) : beatsFromBpm(t.bpm, t.durationSec)
-    writeFileSync(join(usbRoot, analyzePath.replace(/^\//, '')), buildDatAnlz({ audioPath: deviceFilePath, beats }))
+    const anlzOpts = { audioPath: deviceFilePath, beats, durationSecs: t.durationSec }
+    writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.DAT'), buildDatAnlz(anlzOpts))
+    writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.EXT'), buildExtAnlz(anlzOpts))
 
     trackIdByPath.set(t.audioFilePath, id)
     pdbTracks.push({

@@ -243,7 +243,7 @@ describe('buildDatAnlz', () => {
         for (let i = 0; i + 1 < textBuf.length; i += 2) {
           const tmp = textBuf[i]; textBuf[i] = textBuf[i + 1]; textBuf[i + 1] = tmp
         }
-        foundPath = textBuf.toString('utf16le')
+        foundPath = textBuf.toString('utf16le').replace(/\0+$/, '') // strip null terminator
         break
       }
       pos += dat.readUInt32BE(pos + 8)
@@ -263,11 +263,8 @@ describe('buildDatAnlz', () => {
       tags.push(tag)
       pos += lenTag
     }
-    expect(tags).toContain('PPTH')
-    expect(tags).toContain('PQTZ')
-    expect(tags).toContain('PWAV')
-    expect(tags).toContain('PWV2')
-    expect(tags).toContain('PCOB')
+    // rekordbox .DAT section order (fourfour-faithful): PPTH→PVBR→PQTZ→PWAV→PCOB×2
+    expect(tags).toEqual(['PPTH', 'PVBR', 'PQTZ', 'PWAV', 'PCOB', 'PCOB'])
     expect(pos).toBe(dat.length) // walked exactly to end
   })
 })
