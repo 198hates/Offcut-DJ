@@ -92,17 +92,13 @@ function filterRms(samples: Float32Array, f: Biquad, out: Float32Array): void {
   for (let b = 0; b < out.length; b++) out[b] = count[b] > 0 ? Math.sqrt(sumsq[b] / count[b]) : 0
 }
 
-// Perceptual band emphasis. Music spectra tilt ~-6 dB/octave, so bass always
-// dwarfs treble; without this the waveform reads as a warm bass/mid block with
-// no visible highs. These gains lift mids/highs so the colour spreads the way
-// rekordbox renders it (bass blue, mids amber, highs white).
-const BAND_GAIN = { low: 1.0, mid: 1.5, high: 2.2 }
-
 /**
  * Split mono PCM into 3 frequency bands with Butterworth biquads and reduce each
- * to `buckets` per-bucket RMS values. Bands are perceptually weighted then share
- * one normalisation scale so colour ratios survive; the mono preview keeps a
- * peak envelope (its outline should show transients).
+ * to `buckets` per-bucket RMS values, then share one normalisation scale so the
+ * loudest column hits full level and the band ratios survive. (Real rekordbox
+ * exports apply no perceptual gain — RMS already gives bass a low average with
+ * peaky maxima while mids/highs read higher, which is the natural balance.) The
+ * mono preview keeps a peak envelope; its outline should show transients.
  */
 export function computeWaveformBands(samples: Float32Array, sampleRate: number, buckets: number): WaveformBands {
   const n = Math.max(1, buckets)
@@ -125,12 +121,6 @@ export function computeWaveformBands(samples: Float32Array, sampleRate: number, 
   filterRms(samples, lowpass(300, sampleRate), low)
   filterRms(samples, bandpass(midCentre, sampleRate, midCentre / 2700), mid)
   filterRms(samples, highpass(3000, sampleRate), high)
-
-  for (let i = 0; i < n; i++) {
-    low[i] *= BAND_GAIN.low
-    mid[i] *= BAND_GAIN.mid
-    high[i] *= BAND_GAIN.high
-  }
 
   scale(peaks, maxOf(peaks))
   const bandMax = Math.max(maxOf(low), maxOf(mid), maxOf(high))

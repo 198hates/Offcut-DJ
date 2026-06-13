@@ -89,24 +89,20 @@ describe('ANLZ .EXT', () => {
     high: new Float32Array(n).fill(hi)
   })
 
-  it('packs PWV5 as [red:3][green:3][blue:3][height:5] with a real height', () => {
-    // Bass-dominant → red high, height non-zero (the bug fourfour had: height≈0).
-    const ext = buildExtAnlz({ ...opts, bands: bandsOf(200, 1, 0.1, 0.1) })
-    const pwv5 = sectionData(ext, 'PWV5', 24)
-    const v = pwv5.readUInt16BE(0)
-    const red = (v >> 13) & 7
-    const green = (v >> 10) & 7
-    const blue = (v >> 7) & 7
-    const height = (v >> 2) & 0x1f
-    expect(red).toBe(7) // bass maxed
-    expect(blue).toBeLessThan(red) // treble quiet
-    expect(height).toBe(31) // NOT zero — this is the flat-line fix
-    expect(green).toBeGreaterThanOrEqual(0)
+  it('packs PWV5 with mid→red/treble→green/bass→blue and a real height', () => {
+    // Real rekordbox convention (verified by decoding a rekordbox stick).
+    const dec = (lo: number, md: number, hi: number) => {
+      const v = sectionData(buildExtAnlz({ ...opts, bands: bandsOf(200, lo, md, hi) }), 'PWV5', 24).readUInt16BE(0)
+      return { r: (v >> 13) & 7, g: (v >> 10) & 7, b: (v >> 7) & 7, h: (v >> 2) & 0x1f }
+    }
+    const mids = dec(0.1, 1, 0.1)
+    expect(mids.r).toBe(7) // mid → red
+    expect(mids.h).toBe(31) // height non-zero — the flat-line fix
+    expect(mids.r).toBeGreaterThan(mids.g)
+    expect(mids.r).toBeGreaterThan(mids.b)
 
-    // Treble-dominant → blue high.
-    const v2 = sectionData(buildExtAnlz({ ...opts, bands: bandsOf(200, 0.1, 0.1, 1) }), 'PWV5', 24).readUInt16BE(0)
-    expect((v2 >> 7) & 7).toBe(7) // blue maxed
-    expect((v2 >> 13) & 7).toBeLessThan(7) // red quiet
+    expect(dec(0.1, 0.1, 1).g).toBe(7) // treble → green
+    expect(dec(1, 0.1, 0.1).b).toBe(7) // bass → blue
   })
 })
 
@@ -126,11 +122,10 @@ describe('ANLZ .2EX (CDJ-3000 3-band)', () => {
     expect(tags).toEqual(['PPTH', 'PWV6', 'PWV7'])
 
     const pwv7 = sectionData(two, 'PWV7', 24)
-    // byte order [mid, high, low] → [128, 0, 255]
-    expect(pwv7[0]).toBeGreaterThanOrEqual(127)
-    expect(pwv7[0]).toBeLessThanOrEqual(128)
+    // byte order [mid, high, low], scaled 0..127 → mid 0.5→64, high 0→0, low 1→127
+    expect(pwv7[0]).toBe(64)
     expect(pwv7[1]).toBe(0)
-    expect(pwv7[2]).toBe(255)
+    expect(pwv7[2]).toBe(127)
   })
 
   it('is null without spectral bands (no point writing empty 3-band data)', () => {
