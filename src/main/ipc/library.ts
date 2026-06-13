@@ -29,7 +29,7 @@ import { analyzeBeats, isModelAvailable, getDefaultModelPath, warmModel } from '
 import { writeTagsToFile } from '../integrations/file-tags/writer'
 import { readUsbHistory, findPioneerUsbMount } from '../integrations/pioneer-usb/history-reader'
 import { findRekordboxUsbs, readRekordboxUsb, listUsbVolumes, resolveExportPdb } from '../integrations/rekordbox-usb/reader'
-import { writePlaylistToUsb, syncPlaylistsToUsb, initializeUsb } from '../integrations/rekordbox-usb/writer'
+import { writePlaylistToUsb, syncPlaylistsToUsb, initializeUsb, writeRekordboxStructure } from '../integrations/rekordbox-usb/writer'
 import type { SyncTrackInput } from '../integrations/rekordbox-usb/writer'
 import { importFromUsbBackup } from '../integrations/rekordbox-usb/backup-import'
 import { startWatcher } from '../integrations/watch-folder'
@@ -1080,12 +1080,16 @@ ${rows}
     }
   }
 
+  // Directory holding the bundled Rekordbox templates (empty-export.pdb +
+  // the *SETTING.DAT files). Dev reads from source; packaged from resources.
+  const rekordboxTemplatesDir = (): string =>
+    app.isPackaged
+      ? join(process.resourcesPath, 'rekordbox')
+      : join(app.getAppPath(), 'src', 'main', 'integrations', 'rekordbox-usb', 'templates')
+
   ipcMain.handle('rekordboxUsb:initialize', (_e, usbRoot: string) => {
     try {
-      const templatePath = app.isPackaged
-        ? join(process.resourcesPath, 'rekordbox', 'empty-export.pdb')
-        : join(app.getAppPath(), 'src', 'main', 'integrations', 'rekordbox-usb', 'templates', 'empty-export.pdb')
-      return initializeUsb(usbRoot, templatePath)
+      return initializeUsb(usbRoot, join(rekordboxTemplatesDir(), 'empty-export.pdb'))
     } catch (err) {
       return { error: (err as Error).message }
     }
@@ -1100,6 +1104,9 @@ ${rows}
         const stamp = new Date().toISOString().replace(/[:.]/g, '-')
         const vol = usbRoot.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'usb'
         const backupPath = join(dir, `${vol}-${stamp}.export.pdb`)
+        // Backfill the Pioneer settings files/folders a CDJ requires, in case
+        // this stick was set up by an older build that didn't write them.
+        writeRekordboxStructure(usbRoot, rekordboxTemplatesDir())
         return syncPlaylistsToUsb(usbRoot, playlists, backupPath, (p) => {
           if (!e.sender.isDestroyed()) e.sender.send('rekordboxUsb:syncProgress', p)
         })

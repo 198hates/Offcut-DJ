@@ -11,7 +11,7 @@
 // hardware before relying on it for a set.
 
 import { readFileSync, writeFileSync, copyFileSync, mkdirSync, statSync, existsSync } from 'fs'
-import { join, basename } from 'path'
+import { join, basename, dirname } from 'path'
 import { resolveExportPdb, parseExportPdb } from './reader'
 import { buildDatAnlz, beatsFromMarkers, beatsFromBpm, type AnlzBeat } from './anlz'
 import type { UsbPlaylistNode, UsbTrack } from './types'
@@ -266,8 +266,15 @@ function trackRowBuf(o: NewTrackFields): Buffer {
   const u2 = (v: number): void => { fixed.writeUInt16LE(v & 0xffff, p); p += 2 }
   const u4 = (v: number): void => { fixed.writeUInt32LE(v >>> 0, p); p += 4 }
   const u1 = (v: number): void => { fixed.writeUInt8(v & 0xff, p); p += 1 }
-  u2(0x24); u2(0); u4(0)
-  u4(o.sampleRate || 44100); u4(0); u4(o.fileSize || 0); u4(0); u2(19048); u2(30967)
+  // Per-track "content id" — real Rekordbox writes a unique non-zero value here
+  // (never 0). Knuth multiplicative hash of the track id → unique, deterministic.
+  const contentId = ((o.id * 2654435761) >>> 0) || 1
+  // bitmask 0x000c0700 and the two constants 25013/60146 are what current
+  // Rekordbox writes (the kaitai grammar's "always 19048/30967" is an older
+  // version). A CDJ-3000 rejects the whole database ("Database not found!") when
+  // these don't match — verified by diffing a known-good stick.
+  u2(0x24); u2(0); u4(0x000c0700)
+  u4(o.sampleRate || 44100); u4(0); u4(o.fileSize || 0); u4(contentId); u2(25013); u2(60146)
   u4(0); u4(o.keyId || 0); u4(0); u4(0); u4(0)
   u4(o.bitrate || 0); u4(0); u4(Math.round(o.bpm * 100))
   u4(o.genreId || 0); u4(o.albumId || 0); u4(o.artistId || 0); u4(o.id)
@@ -708,8 +715,39 @@ export interface InitUsbResult {
 }
 
 /**
+ * The generic Pioneer settings files a real Rekordbox export carries in
+ * /PIONEER. A CDJ refuses a stick that lacks them ("rekordbox Database not
+ * found!"), even when export.pdb is perfectly valid — so we must lay them down.
+ * Bundled alongside empty-export.pdb in the template dir.
+ */
+const SETTING_FILES = ['DEVSETTING.DAT', 'MYSETTING.DAT', 'MYSETTING2.DAT', 'DJMMYSETTING.DAT']
+
+/** Folders a real Rekordbox export creates under /PIONEER (empty is fine). */
+const PIONEER_DIRS = ['CDJ', 'MPJ', 'Artwork']
+
+/**
+ * Lay down the Pioneer settings files + folders a CDJ requires to accept a
+ * stick. Idempotent; safe to call on an already-initialised USB. `settingsDir`
+ * is the bundled template directory (where the *SETTING.DAT files live).
+ */
+export function writeRekordboxStructure(usbRoot: string, settingsDir: string): void {
+  const pioneer = join(usbRoot, 'PIONEER')
+  for (const name of SETTING_FILES) {
+    const src = join(settingsDir, name)
+    const dst = join(pioneer, name)
+    if (existsSync(src) && !existsSync(dst)) {
+      try { writeFileSync(dst, readFileSync(src)) } catch { /* FAT hiccup — non-fatal */ }
+    }
+  }
+  for (const d of PIONEER_DIRS) {
+    try { mkdirSync(join(pioneer, d), { recursive: true }) } catch { /* ignore */ }
+  }
+}
+
+/**
  * Turn a blank/non-Rekordbox USB into a Rekordbox stick: create the folder
- * skeleton and lay down an empty export.pdb (copied from the bundled template).
+ * skeleton, lay down an empty export.pdb (copied from the bundled template),
+ * and write the Pioneer settings files/folders a CDJ requires.
  * Refuses to overwrite an existing export.pdb. `templatePath` is the bundled
  * empty-export.pdb (resolved by the caller for dev vs packaged).
  */
@@ -727,5 +765,7 @@ export function initializeUsb(usbRoot: string, templatePath: string): InitUsbRes
   mkdirSync(join(usbRoot, 'Contents'), { recursive: true })
   // Plain content copy (no extended attributes — FAT can't store them).
   writeFileSync(pdbPath, readFileSync(templatePath))
+  // The *SETTING.DAT files live next to the template; a CDJ needs them.
+  writeRekordboxStructure(usbRoot, dirname(templatePath))
   return { pdbPath, created: true }
 }

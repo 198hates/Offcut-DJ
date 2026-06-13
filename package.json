@@ -85,8 +85,12 @@
         "to": "models/beat_this.onnx"
       },
       {
-        "from": "src/main/integrations/rekordbox-usb/templates/empty-export.pdb",
-        "to": "rekordbox/empty-export.pdb"
+        "from": "src/main/integrations/rekordbox-usb/templates",
+        "to": "rekordbox",
+        "filter": [
+          "empty-export.pdb",
+          "*.DAT"
+        ]
       },
       {
         "from": "native/audio-engine/crate-audio-engine.node",
