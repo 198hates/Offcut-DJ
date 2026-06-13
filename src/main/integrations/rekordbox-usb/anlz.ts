@@ -73,7 +73,8 @@ function pcob(type: 0 | 1, cues: AnlzCue[]): Buffer {
   head.writeUInt32BE(type, 12) // list_type
   head.writeUInt16BE(0, 16) // unknown
   head.writeUInt16BE(cues.length & 0xffff, 18) // len_cues
-  head.writeUInt32BE(type === 1 ? 0xffffffff : 0, 20) // memory_count
+  // Empty lists use 0xffffffff (matches real exports); a populated memory list uses 0.
+  head.writeUInt32BE(cues.length && type === 0 ? 0 : 0xffffffff, 20) // memory_count
 
   const entries = cues.map((cue, i) => {
     const e = Buffer.alloc(56)

@@ -748,7 +748,12 @@ export async function exportPlaylistsToUsb(
     const analyzePath = `/${anlzDir}/ANLZ0000.DAT`
     mkdirSync(join(usbRoot, anlzDir), { recursive: true })
     const beats: AnlzBeat[] = t.beatgrid?.length ? beatsFromMarkers(t.beatgrid, t.bpm) : beatsFromBpm(t.bpm, t.durationSec)
-    const anlzOpts = { audioPath: deviceFilePath, beats, durationSecs: t.durationSec, bands, cues: toAnlzCues(t.cuePoints) }
+    // Cues are temporarily disabled: populated PCOB/PCO2 sections precede the
+    // waveform sections in the .EXT, and our cue layout (though it parses in
+    // rekordcrate) stops the CDJ reading the waveforms after them. Re-enable once
+    // verified against a real export that actually contains cues.
+    const anlzOpts = { audioPath: deviceFilePath, beats, durationSecs: t.durationSec, bands, cues: [] as AnlzCue[] }
+    void toAnlzCues
     writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.DAT'), buildDatAnlz(anlzOpts))
     writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.EXT'), buildExtAnlz(anlzOpts))
     // .2EX holds the CDJ-3000's native 3-band waveforms (only when we have bands).
