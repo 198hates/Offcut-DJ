@@ -114,12 +114,15 @@ describe('ANLZ .2EX (CDJ-3000 3-band)', () => {
     high: new Float32Array(200).fill(0) // → 0
   }
 
-  it('contains PWV6 + PWV7 with [mid, high, low] byte order', () => {
+  it('contains PWV7 + PWV6 + PWVC with [mid, high, low] byte order', () => {
     const two = build2exAnlz({ ...opts, bands })!
     expect(two).not.toBeNull()
     expect(two.toString('ascii', 0, 4)).toBe('PMAI')
+    // Section order + the PWVC summary match real exports (required by CDJ-3000).
     const tags = sections(two).map((s) => s.tag)
-    expect(tags).toEqual(['PPTH', 'PWV6', 'PWV7'])
+    expect(tags).toEqual(['PPTH', 'PWV7', 'PWV6', 'PWVC'])
+    const pwvc = sections(two).find((s) => s.tag === 'PWVC')!
+    expect(pwvc.total).toBe(20)
 
     const pwv7 = sectionData(two, 'PWV7', 24)
     // byte order [mid, high, low], scaled 0..127 → mid 0.5→64, high 0→0, low 1→127

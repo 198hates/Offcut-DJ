@@ -297,6 +297,27 @@ function pwv6(bands?: AnlzBands): Buffer {
   return Buffer.concat([head, body])
 }
 
+// PWVC — small 3-band colour/scale summary that the CDJ-3000 requires for the
+// .2EX to be accepted (without it the player falls back to the .EXT colour
+// waveform). 20 bytes: header (tag + 14 + 20 + 2 zero) then three uint16 derived
+// from the track's average mid/high/low levels.
+function pwvc(bands: AnlzBands): Buffer {
+  const buf = Buffer.alloc(20)
+  buf.write('PWVC', 0, 'ascii')
+  buf.writeUInt32BE(14, 4) // header length
+  buf.writeUInt32BE(20, 8) // total length
+  // 0x0c: 2 zero bytes
+  const avg = (a: ArrayLike<number>): number => {
+    let s = 0
+    for (let i = 0; i < a.length; i++) s += a[i]
+    return a.length ? s / a.length : 0
+  }
+  buf.writeUInt16BE(clamp(avg(bands.mid) * 255 * 1.5, 255), 14)
+  buf.writeUInt16BE(clamp(avg(bands.high) * 255 * 1.5, 255), 16)
+  buf.writeUInt16BE(clamp(avg(bands.low) * 255 * 1.5, 255), 18)
+  return buf
+}
+
 // PCO2 — extended cue/loop list with PCP2 entries.
 function pco2(type: 0 | 1, cues: AnlzCue[]): Buffer {
   const head = Buffer.alloc(20)
@@ -500,5 +521,6 @@ export function build2exAnlz(opts: BuildAnlzOptions): Buffer | null {
   if (!opts.bands) return null
   const duration = opts.durationSecs ?? 0
   const count = Math.max(1, Math.round(duration * 150))
-  return pmaiFile([ppth(opts.audioPath), pwv6(opts.bands), pwv7(count, opts.bands)])
+  // Section order matches real exports: PPTH → PWV7 → PWV6 → PWVC.
+  return pmaiFile([ppth(opts.audioPath), pwv7(count, opts.bands), pwv6(opts.bands), pwvc(opts.bands)])
 }
