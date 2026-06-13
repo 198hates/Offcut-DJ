@@ -155,9 +155,8 @@ function bandByte(arr: ArrayLike<number>, i: number, count: number): number {
   return Math.max(0, Math.min(255, Math.round(arr[idx] * 255)))
 }
 
-// PWV3 — colour preview waveform (1 byte/entry; duration_secs * 150 entries).
-// Byte: bits 7-5 = colour (1=red/bass, 2=blue/treble, 4=green/mid, 7=white),
-// bits 4-0 = height.
+// PWV3 — monochrome detail scroll (1 byte/entry; duration_secs * 150 entries).
+// Byte: bits 7-5 = whiteness (saturation), bits 4-0 = height (0..31).
 function pwv3(mono: Uint8Array, count: number, bands?: AnlzBands): Buffer {
   const head = Buffer.alloc(24)
   head.write('PWV3', 0, 'ascii')
@@ -172,18 +171,20 @@ function pwv3(mono: Uint8Array, count: number, bands?: AnlzBands): Buffer {
       const lo = bandByte(bands.low, i, count)
       const md = bandByte(bands.mid, i, count)
       const hi = bandByte(bands.high, i, count)
-      const height = Math.floor((Math.max(lo, md, hi) * 31) / 255) // 0..31
-      const colour = lo >= md && lo >= hi ? 1 : hi >= lo && hi >= md ? 2 : 4
-      body[i] = (colour << 5) | (height & 0x1f)
+      const height = Math.max(lo, md, hi) >> 3 // 0..31
+      const whiteness = hi >> 5 // brighter where there's more treble (0..7)
+      body[i] = (whiteness << 5) | (height & 0x1f)
     } else {
       const height = monoAt(mono, i, count) & 0x1f
-      body[i] = (7 << 5) | height // white / full-spectrum
+      body[i] = (2 << 5) | height
     }
   }
   return Buffer.concat([head, body])
 }
 
-// PWV5 — detailed colour waveform (2 bytes/entry; duration_secs * 150 entries).
+// PWV5 — colour detail scroll (2 bytes/entry; duration_secs * 150 entries).
+// 16-bit big-endian: [red:3][green:3][blue:3][height:5][unused:2]
+// (red = bass, green = mid, blue = treble).
 function pwv5(mono: Uint8Array, count: number, bands?: AnlzBands): Buffer {
   const head = Buffer.alloc(24)
   head.write('PWV5', 0, 'ascii')
@@ -194,19 +195,28 @@ function pwv5(mono: Uint8Array, count: number, bands?: AnlzBands): Buffer {
   head.writeUInt32BE(0x0096_0305, 20)
   const body = Buffer.alloc(count * 2)
   for (let i = 0; i < count; i++) {
+    let r: number, g: number, b: number, h: number
     if (bands) {
-      const amp = Math.max(bandByte(bands.low, i, count), bandByte(bands.mid, i, count), bandByte(bands.high, i, count))
-      body[i * 2] = amp & 0xff
+      const lo = bandByte(bands.low, i, count)
+      const md = bandByte(bands.mid, i, count)
+      const hi = bandByte(bands.high, i, count)
+      r = lo >> 5 // 0..7
+      g = md >> 5
+      b = hi >> 5
+      h = Math.max(lo, md, hi) >> 3 // 0..31
     } else {
-      const height = monoAt(mono, i, count) & 0x1f
-      body[i * 2] = Math.round((height * 255) / 31) & 0xff
+      h = monoAt(mono, i, count) & 0x1f
+      r = 0
+      g = 0
+      b = h >> 2 // bluish monochrome
     }
-    body[i * 2 + 1] = 0x80
+    body.writeUInt16BE(((r & 7) << 13) | ((g & 7) << 10) | ((b & 7) << 7) | ((h & 0x1f) << 2), i * 2)
   }
   return Buffer.concat([head, body])
 }
 
-// PWV4 — colour waveform preview (6 bytes/entry; 1200 entries).
+// PWV4 — colour preview (6 bytes/entry; 1200 entries). Bytes per column:
+// [whiteness, whiteness, magnitude, low(red), mid(green), high(blue)].
 function pwv4(mono: Uint8Array, bands?: AnlzBands): Buffer {
   const n = 1200
   const head = Buffer.alloc(24)
@@ -223,26 +233,28 @@ function pwv4(mono: Uint8Array, bands?: AnlzBands): Buffer {
       const lo = bandByte(bands.low, i, n)
       const md = bandByte(bands.mid, i, n)
       const hi = bandByte(bands.high, i, n)
-      body[o] = lo // red — bass
-      body[o + 1] = md // green — mid
-      body[o + 2] = hi // blue — treble
-      body[o + 3] = Math.max(lo, md, hi) // height
-      body[o + 4] = hi >> 1 // blue2
-      body[o + 5] = 0 // whiteness
+      const overall = Math.max(lo, md, hi)
+      body[o] = overall // whiteness / top stripe height
+      body[o + 1] = overall // whiteness / second stripe height
+      body[o + 2] = Math.max(lo, md) // bottom-half energy
+      body[o + 3] = lo // bottom third → red
+      body[o + 4] = md // middle → green
+      body[o + 5] = hi // top → blue
     } else {
-      const height = monoAt(mono, i, n) & 0x1f
-      body[o] = Math.floor(height / 2)
+      const height = Math.round(((monoAt(mono, i, n) & 0x1f) * 255) / 31)
+      body[o] = height
       body[o + 1] = height
-      body[o + 2] = Math.floor(height / 2)
-      body[o + 3] = height
-      body[o + 4] = Math.floor(height / 3)
-      body[o + 5] = 0
+      body[o + 2] = height
+      body[o + 3] = 0
+      body[o + 4] = 0
+      body[o + 5] = height // bluish
     }
   }
   return Buffer.concat([head, body])
 }
 
-// PWV7 — full-resolution 3-band waveform (3 bytes/entry; duration_secs * 150).
+// PWV7 — 3-band detail scroll (3 bytes/entry; duration_secs * 150). CDJ-3000.
+// Byte order per column is [mid, high, low].
 function pwv7(count: number, bands?: AnlzBands): Buffer {
   const head = Buffer.alloc(24)
   head.write('PWV7', 0, 'ascii')
@@ -254,15 +266,16 @@ function pwv7(count: number, bands?: AnlzBands): Buffer {
   const body = Buffer.alloc(count * 3)
   if (bands) {
     for (let i = 0; i < count; i++) {
-      body[i * 3] = bandByte(bands.low, i, count)
-      body[i * 3 + 1] = bandByte(bands.mid, i, count)
-      body[i * 3 + 2] = bandByte(bands.high, i, count)
+      body[i * 3] = bandByte(bands.mid, i, count)
+      body[i * 3 + 1] = bandByte(bands.high, i, count)
+      body[i * 3 + 2] = bandByte(bands.low, i, count)
     }
   }
   return Buffer.concat([head, body])
 }
 
-// PWV6 — overview 3-band waveform (3 bytes/entry; 1200 entries).
+// PWV6 — 3-band preview (3 bytes/entry; 1200 entries). CDJ-3000.
+// Byte order per column is [mid, high, low]. No trailing unknown field.
 function pwv6(bands?: AnlzBands): Buffer {
   const n = 1200
   const head = Buffer.alloc(20)
@@ -274,9 +287,9 @@ function pwv6(bands?: AnlzBands): Buffer {
   const body = Buffer.alloc(n * 3)
   if (bands) {
     for (let i = 0; i < n; i++) {
-      body[i * 3] = bandByte(bands.low, i, n)
-      body[i * 3 + 1] = bandByte(bands.mid, i, n)
-      body[i * 3 + 2] = bandByte(bands.high, i, n)
+      body[i * 3] = bandByte(bands.mid, i, n)
+      body[i * 3 + 1] = bandByte(bands.high, i, n)
+      body[i * 3 + 2] = bandByte(bands.low, i, n)
     }
   }
   return Buffer.concat([head, body])
@@ -449,7 +462,8 @@ export function buildDatAnlz(opts: BuildAnlzOptions): Buffer {
  * Build the ANLZ `.EXT`: colour waveforms + extended cues + extended beat grid.
  * The CDJ-3000 requires this file to treat a track as analysed (otherwise it
  * re-analyses on load). Section order: PPTH → PWV3 → PCOB → PCOB → PCO2 → PCO2
- * → PQT2 → PWV5 → PWV4 → PWV7 → PWV6 → PVB2.
+ * → PQT2 → PWV5 → PWV4 → PVB2. (The 3-band PWV6/PWV7 live in the .2EX file, not
+ * here — see build2exAnlz.)
  */
 export function buildExtAnlz(opts: BuildAnlzOptions): Buffer {
   const mono = buildMonoPreview(opts.bands?.peaks ?? opts.peaks)
@@ -469,8 +483,20 @@ export function buildExtAnlz(opts: BuildAnlzOptions): Buffer {
     pqt2(opts.beats, duration),
     pwv5(mono, count, bands),
     pwv4(mono, bands),
-    pwv7(count, bands),
-    pwv6(bands),
     pvb2()
   ])
+}
+
+/**
+ * Build the ANLZ `.2EX` (second extended analysis): the CDJ-3000's native
+ * minimalist 3-band waveforms — PWV6 (1200-column preview) + PWV7
+ * (≈150 columns/sec detail scroll). When present the CDJ-3000 renders these
+ * instead of the older PWV4/PWV5 colour waveforms. Returns null when there's no
+ * spectral data to put in them (a .2EX of empty bands is pointless).
+ */
+export function build2exAnlz(opts: BuildAnlzOptions): Buffer | null {
+  if (!opts.bands) return null
+  const duration = opts.durationSecs ?? 0
+  const count = Math.max(1, Math.round(duration * 150))
+  return pmaiFile([ppth(opts.audioPath), pwv6(opts.bands), pwv7(count, opts.bands)])
 }

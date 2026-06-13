@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildDatAnlz, buildExtAnlz, anlzDirForPath, beatsFromBpm, type AnlzBands } from '../anlz'
+import { buildDatAnlz, buildExtAnlz, build2exAnlz, anlzDirForPath, beatsFromBpm, type AnlzBands } from '../anlz'
 import { computeWaveformBands } from '../waveform'
 
 // Collect every "XXXX" section tag (4 ASCII bytes followed by a header_len and
@@ -15,6 +15,17 @@ function sections(buf: Buffer): { tag: string; total: number }[] {
     off += total
   }
   return out
+}
+
+// A section's data region (after its 24- or 20-byte header).
+function sectionData(buf: Buffer, tag: string, headerLen: number): Buffer {
+  let off = 0x1c
+  while (off + 12 <= buf.length) {
+    const total = buf.readUInt32BE(off + 8)
+    if (buf.toString('ascii', off, off + 4) === tag) return buf.subarray(off + headerLen, off + total)
+    off += total
+  }
+  throw new Error(`section ${tag} not found`)
 }
 
 const opts = {
@@ -56,8 +67,9 @@ describe('ANLZ .EXT', () => {
     const ext = buildExtAnlz(opts)
     expect(ext.toString('ascii', 0, 4)).toBe('PMAI')
     expect(ext.readUInt32BE(8)).toBe(ext.length)
+    // 3-band PWV6/PWV7 live in the .2EX file, NOT here.
     expect(sections(ext).map((s) => s.tag)).toEqual([
-      'PPTH', 'PWV3', 'PCOB', 'PCOB', 'PCO2', 'PCO2', 'PQT2', 'PWV5', 'PWV4', 'PWV7', 'PWV6', 'PVB2'
+      'PPTH', 'PWV3', 'PCOB', 'PCOB', 'PCO2', 'PCO2', 'PQT2', 'PWV5', 'PWV4', 'PVB2'
     ])
   })
 
@@ -70,52 +82,59 @@ describe('ANLZ .EXT', () => {
     expect(s.find((x) => x.tag === 'PVB2')!.total).toBe(8032)
   })
 
-  // Find a section's data region (after its 24- or 20-byte header).
-  function sectionData(buf: Buffer, tag: string, headerLen: number): Buffer {
-    let off = 0x1c
-    while (off + 12 <= buf.length) {
-      const total = buf.readUInt32BE(off + 8)
-      if (buf.toString('ascii', off, off + 4) === tag) return buf.subarray(off + headerLen, off + total)
-      off += total
-    }
-    throw new Error(`section ${tag} not found`)
-  }
-
-  it('encodes the dominant band into PWV3 colour bits', () => {
-    const n = 200
-    const bass: AnlzBands = {
-      peaks: new Float32Array(n).fill(1),
-      low: new Float32Array(n).fill(1), // bass dominant everywhere
-      mid: new Float32Array(n).fill(0.1),
-      high: new Float32Array(n).fill(0.1)
-    }
-    const ext = buildExtAnlz({ ...opts, bands: bass })
-    const pwv3 = sectionData(ext, 'PWV3', 24)
-    // colour bits (top 3) should be 1 (red/bass); height (low 5) near full.
-    const colour = pwv3[0] >> 5
-    const height = pwv3[0] & 0x1f
-    expect(colour).toBe(1)
-    expect(height).toBe(31)
-
-    // Flip dominance to treble → colour bits 2 (blue).
-    const treble: AnlzBands = { ...bass, low: new Float32Array(n).fill(0.1), high: new Float32Array(n).fill(1) }
-    const pwv3b = sectionData(buildExtAnlz({ ...opts, bands: treble }), 'PWV3', 24)
-    expect(pwv3b[0] >> 5).toBe(2)
+  const bandsOf = (n: number, lo: number, md: number, hi: number): AnlzBands => ({
+    peaks: new Float32Array(n).fill(Math.max(lo, md, hi)),
+    low: new Float32Array(n).fill(lo),
+    mid: new Float32Array(n).fill(md),
+    high: new Float32Array(n).fill(hi)
   })
 
-  it('PWV7 carries the raw 3-band bytes (low/mid/high)', () => {
-    const n = 200
-    const bands: AnlzBands = {
-      peaks: new Float32Array(n).fill(1),
-      low: new Float32Array(n).fill(1), // → 255
-      mid: new Float32Array(n).fill(0.5), // → ~128
-      high: new Float32Array(n).fill(0) // → 0
-    }
-    const pwv7 = sectionData(buildExtAnlz({ ...opts, bands }), 'PWV7', 24)
-    expect(pwv7[0]).toBe(255)
-    expect(pwv7[1]).toBeGreaterThanOrEqual(127)
-    expect(pwv7[1]).toBeLessThanOrEqual(128)
-    expect(pwv7[2]).toBe(0)
+  it('packs PWV5 as [red:3][green:3][blue:3][height:5] with a real height', () => {
+    // Bass-dominant → red high, height non-zero (the bug fourfour had: height≈0).
+    const ext = buildExtAnlz({ ...opts, bands: bandsOf(200, 1, 0.1, 0.1) })
+    const pwv5 = sectionData(ext, 'PWV5', 24)
+    const v = pwv5.readUInt16BE(0)
+    const red = (v >> 13) & 7
+    const green = (v >> 10) & 7
+    const blue = (v >> 7) & 7
+    const height = (v >> 2) & 0x1f
+    expect(red).toBe(7) // bass maxed
+    expect(blue).toBeLessThan(red) // treble quiet
+    expect(height).toBe(31) // NOT zero — this is the flat-line fix
+    expect(green).toBeGreaterThanOrEqual(0)
+
+    // Treble-dominant → blue high.
+    const v2 = sectionData(buildExtAnlz({ ...opts, bands: bandsOf(200, 0.1, 0.1, 1) }), 'PWV5', 24).readUInt16BE(0)
+    expect((v2 >> 7) & 7).toBe(7) // blue maxed
+    expect((v2 >> 13) & 7).toBeLessThan(7) // red quiet
+  })
+})
+
+describe('ANLZ .2EX (CDJ-3000 3-band)', () => {
+  const bands: AnlzBands = {
+    peaks: new Float32Array(200).fill(1),
+    low: new Float32Array(200).fill(1), // → 255
+    mid: new Float32Array(200).fill(0.5), // → ~128
+    high: new Float32Array(200).fill(0) // → 0
+  }
+
+  it('contains PWV6 + PWV7 with [mid, high, low] byte order', () => {
+    const two = build2exAnlz({ ...opts, bands })!
+    expect(two).not.toBeNull()
+    expect(two.toString('ascii', 0, 4)).toBe('PMAI')
+    const tags = sections(two).map((s) => s.tag)
+    expect(tags).toEqual(['PPTH', 'PWV6', 'PWV7'])
+
+    const pwv7 = sectionData(two, 'PWV7', 24)
+    // byte order [mid, high, low] → [128, 0, 255]
+    expect(pwv7[0]).toBeGreaterThanOrEqual(127)
+    expect(pwv7[0]).toBeLessThanOrEqual(128)
+    expect(pwv7[1]).toBe(0)
+    expect(pwv7[2]).toBe(255)
+  })
+
+  it('is null without spectral bands (no point writing empty 3-band data)', () => {
+    expect(build2exAnlz(opts)).toBeNull()
   })
 })
 

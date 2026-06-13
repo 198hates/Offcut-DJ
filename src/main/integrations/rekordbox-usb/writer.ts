@@ -13,7 +13,7 @@
 import { readFileSync, writeFileSync, copyFileSync, mkdirSync, statSync, existsSync } from 'fs'
 import { join, basename, dirname } from 'path'
 import { resolveExportPdb, parseExportPdb } from './reader'
-import { buildDatAnlz, buildExtAnlz, anlzDirForPath, beatsFromMarkers, beatsFromBpm, type AnlzBeat } from './anlz'
+import { buildDatAnlz, buildExtAnlz, build2exAnlz, anlzDirForPath, beatsFromMarkers, beatsFromBpm, type AnlzBeat } from './anlz'
 import { analyzeWaveform } from './waveform'
 import { buildExportPdb, type PdbTrack, type PdbPlaylist, type HistoryBlobs } from './pdb-builder'
 import type { UsbPlaylistNode, UsbTrack } from './types'
@@ -735,6 +735,9 @@ export async function exportPlaylistsToUsb(
     const anlzOpts = { audioPath: deviceFilePath, beats, durationSecs: t.durationSec, bands }
     writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.DAT'), buildDatAnlz(anlzOpts))
     writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.EXT'), buildExtAnlz(anlzOpts))
+    // .2EX holds the CDJ-3000's native 3-band waveforms (only when we have bands).
+    const twoEx = build2exAnlz(anlzOpts)
+    if (twoEx) writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.2EX'), twoEx)
 
     trackIdByPath.set(t.audioFilePath, id)
     pdbTracks.push({
