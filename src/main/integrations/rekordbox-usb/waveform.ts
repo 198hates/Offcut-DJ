@@ -68,13 +68,16 @@ function bandpass(fc: number, sr: number, q: number): Biquad {
 }
 
 /**
- * Filter `samples` through `f` and accumulate the per-bucket peak |output| into
- * `out` (length = bucket count). Runs the Transposed Direct Form II difference
- * equation with carried state — one O(N) pass.
+ * Filter `samples` through `f` and accumulate the per-bucket RMS of the output
+ * into `out` (length = bucket count). RMS (not peak) gives the smooth, filled
+ * envelope rekordbox draws — peak detection makes every transient full-height
+ * and the waveform looks spiky/noisy. One O(N) Transposed-Direct-Form-II pass.
  */
-function filterPeaks(samples: Float32Array, f: Biquad, out: Float32Array): void {
+function filterRms(samples: Float32Array, f: Biquad, out: Float32Array): void {
   const total = samples.length
   const spb = total / out.length
+  const sumsq = new Float64Array(out.length)
+  const count = new Float64Array(out.length)
   let z1 = 0
   let z2 = 0
   for (let i = 0; i < total; i++) {
@@ -82,16 +85,24 @@ function filterPeaks(samples: Float32Array, f: Biquad, out: Float32Array): void 
     const y = f.b0 * x + z1
     z1 = f.b1 * x - f.a1 * y + z2
     z2 = f.b2 * x - f.a2 * y
-    const a = y < 0 ? -y : y
     const b = Math.min(out.length - 1, Math.floor(i / spb))
-    if (a > out[b]) out[b] = a
+    sumsq[b] += y * y
+    count[b]++
   }
+  for (let b = 0; b < out.length; b++) out[b] = count[b] > 0 ? Math.sqrt(sumsq[b] / count[b]) : 0
 }
+
+// Perceptual band emphasis. Music spectra tilt ~-6 dB/octave, so bass always
+// dwarfs treble; without this the waveform reads as a warm bass/mid block with
+// no visible highs. These gains lift mids/highs so the colour spreads the way
+// rekordbox renders it (bass blue, mids amber, highs white).
+const BAND_GAIN = { low: 1.0, mid: 1.5, high: 2.2 }
 
 /**
  * Split mono PCM into 3 frequency bands with Butterworth biquads and reduce each
- * to `buckets` per-bucket peaks. Bands share one normalisation scale so colour
- * ratios are preserved; the mono preview is scaled to its own peak.
+ * to `buckets` per-bucket RMS values. Bands are perceptually weighted then share
+ * one normalisation scale so colour ratios survive; the mono preview keeps a
+ * peak envelope (its outline should show transients).
  */
 export function computeWaveformBands(samples: Float32Array, sampleRate: number, buckets: number): WaveformBands {
   const n = Math.max(1, buckets)
@@ -101,7 +112,7 @@ export function computeWaveformBands(samples: Float32Array, sampleRate: number, 
   const high = new Float32Array(n)
   if (samples.length === 0) return { peaks, low, mid, high }
 
-  // Overall mono envelope (peak |sample| per bucket).
+  // Overall mono envelope (peak |sample| per bucket — the outline shows dynamics).
   const spb = samples.length / n
   for (let i = 0; i < samples.length; i++) {
     const a = Math.abs(samples[i])
@@ -111,9 +122,15 @@ export function computeWaveformBands(samples: Float32Array, sampleRate: number, 
 
   // bass < 300 Hz · mid ≈ 300 Hz–3 kHz (broad bandpass) · treble > 3 kHz.
   const midCentre = Math.sqrt(300 * 3000) // geometric centre ≈ 949 Hz
-  filterPeaks(samples, lowpass(300, sampleRate), low)
-  filterPeaks(samples, bandpass(midCentre, sampleRate, midCentre / 2700), mid)
-  filterPeaks(samples, highpass(3000, sampleRate), high)
+  filterRms(samples, lowpass(300, sampleRate), low)
+  filterRms(samples, bandpass(midCentre, sampleRate, midCentre / 2700), mid)
+  filterRms(samples, highpass(3000, sampleRate), high)
+
+  for (let i = 0; i < n; i++) {
+    low[i] *= BAND_GAIN.low
+    mid[i] *= BAND_GAIN.mid
+    high[i] *= BAND_GAIN.high
+  }
 
   scale(peaks, maxOf(peaks))
   const bandMax = Math.max(maxOf(low), maxOf(mid), maxOf(high))
