@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, copyFileSync, mkdirSync, statSync, existsS
 import { join, basename, dirname } from 'path'
 import { resolveExportPdb, parseExportPdb } from './reader'
 import { buildDatAnlz, beatsFromMarkers, beatsFromBpm, type AnlzBeat } from './anlz'
+import { buildExportPdb, type PdbTrack, type PdbPlaylist, type HistoryBlobs } from './pdb-builder'
 import type { UsbPlaylistNode, UsbTrack } from './types'
 import type { BeatgridMarker } from '../../../shared/types'
 // Generated Kaitai parser — used here only for its PageType enum.
@@ -447,6 +448,10 @@ export interface SyncTrackInput {
   beatgrid?: BeatgridMarker[]
   bitrate?: number
   year?: number
+  /** Camelot key, e.g. "8B"; optional. */
+  key?: string
+  album?: string
+  genre?: string
 }
 
 export interface SyncPlaylistResult {
@@ -656,6 +661,102 @@ export function syncPlaylistsToUsb(
     totalLinked += r.linked
   }
   return { backupPath, playlists: results, totalAdded, totalLinked }
+}
+
+// ── Full-rebuild export (CDJ-compatible) ─────────────────────────────────────
+
+export interface ExportToUsbResult {
+  backupPath: string | null
+  playlists: { name: string; tracks: number }[]
+  totalTracks: number
+  skipped: string[]
+}
+
+/**
+ * Export Offcut playlists to a USB by building a COMPLETE, CDJ-compatible
+ * export.pdb from scratch (the only structure real players accept — see
+ * pdb-builder.ts; the old append-based writer produced files every parser
+ * accepted but CDJs rejected). Copies each unique track's audio, writes its
+ * ANLZ, lays down export.pdb + the Pioneer settings files. Replaces the stick's
+ * database (backed up off-stick first). `today` is YYYY-MM-DD.
+ */
+export function exportPlaylistsToUsb(
+  usbRoot: string,
+  playlists: { name: string; tracks: SyncTrackInput[] }[],
+  opts: { settingsDir: string; history: HistoryBlobs; today: string; backupPath?: string; onProgress?: (p: SyncProgress) => void }
+): ExportToUsbResult {
+  const rbDir = join(usbRoot, 'PIONEER', 'rekordbox')
+  mkdirSync(rbDir, { recursive: true })
+  const pdbPath = join(rbDir, 'export.pdb')
+
+  let backupPath: string | null = null
+  if (opts.backupPath && existsSync(pdbPath)) {
+    writeFileSync(opts.backupPath, readFileSync(pdbPath))
+    backupPath = opts.backupPath
+  }
+
+  const contentsDir = join(usbRoot, 'Contents', 'Offcut')
+  mkdirSync(contentsDir, { recursive: true })
+
+  // Dedup tracks across all playlists by absolute audio path; assign ids 1..N.
+  const trackIdByPath = new Map<string, number>()
+  const pdbTracks: PdbTrack[] = []
+  const skipped: string[] = []
+  let nextId = 1
+
+  const resolveTrack = (t: SyncTrackInput): number | null => {
+    const existing = trackIdByPath.get(t.audioFilePath)
+    if (existing != null) return existing
+    let fileSize = 0
+    try {
+      fileSize = statSync(t.audioFilePath).size
+    } catch {
+      skipped.push(`${t.artist} – ${t.title} (audio not found)`)
+      return null
+    }
+    const id = nextId++
+    const hex = id.toString(16).toUpperCase().padStart(8, '0')
+    const safeFileName = `${hex}_${basename(t.audioFilePath)}`
+    const deviceFilePath = `/Contents/Offcut/${safeFileName}`
+    copyFileSync(t.audioFilePath, join(contentsDir, safeFileName))
+
+    const analyzePath = `/PIONEER/USBANLZ/OFCT/${hex}/ANLZ0000.DAT`
+    mkdirSync(join(usbRoot, 'PIONEER', 'USBANLZ', 'OFCT', hex), { recursive: true })
+    const beats: AnlzBeat[] = t.beatgrid?.length ? beatsFromMarkers(t.beatgrid, t.bpm) : beatsFromBpm(t.bpm, t.durationSec)
+    writeFileSync(join(usbRoot, analyzePath.replace(/^\//, '')), buildDatAnlz({ audioPath: deviceFilePath, beats }))
+
+    trackIdByPath.set(t.audioFilePath, id)
+    pdbTracks.push({
+      id, title: t.title, artist: t.artist, album: t.album || '', genre: t.genre || '', label: '', remixer: '',
+      key: t.key || '', sampleRate: 44100, fileSize, bitrate: t.bitrate || 0, trackNumber: 0,
+      tempo: Math.round((t.bpm || 0) * 100), discNumber: 0, year: t.year || 0, durationSecs: t.durationSec || 0,
+      fileName: safeFileName, fileExt: basename(t.audioFilePath).split('.').pop() || 'mp3',
+      usbPath: deviceFilePath, analyzePath, comment: ''
+    })
+    return id
+  }
+
+  const pdbPlaylists: PdbPlaylist[] = []
+  const resultPlaylists: { name: string; tracks: number }[] = []
+  playlists.forEach((pl, pi) => {
+    const ids: number[] = []
+    pl.tracks.forEach((t, ti) => {
+      opts.onProgress?.({
+        playlist: pl.name, playlistIndex: pi, playlistTotal: playlists.length,
+        track: `${t.artist} – ${t.title}`, trackIndex: ti, trackTotal: pl.tracks.length,
+        action: trackIdByPath.has(t.audioFilePath) ? 'link' : 'copy'
+      })
+      const id = resolveTrack(t)
+      if (id != null) ids.push(id)
+    })
+    pdbPlaylists.push({ id: pi + 1, name: pl.name, trackIds: ids })
+    resultPlaylists.push({ name: pl.name, tracks: ids.length })
+  })
+
+  writeFileSync(pdbPath, buildExportPdb(pdbTracks, pdbPlaylists, opts.history, opts.today))
+  writeRekordboxStructure(usbRoot, opts.settingsDir)
+
+  return { backupPath, playlists: resultPlaylists, totalTracks: pdbTracks.length, skipped }
 }
 
 export interface WritePlaylistResult {

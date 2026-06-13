@@ -1,5 +1,5 @@
 import { ipcMain, dialog, BrowserWindow, app } from 'electron'
-import { existsSync, writeFileSync, mkdirSync, watch } from 'fs'
+import { existsSync, writeFileSync, mkdirSync, watch, readFileSync } from 'fs'
 import { execFile } from 'child_process'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
@@ -29,7 +29,7 @@ import { analyzeBeats, isModelAvailable, getDefaultModelPath, warmModel } from '
 import { writeTagsToFile } from '../integrations/file-tags/writer'
 import { readUsbHistory, findPioneerUsbMount } from '../integrations/pioneer-usb/history-reader'
 import { findRekordboxUsbs, readRekordboxUsb, listUsbVolumes, resolveExportPdb } from '../integrations/rekordbox-usb/reader'
-import { writePlaylistToUsb, syncPlaylistsToUsb, initializeUsb, writeRekordboxStructure } from '../integrations/rekordbox-usb/writer'
+import { writePlaylistToUsb, initializeUsb, exportPlaylistsToUsb } from '../integrations/rekordbox-usb/writer'
 import type { SyncTrackInput } from '../integrations/rekordbox-usb/writer'
 import { importFromUsbBackup } from '../integrations/rekordbox-usb/backup-import'
 import { startWatcher } from '../integrations/watch-folder'
@@ -1104,11 +1104,19 @@ ${rows}
         const stamp = new Date().toISOString().replace(/[:.]/g, '-')
         const vol = usbRoot.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'usb'
         const backupPath = join(dir, `${vol}-${stamp}.export.pdb`)
-        // Backfill the Pioneer settings files/folders a CDJ requires, in case
-        // this stick was set up by an older build that didn't write them.
-        writeRekordboxStructure(usbRoot, rekordboxTemplatesDir())
-        return syncPlaylistsToUsb(usbRoot, playlists, backupPath, (p) => {
-          if (!e.sender.isDestroyed()) e.sender.send('rekordboxUsb:syncProgress', p)
+        // Build a complete CDJ-compatible export.pdb from scratch (the only
+        // structure real players accept). Loads the bundled reference history
+        // pages + Pioneer settings files from the template dir.
+        const tdir = rekordboxTemplatesDir()
+        const history = {
+          p36: readFileSync(join(tdir, 'history-p36.bin')),
+          p38: readFileSync(join(tdir, 'history-p38.bin')),
+          p40: readFileSync(join(tdir, 'history-p40.bin'))
+        }
+        const today = new Date().toISOString().slice(0, 10)
+        return exportPlaylistsToUsb(usbRoot, playlists, {
+          settingsDir: tdir, history, today, backupPath,
+          onProgress: (p) => { if (!e.sender.isDestroyed()) e.sender.send('rekordboxUsb:syncProgress', p) }
         })
       } catch (err) {
         return { error: (err as Error).message }

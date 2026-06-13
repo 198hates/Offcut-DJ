@@ -89,7 +89,8 @@
         "to": "rekordbox",
         "filter": [
           "empty-export.pdb",
-          "*.DAT"
+          "*.DAT",
+          "*.bin"
         ]
       },
       {

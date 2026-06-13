@@ -27,8 +27,9 @@ const EMPTY_TYPES = new Set([
   8, // playlist_entries
   11, // history_playlists
   12, // history_entries
-  13, // artwork
-  19 // history
+  13 // artwork
+  // NOTE: type 19 (history) is KEPT verbatim — it holds the device record
+  // (date + device name) that every real export carries; a CDJ needs it.
 ])
 const KEEP_VERBATIM = { has: (type) => !EMPTY_TYPES.has(type) }
 
