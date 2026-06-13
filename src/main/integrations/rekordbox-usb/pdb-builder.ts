@@ -279,14 +279,19 @@ function albumRows(values: string[], albumArtistId: Map<string, number>): Rows {
   values.forEach((a, i) => {
     const rowStart = parts.length
     offsets.push(rowStart)
-    const fixed = Buffer.alloc(18)
+    // Album row: u16 magic, u16 index_shift, u32 unknown2, u32 artist_id,
+    // u32 id, u32 unknown3, u8 unknown4, u8 ofs_name → 22-byte fixed part, then
+    // the name string at offset 0x16. (The unknown3 u32 was previously missing,
+    // which left ofs_name pointing past the fixed part and corrupted the page.)
+    const fixed = Buffer.alloc(22)
     fixed.writeUInt16LE(0x0080, 0)
     fixed.writeUInt16LE((i * 0x20) & 0xffff, 2)
-    fixed.writeUInt32LE(0, 4)
-    fixed.writeUInt32LE(albumArtistId.get(a.toLowerCase()) ?? 0, 8)
-    fixed.writeUInt32LE(i + 1, 12)
-    fixed.writeUInt8(0x03, 16)
-    fixed.writeUInt8(0x16, 17)
+    fixed.writeUInt32LE(0, 4) // unknown2
+    fixed.writeUInt32LE(albumArtistId.get(a.toLowerCase()) ?? 0, 8) // artist_id
+    fixed.writeUInt32LE(i + 1, 12) // id
+    fixed.writeUInt32LE(0, 16) // unknown3
+    fixed.writeUInt8(0x03, 20) // unknown4
+    fixed.writeUInt8(0x16, 21) // ofs_name → name at offset 22
     parts.push(...fixed, ...encodeString(a))
     while (parts.length - rowStart < 40) parts.push(0)
   })

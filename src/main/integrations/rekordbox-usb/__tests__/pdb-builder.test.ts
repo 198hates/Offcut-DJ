@@ -75,4 +75,22 @@ describe('buildExportPdb — CDJ-format export', () => {
     const buf = buildExportPdb(tracks, playlists, history, '2026-06-13')
     expect(buf.length / 4096).toBeGreaterThan(41) // overflow allocated
   })
+
+  // Regression: a missing u32 in the album row left ofs_name pointing past the
+  // fixed part, so the name was read from garbage and the Albums page parsed as
+  // corrupt — which crashed the CDJ on USB load.
+  it('album rows place the name at ofs_name (CDJ-crash regression)', () => {
+    const buf = buildExportPdb(
+      [track(1, { album: 'My Album' })],
+      [{ id: 1, name: 'P', trackIds: [1] }],
+      history,
+      '2026-06-13'
+    )
+    const rowStart = 8 * 4096 + 0x28 // first row in the Albums data page (page 8)
+    expect(buf.readUInt8(rowStart + 21)).toBe(0x16) // ofs_name → name at offset 22
+    const nameOff = rowStart + 0x16
+    const hdr = buf.readUInt8(nameOff) // DeviceSQL short ASCII: ((len+1)<<1)|1
+    const len = (hdr >> 1) - 1
+    expect(buf.toString('ascii', nameOff + 1, nameOff + 1 + len)).toBe('My Album')
+  })
 })

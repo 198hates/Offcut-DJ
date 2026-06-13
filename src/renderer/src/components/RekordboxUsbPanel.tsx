@@ -270,9 +270,11 @@ export function RekordboxUsbPanel(): JSX.Element {
           bpm: t.bpm ?? 0,
           durationSec: Math.round(t.durationSeconds ?? 0),
           beatgrid: t.beatgrid,
-          year: t.year ?? undefined
-          // NOTE: key/album/genre/cuePoints temporarily disabled — populating the
-          // PDB key/album/genre tables crashed the CDJ. Re-enable once verified.
+          year: t.year ?? undefined,
+          key: t.key ?? undefined,
+          album: t.album || undefined,
+          genre: t.genre || undefined,
+          cuePoints: t.cuePoints
         }))
     }))
     const res = await window.api.rekordboxUsb.syncPlaylists(usbRoot, payload)
