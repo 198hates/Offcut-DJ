@@ -91,6 +91,21 @@ function detectFirstBeatMs(mono: Float32Array, sampleRate: number, bpmHint: numb
   return 0
 }
 
+// One metronome click at a scheduled audio-clock time. Downbeats are accented
+// (higher pitch, louder) so the bar "1" is audible against the beats.
+function playClick(ctx: AudioContext, when: number, accent: boolean): void {
+  const osc = ctx.createOscillator()
+  const g = ctx.createGain()
+  osc.frequency.value = accent ? 2000 : 1200
+  osc.connect(g).connect(ctx.destination)
+  const dur = 0.04
+  g.gain.setValueAtTime(0.0001, when)
+  g.gain.exponentialRampToValueAtTime(accent ? 0.5 : 0.28, when + 0.002)
+  g.gain.exponentialRampToValueAtTime(0.0001, when + dur)
+  osc.start(when)
+  osc.stop(when + dur + 0.02)
+}
+
 // mm:ss.d from milliseconds (one decimal of seconds — enough to read a sweep).
 function fmtTime(ms: number): string {
   if (!isFinite(ms) || ms < 0) ms = 0
@@ -282,12 +297,17 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
   // ── Playback (monitor alignment by ear + a moving playhead) ───────────────
   const [playing,    setPlaying]    = useState(false)
   const [playheadMs, setPlayheadMs] = useState(0)
+  const [metronome,  setMetronome]  = useState(false)
   const audioCtxRef = useRef<AudioContext | null>(null)
   const audioBufRef = useRef<AudioBuffer | null>(null)
   const srcRef      = useRef<AudioBufferSourceNode | null>(null)
   const playRafRef  = useRef(0)
   const playStartRef = useRef({ ctxTime: 0, headMs: 0 })
   const playingRef  = useRef(false)
+  // Metronome scheduling state (read inside the rAF tick via refs).
+  const metronomeRef = useRef(false)
+  const markersRef   = useRef<BeatgridMarker[]>([])
+  const clickIdxRef  = useRef(0)
 
   // Derive the generator inputs (first-beat phase + which beat-of-4 is the
   // downbeat) from the single anchor, so a beat always lands ON the anchor and
@@ -300,6 +320,8 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
     () => withDownbeatPhase(generateBeatgrid(bpm, offsetMs, duration * 1000), downbeatPhase),
     [bpm, offsetMs, duration, downbeatPhase]
   )
+  markersRef.current = markers
+  useEffect(() => { metronomeRef.current = metronome }, [metronome])
 
   // ── Load audio ────────────────────────────────────────────────────────────
 
@@ -431,12 +453,29 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
     setPlaying(false)
   }, [])
 
+  // Schedule any beat clicks falling in the next ~120 ms against the audio clock
+  // (a short look-ahead so they're sample-accurate, not rAF-jittered).
+  const scheduleClicks = useCallback((): void => {
+    const ctx = audioCtxRef.current
+    if (!ctx || !metronomeRef.current) return
+    const ms = markersRef.current
+    const horizon = ctx.currentTime + 0.12
+    while (clickIdxRef.current < ms.length) {
+      const m = ms[clickIdxRef.current]
+      const when = playStartRef.current.ctxTime + (m.positionMs - playStartRef.current.headMs) / 1000
+      if (when > horizon) break
+      if (when >= ctx.currentTime - 0.005) playClick(ctx, when, !!m.isDownbeat)
+      clickIdxRef.current++
+    }
+  }, [])
+
   const tick = useCallback((): void => {
     const ctx = audioCtxRef.current
     if (!ctx || !playingRef.current) return
     const durMs = duration * 1000
     let head = playStartRef.current.headMs + (ctx.currentTime - playStartRef.current.ctxTime) * 1000
     if (head >= durMs) { setPlayheadMs(durMs); stopPlayback(); return }
+    scheduleClicks()
     setPlayheadMs(head)
     // Follow-scroll: keep the playhead on screen as it sweeps.
     setView((v) => {
@@ -450,7 +489,7 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
       return v
     })
     playRafRef.current = requestAnimationFrame(tick)
-  }, [duration, stopPlayback])
+  }, [duration, stopPlayback, scheduleClicks])
 
   const startPlayback = useCallback((fromMs: number): void => {
     const ctx = audioCtxRef.current
@@ -469,6 +508,9 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
     src.start(0, Math.max(0, Math.min(buf.duration - 0.01, fromMs / 1000)))
     srcRef.current = src
     playStartRef.current = { ctxTime: ctx.currentTime, headMs: fromMs }
+    // Start the metronome pointer at the first beat from here.
+    const firstIdx = markersRef.current.findIndex((m) => m.positionMs >= fromMs)
+    clickIdxRef.current = firstIdx < 0 ? markersRef.current.length : firstIdx
     playingRef.current = true
     setPlaying(true)
     cancelAnimationFrame(playRafRef.current)
@@ -479,6 +521,20 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
     if (playingRef.current) stopPlayback()
     else startPlayback(playheadMs >= duration * 1000 - 1 ? 0 : playheadMs)
   }, [playheadMs, duration, startPlayback, stopPlayback])
+
+  // Toggle the click track. When enabling mid-playback, re-point the scheduler
+  // at the current playhead so it doesn't replay every beat since play started.
+  const toggleMetronome = useCallback((): void => {
+    setMetronome((on) => {
+      const next = !on
+      if (next && playingRef.current) {
+        const ms = markersRef.current
+        const idx = ms.findIndex((m) => m.positionMs >= playheadMs)
+        clickIdxRef.current = idx < 0 ? ms.length : idx
+      }
+      return next
+    })
+  }, [playheadMs])
 
   // Space = play/pause, Escape = close.
   useEffect(() => {
@@ -588,6 +644,14 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
           <span className="text-[12px] text-muted tabular-nums select-none">
             {fmtTime(playheadMs)}<span className="text-muted/40"> / {fmtTime(duration * 1000)}</span>
           </span>
+          <button onClick={toggleMetronome} title="metronome click on the beat"
+            className={`px-2 py-1 text-[12px] uppercase tracking-[0.1em] border rounded transition-colors ${
+              metronome
+                ? 'text-paper bg-accent border-accent'
+                : 'text-muted hover:text-ink border-border/35'
+            }`}>
+            click
+          </button>
         </div>
 
         {/* BPM */}
