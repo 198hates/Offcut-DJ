@@ -17,9 +17,10 @@ import { buildDatAnlz, buildExtAnlz, build2exAnlz, anlzDirForPath, beatsFromMark
 import { analyzeWaveform } from './waveform'
 import { buildExportPdb, type PdbTrack, type PdbPlaylist, type PdbArtwork, type HistoryBlobs } from './pdb-builder'
 import { readEmbeddedArt, toStickJpeg } from './artwork'
+import { patchDevSetting } from './settings'
 import { createHash } from 'node:crypto'
 import type { UsbPlaylistNode, UsbTrack } from './types'
-import type { BeatgridMarker, CuePoint } from '../../../shared/types'
+import type { BeatgridMarker, CuePoint, UsbDeviceSettings } from '../../../shared/types'
 
 /**
  * Map Offcut cue points to ANLZ cues. Hot cues become numbered hot cues
@@ -702,7 +703,7 @@ export interface ExportToUsbResult {
 export async function exportPlaylistsToUsb(
   usbRoot: string,
   playlists: { name: string; tracks: SyncTrackInput[] }[],
-  opts: { settingsDir: string; history: HistoryBlobs; today: string; backupPath?: string; onProgress?: (p: SyncProgress) => void }
+  opts: { settingsDir: string; history: HistoryBlobs; today: string; backupPath?: string; deviceSettings?: UsbDeviceSettings; onProgress?: (p: SyncProgress) => void }
 ): Promise<ExportToUsbResult> {
   const rbDir = join(usbRoot, 'PIONEER', 'rekordbox')
   mkdirSync(rbDir, { recursive: true })
@@ -815,7 +816,7 @@ export async function exportPlaylistsToUsb(
   }
 
   writeFileSync(pdbPath, buildExportPdb(pdbTracks, pdbPlaylists, opts.history, opts.today, artworks))
-  writeRekordboxStructure(usbRoot, opts.settingsDir)
+  writeRekordboxStructure(usbRoot, opts.settingsDir, opts.deviceSettings)
 
   return { backupPath, playlists: resultPlaylists, totalTracks: pdbTracks.length, skipped }
 }
@@ -892,14 +893,21 @@ const PIONEER_DIRS = ['CDJ', 'MPJ', 'Artwork']
  * stick. Idempotent; safe to call on an already-initialised USB. `settingsDir`
  * is the bundled template directory (where the *SETTING.DAT files live).
  */
-export function writeRekordboxStructure(usbRoot: string, settingsDir: string): void {
+export function writeRekordboxStructure(usbRoot: string, settingsDir: string, deviceSettings?: UsbDeviceSettings): void {
   const pioneer = join(usbRoot, 'PIONEER')
   for (const name of SETTING_FILES) {
     const src = join(settingsDir, name)
     const dst = join(pioneer, name)
-    if (existsSync(src) && !existsSync(dst)) {
-      try { writeFileSync(dst, readFileSync(src)) } catch { /* FAT hiccup — non-fatal */ }
-    }
+    if (!existsSync(src)) continue
+    try {
+      // DEVSETTING.DAT carries the editable device settings — always (re)write it
+      // with the chosen values. The rest are copied once if absent.
+      if (name === 'DEVSETTING.DAT' && deviceSettings) {
+        writeFileSync(dst, patchDevSetting(readFileSync(src), deviceSettings))
+      } else if (!existsSync(dst)) {
+        writeFileSync(dst, readFileSync(src))
+      }
+    } catch { /* FAT hiccup — non-fatal */ }
   }
   for (const d of PIONEER_DIRS) {
     try { mkdirSync(join(pioneer, d), { recursive: true }) } catch { /* ignore */ }

@@ -10,7 +10,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { useToastStore } from '../store/toastStore'
 import { formatDuration, formatBpm } from '../lib/format'
-import type { UsbExport, UsbPlaylistNode, UsbTrack } from '@shared/types'
+import type { UsbExport, UsbPlaylistNode, UsbTrack, UsbDeviceSettings } from '@shared/types'
+
+const DEVICE_SETTING_FIELDS: {
+  key: keyof UsbDeviceSettings
+  label: string
+  options: { value: string; label: string }[]
+}[] = [
+  { key: 'waveformColor', label: 'Waveform colour', options: [{ value: 'blue', label: 'Blue' }, { value: 'rgb', label: 'RGB' }, { value: '3band', label: '3Band' }] },
+  { key: 'waveformPosition', label: 'Waveform position', options: [{ value: 'center', label: 'Center' }, { value: 'left', label: 'Left' }] },
+  { key: 'keyDisplay', label: 'Key display', options: [{ value: 'classic', label: 'Classic' }, { value: 'alphanumeric', label: 'Alphanumeric' }] },
+  { key: 'overviewWaveform', label: 'Overview waveform', options: [{ value: 'half', label: 'Half' }, { value: 'full', label: 'Full' }] }
+]
 
 /** Loose key for matching Offcut tracks to tracks already on the USB. */
 function matchKey(artist: string, title: string): string {
@@ -100,6 +111,20 @@ export function RekordboxUsbPanel(): JSX.Element {
   // Initialise-a-blank-USB state.
   const [initVolumes, setInitVolumes] = useState<{ root: string; name: string; hasRekordbox: boolean }[] | null>(null)
   const [initializing, setInitializing] = useState(false)
+
+  // Device settings written to DEVSETTING.DAT on export (persisted in app settings).
+  const [devSettings, setDevSettings] = useState<UsbDeviceSettings | null>(null)
+  useEffect(() => {
+    window.api.settings.get().then((s) => setDevSettings(s.usbDeviceSettings))
+  }, [])
+  const updateDevSetting = useCallback((key: keyof UsbDeviceSettings, value: string) => {
+    setDevSettings((prev) => {
+      if (!prev) return prev
+      const next = { ...prev, [key]: value } as UsbDeviceSettings
+      void window.api.settings.save({ usbDeviceSettings: next })
+      return next
+    })
+  }, [])
 
   const scan = useCallback(async () => {
     setError(null)
@@ -507,6 +532,28 @@ export function RekordboxUsbPanel(): JSX.Element {
                 {progress
                   ? `playlist ${progress.playlistIndex + 1}/${progress.playlistTotal} · ${progress.action === 'copy' ? 'copying' : 'linking'} ${progress.trackIndex + 1}/${progress.trackTotal} — ${progress.track}`
                   : 'preparing…'}
+              </div>
+            </div>
+          )}
+
+          {devSettings && (
+            <div className="rounded border border-border/30 p-2 space-y-1.5">
+              <div className="font-mono text-[10px] uppercase tracking-wide text-muted/60">Device settings (written on export)</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {DEVICE_SETTING_FIELDS.map((f) => (
+                  <label key={f.key} className="flex items-center justify-between gap-2 font-mono text-[11px] text-muted">
+                    <span className="text-muted/70">{f.label}</span>
+                    <select
+                      value={devSettings[f.key]}
+                      onChange={(e) => updateDevSetting(f.key, e.target.value)}
+                      className="bg-surface border border-border/40 rounded px-1 py-0.5 text-ink text-[11px]"
+                    >
+                      {f.options.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
               </div>
             </div>
           )}

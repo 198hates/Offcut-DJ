@@ -319,6 +319,15 @@ export interface ExportResult {
   cancelled: boolean
 }
 
+/** Pioneer device settings written to DEVSETTING.DAT on USB export (mirrors the
+ *  rekordbox device-settings panel). */
+export interface UsbDeviceSettings {
+  waveformColor: 'blue' | 'rgb' | '3band'
+  waveformPosition: 'left' | 'center'
+  keyDisplay: 'classic' | 'alphanumeric'
+  overviewWaveform: 'half' | 'full'
+}
+
 export interface AppSettings {
   rekordboxXmlPath: string
   rekordboxDbPath: string
@@ -348,6 +357,8 @@ export interface AppSettings {
   watchFolders: string[]
   lastImportedAt: string | null
   windowBounds: { x: number; y: number; width: number; height: number } | null
+  /** Device settings written to the USB on export (waveform colour, key display…). */
+  usbDeviceSettings: UsbDeviceSettings
 }
 
 // ── ProLink B2B Capture ───────────────────────────────────────────────────────

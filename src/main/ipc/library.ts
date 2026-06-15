@@ -33,7 +33,7 @@ import { writePlaylistToUsb, initializeUsb, exportPlaylistsToUsb } from '../inte
 import type { SyncTrackInput } from '../integrations/rekordbox-usb/writer'
 import { importFromUsbBackup } from '../integrations/rekordbox-usb/backup-import'
 import { startWatcher } from '../integrations/watch-folder'
-import { loadSettings, saveSettings } from '../settings'
+import { loadSettings, saveSettings, getSettings } from '../settings'
 import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule, UsbExport } from '../../shared/types'
 import type Database from 'better-sqlite3'
 
@@ -1116,6 +1116,7 @@ ${rows}
         const today = new Date().toISOString().slice(0, 10)
         return await exportPlaylistsToUsb(usbRoot, playlists, {
           settingsDir: tdir, history, today, backupPath,
+          deviceSettings: getSettings().usbDeviceSettings,
           onProgress: (p) => { if (!e.sender.isDestroyed()) e.sender.send('rekordboxUsb:syncProgress', p) }
         })
       } catch (err) {

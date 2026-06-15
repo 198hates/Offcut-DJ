@@ -25,7 +25,13 @@ const DEFAULTS: AppSettings = {
   showWelcomeOnStartup: true,
   watchFolders: [],
   lastImportedAt: null,
-  windowBounds: null
+  windowBounds: null,
+  usbDeviceSettings: {
+    waveformColor: '3band',
+    waveformPosition: 'center',
+    keyDisplay: 'classic',
+    overviewWaveform: 'half'
+  }
 }
 
 // Simple JSON-file settings store (no external dependency)
