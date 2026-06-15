@@ -29,11 +29,22 @@ import type { BeatgridMarker, CuePoint, UsbDeviceSettings } from '../../../share
  */
 function toAnlzCues(cues: CuePoint[] | undefined): AnlzCue[] {
   if (!cues?.length) return []
-  return cues.map((c) => ({
-    hotCueNumber: c.type === 'hotcue' ? Math.max(1, c.index + 1) : 0,
-    timeMs: c.positionMs,
-    loopTimeMs: c.type === 'loop' ? c.endMs : undefined
-  }))
+  return cues
+    .filter((c) => Number.isFinite(c.positionMs) && c.positionMs >= 0)
+    .map((c) => {
+      // Only emit a loop when the end is a valid forward position. A loop whose
+      // end ≤ start (or non-finite) makes a player compute a negative-length
+      // loop region, which can crash the real-time audio engine on playback.
+      const validLoop =
+        c.type === 'loop' && c.endMs != null && Number.isFinite(c.endMs) && c.endMs > c.positionMs
+      return {
+        // Rekordbox hot cues are A–H (1–8); clamp so an out-of-range slot can't
+        // land the player on a non-existent hot-cue bank.
+        hotCueNumber: c.type === 'hotcue' ? Math.min(8, Math.max(1, c.index + 1)) : 0,
+        timeMs: Math.round(c.positionMs),
+        loopTimeMs: validLoop ? Math.round(c.endMs!) : undefined
+      }
+    })
 }
 // Generated Kaitai parser — used here only for its PageType enum.
 import RekordboxPdb from './kaitai/RekordboxPdb.cjs'
