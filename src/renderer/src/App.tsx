@@ -15,6 +15,7 @@ import { OrdersPage } from './pages/Orders'
 import { SearchPage } from './pages/Search'
 import { ProLinkPage } from './pages/ProLink'
 import { LineagePage } from './pages/Lineage'
+import { AssistantPage } from './pages/Assistant'
 import { UsbPage } from './pages/Usb'
 import { Sidebar } from './components/Sidebar'
 import { NavRail } from './components/NavRail'
@@ -114,6 +115,7 @@ export default function App(): JSX.Element {
             {activePage === 'compass' && <ErrorBoundary name="compass"><CompassPage /></ErrorBoundary>}
             {activePage === 'prolink' && <ErrorBoundary name="prolink"><ProLinkPage /></ErrorBoundary>}
             {activePage === 'lineage'   && <ErrorBoundary name="lineage"><LineagePage /></ErrorBoundary>}
+            {activePage === 'assistant' && <ErrorBoundary name="assistant"><AssistantPage /></ErrorBoundary>}
             {activePage === 'usb'     && <ErrorBoundary name="usb"><UsbPage /></ErrorBoundary>}
             {activePage === 'settings'&& <ErrorBoundary name="settings"><SettingsPage /></ErrorBoundary>}
           </div>

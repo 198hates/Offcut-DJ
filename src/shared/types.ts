@@ -476,6 +476,19 @@ export interface AiDigResult {
   sources: AiDigSource[]          // de-duplicated web citations
 }
 
+/**
+ * Streamed events from the conversational AI agent (ai:agentRun). The agent
+ * reasons over the library with tools; the renderer renders these as a
+ * transcript. `runId` lets the renderer ignore events from a superseded run.
+ */
+export type AiAgentEvent =
+  | { type: 'text'; runId: number; text: string }
+  | { type: 'tool'; runId: number; tool: string; summary: string }
+  | { type: 'tool_result'; runId: number; tool: string; summary: string; ok: boolean }
+  | { type: 'library_changed'; runId: number }
+  | { type: 'done'; runId: number }
+  | { type: 'error'; runId: number; message: string }
+
 // ── ProLink B2B Capture ───────────────────────────────────────────────────────
 
 /** Play state of a CDJ on the network */

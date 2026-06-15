@@ -1,4 +1,4 @@
-export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'compass' | 'orders' | 'search' | 'prolink' | 'lineage' | 'usb' | 'settings'
+export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'compass' | 'orders' | 'search' | 'prolink' | 'lineage' | 'assistant' | 'usb' | 'settings'
 
 interface Props {
   active: Section
@@ -162,6 +162,16 @@ function UsbIcon() {
   )
 }
 
+/** Assistant — chat bubble with a spark: conversational AI agent */
+function AssistantIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7l-3 2.5V11.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z" />
+      <path d="M8 5.2 8.7 7 10.5 7.7 8.7 8.4 8 10.2 7.3 8.4 5.5 7.7 7.3 7 8 5.2Z" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 function GearIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -183,6 +193,7 @@ const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; l
   { id: 'compass', Icon: CompassIcon,  label: 'Library Compass' },
   { id: 'prolink', Icon: ProLinkIcon,  label: 'ProLink Capture' },
   { id: 'lineage',   Icon: LineageIcon,    label: 'Lineage'    },
+  { id: 'assistant', Icon: AssistantIcon,  label: 'Assistant'  },
 ]
 
 export function NavRail({ active, onNavigate }: Props): JSX.Element {

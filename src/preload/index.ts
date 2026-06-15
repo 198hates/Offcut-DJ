@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, Playlist, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult } from '../shared/types'
+import type { Track, Playlist, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent } from '../shared/types'
 
 const api = {
   library: {
@@ -352,7 +352,17 @@ const api = {
     digContext: (
       seed: { artist: string; title: string }
     ): Promise<{ result?: AiDigResult; error?: string }> =>
-      ipcRenderer.invoke('ai:digContext', seed)
+      ipcRenderer.invoke('ai:digContext', seed),
+    agentRun: (
+      query: string,
+      history: { role: 'user' | 'assistant'; content: string }[],
+      runId: number
+    ): Promise<boolean> => ipcRenderer.invoke('ai:agentRun', query, history, runId),
+    onAgentEvent: (cb: (e: AiAgentEvent) => void): (() => void) => {
+      const handler = (_e: unknown, evt: AiAgentEvent): void => cb(evt)
+      ipcRenderer.on('ai:agentEvent', handler)
+      return () => ipcRenderer.removeListener('ai:agentEvent', handler)
+    }
   }
 }
 

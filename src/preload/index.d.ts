@@ -6,7 +6,7 @@ import type {
   EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed,
   StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef,
   StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, BeatgridMarker, CuePoint,
-  AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult,
+  AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -181,6 +181,12 @@ declare global {
         digContext: (
           seed: { artist: string; title: string }
         ) => Promise<{ result?: AiDigResult; error?: string }>
+        agentRun: (
+          query: string,
+          history: { role: 'user' | 'assistant'; content: string }[],
+          runId: number
+        ) => Promise<boolean>
+        onAgentEvent: (cb: (e: AiAgentEvent) => void) => () => void
       }
       /** Native Rust audio engine IPC bridge (id·2026·009). */
       engine: {

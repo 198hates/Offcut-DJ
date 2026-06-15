@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema'
 import { getAnthropic, AI_MODEL, AI_CHEAP_MODEL } from '../integrations/ai/client'
+import { runAgent } from '../integrations/ai/agent'
 import { getSettings } from '../settings'
 import type {
   AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult,
@@ -317,6 +318,23 @@ export function registerAiHandlers(): void {
       } catch (err) {
         return { error: (err as Error).message }
       }
+    }
+  )
+
+  // Conversational agent — streams events back over 'ai:agentEvent'; resolves
+  // when the turn is complete. `history` is the prior turns as plain text.
+  ipcMain.handle(
+    'ai:agentRun',
+    async (
+      e,
+      query: string,
+      history: { role: 'user' | 'assistant'; content: string }[],
+      runId: number
+    ): Promise<boolean> => {
+      await runAgent(query, history ?? [], runId, (evt) => {
+        if (!e.sender.isDestroyed()) e.sender.send('ai:agentEvent', evt)
+      })
+      return true
     }
   )
 }
