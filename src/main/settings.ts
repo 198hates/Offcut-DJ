@@ -30,7 +30,14 @@ const DEFAULTS: AppSettings = {
     waveformColor: '3band',
     waveformPosition: 'center',
     keyDisplay: 'classic',
-    overviewWaveform: 'half'
+    overviewWaveform: 'half',
+    waveformDivisions: 'phrase',
+    jogDisplay: 'auto',
+    quantize: 'on',
+    quantizeBeat: '1/4',
+    autoCue: 'off',
+    hotcueAutoload: 'off',
+    timeMode: 'elapsed'
   }
 }
 

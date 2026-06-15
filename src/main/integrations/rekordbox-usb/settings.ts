@@ -1,25 +1,39 @@
-// Edit the Pioneer DEVSETTING.DAT device settings (waveform colour, key display,
-// overview type, waveform position) that the rekordbox device-settings panel
-// exposes. We patch a known-good template in place and recompute its checksum
-// (CRC16/XMODEM over the data section) rather than rebuild the file — the format
-// and checksum were verified byte-for-byte against real rekordbox exports.
+// Edit the Pioneer setting files (DEVSETTING.DAT / MYSETTING.DAT /
+// MYSETTING2.DAT) that the rekordbox device/player settings panels expose. Each
+// setting is a single enum byte at a known offset; we patch a known-good
+// template in place and recompute its CRC16/XMODEM checksum over the data
+// section. Offsets, enum values and the checksum were all verified byte-for-byte
+// against real rekordbox 7 exports (patching with a file's own values
+// reproduces it identically).
 
 import type { UsbDeviceSettings } from '../../../shared/types'
 
-// Enum byte values (from rekordcrate's setting.rs, confirmed against real files).
-const WAVEFORM_COLOR: Record<UsbDeviceSettings['waveformColor'], number> = { blue: 0x01, rgb: 0x03, '3band': 0x04 }
-const WAVEFORM_POSITION: Record<UsbDeviceSettings['waveformPosition'], number> = { left: 0x02, center: 0x01 }
-const KEY_DISPLAY: Record<UsbDeviceSettings['keyDisplay'], number> = { classic: 0x01, alphanumeric: 0x02 }
-const OVERVIEW: Record<UsbDeviceSettings['overviewWaveform'], number> = { half: 0x01, full: 0x02 }
+type FieldSpec = { offset: number; map: Record<string, number> }
 
-// Field offsets within DEVSETTING.DAT (the 32-byte data section starts at 0x68).
-const OFF_OVERVIEW = 0x71
-const OFF_COLOR = 0x72
-const OFF_KEY = 0x74
-const OFF_POSITION = 0x75
-// The checksum covers the data section (offset 104) up to the last 4 bytes
-// (checksum u16 + trailing u16) for every file except DJMMYSETTING.DAT.
-const CHECKSUM_START = 104
+// DEVSETTING.DAT — data section at 0x68 (9-byte prefix, then the fields).
+const DEV_FIELDS: Partial<Record<keyof UsbDeviceSettings, FieldSpec>> = {
+  overviewWaveform: { offset: 0x71, map: { half: 0x01, full: 0x02 } },
+  waveformColor: { offset: 0x72, map: { blue: 0x01, rgb: 0x03, '3band': 0x04 } },
+  keyDisplay: { offset: 0x74, map: { classic: 0x01, alphanumeric: 0x02 } },
+  waveformPosition: { offset: 0x75, map: { center: 0x01, left: 0x02 } }
+}
+
+// MYSETTING.DAT — data at 0x68 (8-byte prefix).
+const MY_FIELDS: Partial<Record<keyof UsbDeviceSettings, FieldSpec>> = {
+  quantize: { offset: 0x72, map: { off: 0x80, on: 0x81 } },
+  quantizeBeat: { offset: 0x7c, map: { '1': 0x80, '1/2': 0x81, '1/4': 0x82, '1/8': 0x83 } },
+  hotcueAutoload: { offset: 0x7d, map: { off: 0x80, on: 0x81, rekordbox: 0x82 } },
+  timeMode: { offset: 0x80, map: { elapsed: 0x80, remain: 0x81 } },
+  autoCue: { offset: 0x82, map: { off: 0x80, on: 0x81 } }
+}
+
+// MYSETTING2.DAT — data at 0x68 (no prefix).
+const MY2_FIELDS: Partial<Record<keyof UsbDeviceSettings, FieldSpec>> = {
+  jogDisplay: { offset: 0x69, map: { auto: 0x80, info: 0x81, simple: 0x82, artwork: 0x83 } },
+  waveformDivisions: { offset: 0x6c, map: { timescale: 0x80, phrase: 0x81 } }
+}
+
+const CHECKSUM_START = 104 // data section start (header is len + 3×0x20 strings + len_data)
 
 function crc16xmodem(buf: Buffer): number {
   let crc = 0
@@ -33,19 +47,19 @@ function crc16xmodem(buf: Buffer): number {
   return crc
 }
 
-/**
- * Return a copy of a DEVSETTING.DAT template with `s` applied and the checksum
- * recomputed. If the template is too short to be a valid settings file it's
- * returned unchanged (the export then just copies it verbatim).
- */
-export function patchDevSetting(template: Buffer, s: UsbDeviceSettings): Buffer {
-  if (template.length < OFF_POSITION + 4 + 4) return Buffer.from(template)
+function patchSetting(template: Buffer, fields: Partial<Record<keyof UsbDeviceSettings, FieldSpec>>, s: UsbDeviceSettings): Buffer {
+  // Too short to be a valid setting file → copy verbatim.
+  if (template.length < CHECKSUM_START + 6) return Buffer.from(template)
   const buf = Buffer.from(template)
-  buf[OFF_OVERVIEW] = OVERVIEW[s.overviewWaveform]
-  buf[OFF_COLOR] = WAVEFORM_COLOR[s.waveformColor]
-  buf[OFF_KEY] = KEY_DISPLAY[s.keyDisplay]
-  buf[OFF_POSITION] = WAVEFORM_POSITION[s.waveformPosition]
-  const crc = crc16xmodem(buf.subarray(CHECKSUM_START, buf.length - 4))
-  buf.writeUInt16LE(crc, buf.length - 4)
+  for (const key of Object.keys(fields) as (keyof UsbDeviceSettings)[]) {
+    const spec = fields[key]!
+    const value = spec.map[s[key] as string]
+    if (value != null && spec.offset < buf.length - 4) buf[spec.offset] = value
+  }
+  buf.writeUInt16LE(crc16xmodem(buf.subarray(CHECKSUM_START, buf.length - 4)), buf.length - 4)
   return buf
 }
+
+export const patchDevSetting = (t: Buffer, s: UsbDeviceSettings): Buffer => patchSetting(t, DEV_FIELDS, s)
+export const patchMySetting = (t: Buffer, s: UsbDeviceSettings): Buffer => patchSetting(t, MY_FIELDS, s)
+export const patchMySetting2 = (t: Buffer, s: UsbDeviceSettings): Buffer => patchSetting(t, MY2_FIELDS, s)

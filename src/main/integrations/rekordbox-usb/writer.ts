@@ -17,7 +17,7 @@ import { buildDatAnlz, buildExtAnlz, build2exAnlz, anlzDirForPath, beatsFromMark
 import { analyzeWaveform } from './waveform'
 import { buildExportPdb, type PdbTrack, type PdbPlaylist, type PdbArtwork, type HistoryBlobs } from './pdb-builder'
 import { readEmbeddedArt, toStickJpeg } from './artwork'
-import { patchDevSetting } from './settings'
+import { patchDevSetting, patchMySetting, patchMySetting2 } from './settings'
 import { createHash } from 'node:crypto'
 import type { UsbPlaylistNode, UsbTrack } from './types'
 import type { BeatgridMarker, CuePoint, UsbDeviceSettings } from '../../../shared/types'
@@ -884,6 +884,11 @@ export interface InitUsbResult {
  * Bundled alongside empty-export.pdb in the template dir.
  */
 const SETTING_FILES = ['DEVSETTING.DAT', 'MYSETTING.DAT', 'MYSETTING2.DAT', 'DJMMYSETTING.DAT']
+const SETTING_PATCHERS: Record<string, (t: Buffer, s: UsbDeviceSettings) => Buffer> = {
+  'DEVSETTING.DAT': patchDevSetting,
+  'MYSETTING.DAT': patchMySetting,
+  'MYSETTING2.DAT': patchMySetting2
+}
 
 /** Folders a real Rekordbox export creates under /PIONEER (empty is fine). */
 const PIONEER_DIRS = ['CDJ', 'MPJ', 'Artwork']
@@ -899,11 +904,12 @@ export function writeRekordboxStructure(usbRoot: string, settingsDir: string, de
     const src = join(settingsDir, name)
     const dst = join(pioneer, name)
     if (!existsSync(src)) continue
+    const patcher = deviceSettings && SETTING_PATCHERS[name]
     try {
-      // DEVSETTING.DAT carries the editable device settings — always (re)write it
-      // with the chosen values. The rest are copied once if absent.
-      if (name === 'DEVSETTING.DAT' && deviceSettings) {
-        writeFileSync(dst, patchDevSetting(readFileSync(src), deviceSettings))
+      // The editable settings live in DEVSETTING/MYSETTING/MYSETTING2 — always
+      // (re)write those with the chosen values; the rest are copied once if absent.
+      if (patcher) {
+        writeFileSync(dst, patcher(readFileSync(src), deviceSettings))
       } else if (!existsSync(dst)) {
         writeFileSync(dst, readFileSync(src))
       }

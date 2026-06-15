@@ -19,8 +19,15 @@ const DEVICE_SETTING_FIELDS: {
 }[] = [
   { key: 'waveformColor', label: 'Waveform colour', options: [{ value: 'blue', label: 'Blue' }, { value: 'rgb', label: 'RGB' }, { value: '3band', label: '3Band' }] },
   { key: 'waveformPosition', label: 'Waveform position', options: [{ value: 'center', label: 'Center' }, { value: 'left', label: 'Left' }] },
+  { key: 'waveformDivisions', label: 'Waveform divisions', options: [{ value: 'timescale', label: 'Time Scale' }, { value: 'phrase', label: 'Phrase' }] },
+  { key: 'overviewWaveform', label: 'Overview waveform', options: [{ value: 'half', label: 'Half' }, { value: 'full', label: 'Full' }] },
   { key: 'keyDisplay', label: 'Key display', options: [{ value: 'classic', label: 'Classic' }, { value: 'alphanumeric', label: 'Alphanumeric' }] },
-  { key: 'overviewWaveform', label: 'Overview waveform', options: [{ value: 'half', label: 'Half' }, { value: 'full', label: 'Full' }] }
+  { key: 'jogDisplay', label: 'Jog display', options: [{ value: 'auto', label: 'Auto' }, { value: 'info', label: 'Info' }, { value: 'simple', label: 'Simple' }, { value: 'artwork', label: 'Artwork' }] },
+  { key: 'timeMode', label: 'Time mode', options: [{ value: 'elapsed', label: 'Elapsed' }, { value: 'remain', label: 'Remain' }] },
+  { key: 'autoCue', label: 'Auto cue', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }] },
+  { key: 'quantize', label: 'Quantize', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }] },
+  { key: 'quantizeBeat', label: 'Quantize beat', options: [{ value: '1', label: '1 Beat' }, { value: '1/2', label: '1/2 Beat' }, { value: '1/4', label: '1/4 Beat' }, { value: '1/8', label: '1/8 Beat' }] },
+  { key: 'hotcueAutoload', label: 'Hot cue auto-load', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }, { value: 'rekordbox', label: 'rekordbox' }] }
 ]
 
 /** Loose key for matching Offcut tracks to tracks already on the USB. */
@@ -537,19 +544,20 @@ export function RekordboxUsbPanel(): JSX.Element {
           )}
 
           {devSettings && (
-            <div className="rounded border border-border/30 p-2 space-y-1.5">
+            <div className="rounded border border-border/30 p-2.5 space-y-2">
               <div className="font-mono text-[10px] uppercase tracking-wide text-muted/60">Device settings (written on export)</div>
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                 {DEVICE_SETTING_FIELDS.map((f) => (
-                  <label key={f.key} className="flex items-center justify-between gap-2 font-mono text-[11px] text-muted">
-                    <span className="text-muted/70">{f.label}</span>
+                  <label key={f.key} className="flex items-center justify-between gap-2 font-mono text-[11px]">
+                    <span className="text-muted/70 whitespace-nowrap">{f.label}</span>
                     <select
                       value={devSettings[f.key]}
                       onChange={(e) => updateDevSetting(f.key, e.target.value)}
-                      className="bg-surface border border-border/40 rounded px-1 py-0.5 text-ink text-[11px]"
+                      className="min-w-[7rem] appearance-none rounded border border-border/50 bg-black/40 px-2 py-1 pr-6 text-ink font-medium cursor-pointer hover:border-accent/50 focus:border-accent focus:outline-none bg-[length:10px] bg-[right_0.4rem_center] bg-no-repeat"
+                      style={{ backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%23c8b89a' stroke-width='1.5'><path d='M1 1l4 4 4-4'/></svg>\")" }}
                     >
                       {f.options.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
+                        <option key={o.value} value={o.value} className="bg-surface text-ink">{o.label}</option>
                       ))}
                     </select>
                   </label>

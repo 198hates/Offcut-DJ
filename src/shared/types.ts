@@ -322,10 +322,20 @@ export interface ExportResult {
 /** Pioneer device settings written to DEVSETTING.DAT on USB export (mirrors the
  *  rekordbox device-settings panel). */
 export interface UsbDeviceSettings {
+  // DEVSETTING.DAT
   waveformColor: 'blue' | 'rgb' | '3band'
   waveformPosition: 'left' | 'center'
   keyDisplay: 'classic' | 'alphanumeric'
   overviewWaveform: 'half' | 'full'
+  // MYSETTING2.DAT
+  waveformDivisions: 'timescale' | 'phrase'
+  jogDisplay: 'auto' | 'info' | 'simple' | 'artwork'
+  // MYSETTING.DAT
+  quantize: 'on' | 'off'
+  quantizeBeat: '1' | '1/2' | '1/4' | '1/8'
+  autoCue: 'on' | 'off'
+  hotcueAutoload: 'off' | 'on' | 'rekordbox'
+  timeMode: 'elapsed' | 'remain'
 }
 
 export interface AppSettings {
