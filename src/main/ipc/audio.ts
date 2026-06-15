@@ -19,6 +19,25 @@ export function registerAudioHandlers(): void {
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer
   })
 
+  /**
+   * Decode any audio file to mono 32-bit float PCM via ffmpeg (main process).
+   * The renderer's Web Audio `decodeAudioData` cannot decode several formats DJs
+   * routinely use (FLAC, AIFF, ALAC/.m4a) and throws "EncodingError" — ffmpeg
+   * handles them all. Used by the beatgrid editor.
+   *
+   * `sampleRate` defaults to 22 050 Hz — plenty for peak rendering and onset
+   * detection, and keeps the transferred buffer small (≈5 MB per minute).
+   */
+  ipcMain.handle(
+    'audio:decodePcm',
+    async (_e, filePath: string, sampleRate = 22050): Promise<{ samples: Float32Array; sampleRate: number }> => {
+      if (!existsSync(filePath)) throw new Error(`File not found: ${filePath}`)
+      const { decodeAudioToPcm } = await import('../integrations/beat-analysis/audio-decode')
+      const samples = await decodeAudioToPcm(filePath, sampleRate)
+      return { samples, sampleRate }
+    }
+  )
+
   ipcMain.handle('audio:readTags', async (_e, filePath: string): Promise<TagResult | null> => {
     if (!existsSync(filePath)) return null
     try {

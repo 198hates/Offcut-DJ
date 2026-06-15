@@ -163,6 +163,8 @@ const api = {
   audio: {
     readFile: (filePath: string): Promise<ArrayBuffer> =>
       ipcRenderer.invoke('audio:readFile', filePath),
+    decodePcm: (filePath: string, sampleRate?: number): Promise<{ samples: Float32Array; sampleRate: number }> =>
+      ipcRenderer.invoke('audio:decodePcm', filePath, sampleRate),
     readTags: (filePath: string) =>
       ipcRenderer.invoke('audio:readTags', filePath),
     readArtwork: (filePath: string): Promise<string | null> =>

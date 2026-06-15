@@ -6,6 +6,26 @@ import AnalyzerWorker from './analyzerWorker?worker'
 
 export type { SuggestedCue }
 
+/**
+ * Decode a track to an AudioBuffer, robustly.
+ *
+ * The renderer's Web Audio `decodeAudioData` throws "EncodingError" on formats
+ * DJs routinely use (FLAC, AIFF, ALAC/.m4a). When it fails we fall back to the
+ * main-process ffmpeg decoder (mono PCM) and wrap that in an AudioBuffer, so
+ * analysis/auto-cue work on every format instead of silently producing nothing.
+ */
+export async function decodeTrackToBuffer(filePath: string, ctx: AudioContext): Promise<AudioBuffer> {
+  const ab = await window.api.audio.readFile(filePath)
+  try {
+    return await ctx.decodeAudioData(ab)
+  } catch {
+    const { samples, sampleRate } = await window.api.audio.decodePcm(filePath)
+    const buf = ctx.createBuffer(1, Math.max(1, samples.length), sampleRate)
+    buf.getChannelData(0).set(samples)
+    return buf
+  }
+}
+
 export async function analyzeAudio(buffer: AudioBuffer, bars?: number[]): Promise<AnalyzerResult> {
   return new Promise((resolve, reject) => {
     const worker = new AnalyzerWorker()
@@ -35,11 +55,10 @@ export async function analyzeAudio(buffer: AudioBuffer, bars?: number[]): Promis
  * @param existingBpm – if provided, used only as a hint; analysis always runs in full
  */
 export async function generateCuesForFile(filePath: string, bars?: number[]): Promise<CuePoint[]> {
-  const ab  = await window.api.audio.readFile(filePath)
   const ctx = new AudioContext()
   let audioBuffer: AudioBuffer
   try {
-    audioBuffer = await ctx.decodeAudioData(ab)
+    audioBuffer = await decodeTrackToBuffer(filePath, ctx)
   } finally {
     // Close even on decode failure — leaked AudioContexts eventually make
     // `new AudioContext()` fail renderer-wide.

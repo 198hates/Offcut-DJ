@@ -107,6 +107,7 @@ declare global {
       }
       audio: {
         readFile: (filePath: string) => Promise<ArrayBuffer>
+        decodePcm: (filePath: string, sampleRate?: number) => Promise<{ samples: Float32Array; sampleRate: number }>
         readTags: (filePath: string) => Promise<{
           bpm: number | null; key: string | null; title: string | null
           artist: string | null; album: string | null; genre: string | null

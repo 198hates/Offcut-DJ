@@ -14,7 +14,7 @@ import { create } from 'zustand'
 import type { Track } from '@shared/types'
 import { useLibraryStore } from './libraryStore'
 import { useToastStore } from './toastStore'
-import { analyzeAudio, downbeatsForTrack } from '../lib/analyzer'
+import { analyzeAudio, decodeTrackToBuffer, downbeatsForTrack } from '../lib/analyzer'
 import { generateBeatgrid } from '../lib/compatibility'
 
 export interface AnalysisProgress {
@@ -75,8 +75,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       const current = findTrack(id) ?? t
       if (!current.bpm || !current.key || current.energy == null || current.beatgrid.length === 0) {
         try {
-          const ab = await window.api.audio.readFile(t.filePath)
-          const buf = await ctx.decodeAudioData(ab)
+          const buf = await decodeTrackToBuffer(t.filePath, ctx)
           const result = await analyzeAudio(buf, downbeatsForTrack(current))
           const newBpm = result.bpm ?? current.bpm
           // Never clobber an existing beatgrid: phase 2 also runs for tracks
@@ -111,8 +110,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       if (!t) continue
       set({ progress: { label: 'energy', current: i + 1, total: ids.length, track: trackLabel(t) } })
       try {
-        const ab = await window.api.audio.readFile(t.filePath)
-        const buf = await ctx.decodeAudioData(ab)
+        const buf = await decodeTrackToBuffer(t.filePath, ctx)
         const result = await analyzeAudio(buf)
         const current = findTrack(id) ?? t
         const newBpm = result.bpm ?? current.bpm
@@ -152,8 +150,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       if (!t) continue
       set({ progress: { label: 'auto-cue', current: i + 1, total: ids.length, track: trackLabel(t) } })
       try {
-        const ab = await window.api.audio.readFile(t.filePath)
-        const buf = await actx.decodeAudioData(ab)
+        const buf = await decodeTrackToBuffer(t.filePath, actx)
         const result = await analyzeAudio(buf, downbeatsForTrack(t))
         if (result.suggestedCues.length > 0) {
           const cuePoints = result.suggestedCues.map((c, idx) => ({
