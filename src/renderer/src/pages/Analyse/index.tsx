@@ -7,7 +7,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { useAnalysisStore } from '../../store/analysisStore'
-import { analyzeAudio, generateCuesForFile, computeRmsGainDb, downbeatsForTrack } from '../../lib/analyzer'
+import { analyzeAudio, generateCuesForFile, downbeatsForTrack } from '../../lib/analyzer'
+import { computeLufsGainDb } from '../../lib/loudness'
 import { generateBeatgrid } from '../../lib/compatibility'
 import { getQuantiser, initQuantiser } from '../../lib/quantiser'
 import { batchInferGenres } from '../../lib/genreInference'
@@ -703,7 +704,7 @@ function GainSection(): JSX.Element {
       try {
         const ab  = await window.api.audio.readFile(t.filePath)
         const buf = await ctx.decodeAudioData(ab)
-        const gainDb = computeRmsGainDb(buf)
+        const gainDb = computeLufsGainDb(buf)
         await updateTrack({ id: t.id, gainDb })
       } catch { /* skip unreadable */ }
     }
@@ -719,10 +720,10 @@ function GainSection(): JSX.Element {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">auto-gain (RMS normalisation)
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">auto-gain (LUFS / R128)
           </h2>
           <p className="font-mono text-[13px] text-muted mt-0.5">
-            measures per-track loudness · stores gain_db correction to −14 dBFS target
+            measures integrated loudness (ITU-R BS.1770) · stores gain_db correction to a −14 LUFS target
           </p>
         </div>
         <div className="flex items-center gap-2">
