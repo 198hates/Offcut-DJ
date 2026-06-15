@@ -456,6 +456,26 @@ export interface AiTidyResult {
   genre: string
 }
 
+/** One artist/track the AI suggests digging into, from web-grounded research. */
+export interface AiDigSuggestion {
+  artist: string
+  title: string       // may be "" when the suggestion is an artist, not a specific track
+  why: string
+}
+
+/** A web source the AI cited while researching a seed. */
+export interface AiDigSource {
+  title: string
+  url: string
+}
+
+/** Result of ai:digContext — web-grounded crate-digging context for a seed. */
+export interface AiDigResult {
+  summary: string                 // a few sentences on scene / era / label / sound
+  suggestions: AiDigSuggestion[]  // specific things to dig into next
+  sources: AiDigSource[]          // de-duplicated web citations
+}
+
 // ── ProLink B2B Capture ───────────────────────────────────────────────────────
 
 /** Play state of a CDJ on the network */

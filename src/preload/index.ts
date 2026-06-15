@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, Playlist, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult } from '../shared/types'
+import type { Track, Playlist, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult } from '../shared/types'
 
 const api = {
   library: {
@@ -348,7 +348,11 @@ const api = {
     tidyMetadata: (
       tracks: AiTidyTrack[]
     ): Promise<{ results?: AiTidyResult[]; error?: string }> =>
-      ipcRenderer.invoke('ai:tidyMetadata', tracks)
+      ipcRenderer.invoke('ai:tidyMetadata', tracks),
+    digContext: (
+      seed: { artist: string; title: string }
+    ): Promise<{ result?: AiDigResult; error?: string }> =>
+      ipcRenderer.invoke('ai:digContext', seed)
   }
 }
 

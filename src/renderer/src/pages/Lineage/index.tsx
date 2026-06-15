@@ -26,8 +26,10 @@ import type {
   RouteType,
   SeedCandidate,
   StoredCandidate,
-  Track
+  Track,
+  AiDigResult
 } from '@shared/types'
+import { useAiStatus } from '../../hooks/useAiStatus'
 import './lineage.css'
 
 type Phase = 'idle' | 'working' | 'ready' | 'error'
@@ -103,6 +105,12 @@ export function LineagePage(): JSX.Element {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [bandcamp, setBandcamp] = useState<BandcampEmbed | null>(null)
   const [bandcampLoading, setBandcampLoading] = useState(false)
+
+  // AI crate-dig context (web-grounded).
+  const aiEnabled = useAiStatus()
+  const [aiDig, setAiDig] = useState<{ key: string; data: AiDigResult } | null>(null)
+  const [aiDigBusy, setAiDigBusy] = useState(false)
+  const [aiDigError, setAiDigError] = useState<string | null>(null)
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set())
   const [savedFinds, setSavedFinds] = useState<StoredCandidate[]>([])
   const [listMode, setListMode] = useState<'directions' | 'saved'>('directions')
@@ -327,6 +335,29 @@ export function LineagePage(): JSX.Element {
       void runDig({ artist: aTrim, title: tiTrim }, tiTrim || aTrim, meta)
     },
     [runDig]
+  )
+
+  // AI dig: web-grounded crate-digging context for the selected node.
+  const runAiDig = useCallback(
+    async (a: string, ti: string) => {
+      const artist = (a || '').trim()
+      const title = (ti || '').trim()
+      if (!artist && !title) return
+      const key = `${artist} ${title}`
+      setAiDigBusy(true)
+      setAiDigError(null)
+      setAiDig(null)
+      try {
+        const { result, error } = await window.api.ai.digContext({ artist, title })
+        if (error || !result) setAiDigError(error ?? 'No context found.')
+        else setAiDig({ key, data: result })
+      } catch (e) {
+        setAiDigError((e as Error).message)
+      } finally {
+        setAiDigBusy(false)
+      }
+    },
+    []
   )
 
   // Dig from a specific Discogs release the user picked in the disambiguation list.
@@ -886,7 +917,64 @@ export function LineagePage(): JSX.Element {
               <button className="cd-btn" onClick={exportCrate} disabled={savedKeys.size === 0}>
                 Export
               </button>
+              {aiEnabled && (
+                <button
+                  className="cd-btn"
+                  onClick={() => selected && runAiDig(selected.artist ?? '', selected.title ?? '')}
+                  disabled={aiDigBusy || !selected || (!selected.artist && !selected.title)}
+                  title="AI crate-dig context — web-grounded research on this record"
+                >
+                  {aiDigBusy ? '✦ …' : '✦ AI dig'}
+                </button>
+              )}
             </div>
+
+            {/* AI crate-dig context */}
+            {aiEnabled && (aiDigBusy || aiDigError || aiDig) && (
+              <div className="cd-aidig">
+                {aiDigBusy && (
+                  <div className="cd-note"><span className="cd-spinner" /> researching the web…</div>
+                )}
+                {!aiDigBusy && aiDigError && (
+                  <div className="cd-aidig-err">{aiDigError}</div>
+                )}
+                {!aiDigBusy && aiDig && (
+                  <>
+                    <p className="cd-aidig-summary">{aiDig.data.summary}</p>
+                    {aiDig.data.suggestions.length > 0 && (
+                      <div className="cd-aidig-list">
+                        {aiDig.data.suggestions.map((s, i) => (
+                          <div key={i} className="cd-aidig-row">
+                            <div className="cd-aidig-meta">
+                              <span className="cd-aidig-name">
+                                {s.artist}{s.title ? ` — ${s.title}` : ''}
+                              </span>
+                              <span className="cd-aidig-why">{s.why}</span>
+                            </div>
+                            <button
+                              className="cd-btn sm"
+                              onClick={() => dig(s.artist, s.title)}
+                              title="Dig from this lead"
+                            >
+                              DIG
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {aiDig.data.sources.length > 0 && (
+                      <div className="cd-aidig-src">
+                        {aiDig.data.sources.slice(0, 6).map((src, i) => (
+                          <a key={i} href={src.url} target="_blank" rel="noreferrer" title={src.url}>
+                            ▸ {src.title.length > 40 ? src.title.slice(0, 40) + '…' : src.title}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Preview / sources */}
             {selected?.kind === 'track' && (

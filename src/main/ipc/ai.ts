@@ -3,7 +3,8 @@ import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema'
 import { getAnthropic, AI_MODEL, AI_CHEAP_MODEL } from '../integrations/ai/client'
 import { getSettings } from '../settings'
 import type {
-  AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult
+  AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult,
+  AiDigResult, AiDigSuggestion, AiDigSource
 } from '../../shared/types'
 
 // JSON-schema for structured output. Every field is required (strict mode);
@@ -119,6 +120,34 @@ Return, for EVERY track, the corrected title, artist and genre:
 
 Echo each track's id as trackId. Only correct what is clearly wrong — when a field is already clean, return it unchanged. Never invent artists or titles.`
 
+// ── Crate-dig context (web search) ────────────────────────────────────────────
+
+const DIG_SYSTEM = `You are a crate-digging research assistant for a DJ. Given a seed record (artist + title, or just an artist), use web search to research it, then help the DJ find adjacent music worth digging into.
+
+Cover, where the sources support it: the scene / era / label / sound of the record, and a handful of SPECIFIC artists or tracks to dig into next (related producers, the label's roster, key remixes, sampled/sampling records, contemporaries). Ground every claim in what you actually find — do not pad with generic genre lore, and never invent releases.
+
+End your reply with a single fenced \`\`\`json code block, and nothing after it, of the exact shape:
+{"summary": "<3-5 sentences>", "suggestions": [{"artist": "<name>", "title": "<track or release, or empty string for an artist-level lead>", "why": "<one clause>"}]}
+Aim for 5-8 suggestions. Keep prose before the block short — the JSON is what the app reads.`
+
+interface DigJson { summary?: string; suggestions?: AiDigSuggestion[] }
+
+/** Pull the trailing JSON object out of the model's reply, tolerating fences/prose. */
+function extractDigJson(text: string): DigJson | null {
+  const candidates: string[] = []
+  const fences = text.match(/```(?:json)?\s*([\s\S]*?)```/gi)
+  if (fences) for (const f of fences) candidates.push(f.replace(/```(?:json)?/i, '').replace(/```\s*$/, ''))
+  const a = text.indexOf('{'), b = text.lastIndexOf('}')
+  if (a !== -1 && b > a) candidates.push(text.slice(a, b + 1))
+  for (const c of candidates.reverse()) {
+    try {
+      const o = JSON.parse(c.trim())
+      if (o && typeof o === 'object') return o as DigJson
+    } catch { /* try the next candidate */ }
+  }
+  return null
+}
+
 export function registerAiHandlers(): void {
   ipcMain.handle('ai:status', () => {
     const s = getSettings()
@@ -228,6 +257,63 @@ export function registerAiHandlers(): void {
         // Keep only results that map back to a real input id.
         const results = raw.results.filter((r) => known.has(r.trackId))
         return { results }
+      } catch (err) {
+        return { error: (err as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'ai:digContext',
+    async (
+      _e,
+      seed: { artist: string; title: string }
+    ): Promise<{ result?: AiDigResult; error?: string }> => {
+      const client = getAnthropic()
+      if (!client) return { error: 'AI is off or no API key is set (Settings → AI).' }
+      const artist = (seed?.artist || '').trim()
+      const title = (seed?.title || '').trim()
+      if (!artist && !title) return { error: 'Nothing to research.' }
+      try {
+        const who = title
+          ? `the record "${title}"${artist ? ` by ${artist}` : ''}`
+          : `the artist ${artist}`
+        const msg = await client.messages.create({
+          model: AI_MODEL,
+          max_tokens: 4096,
+          system: DIG_SYSTEM,
+          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }],
+          messages: [{ role: 'user', content: `Research ${who} for crate-digging.` }]
+        })
+
+        // Concatenate the model's prose and harvest web-search citations.
+        let text = ''
+        const sources: AiDigSource[] = []
+        const seenUrls = new Set<string>()
+        for (const block of msg.content) {
+          if (block.type !== 'text') continue
+          text += block.text
+          for (const cit of block.citations ?? []) {
+            const url = (cit as { url?: string }).url
+            if (!url || seenUrls.has(url)) continue
+            seenUrls.add(url)
+            sources.push({ title: (cit as { title?: string | null }).title || url, url })
+          }
+        }
+
+        const parsed = extractDigJson(text)
+        const summary = (parsed?.summary || '').trim() || text.replace(/```[\s\S]*?```/g, '').trim()
+        const suggestions: AiDigSuggestion[] = Array.isArray(parsed?.suggestions)
+          ? parsed!.suggestions
+              .map((s) => ({
+                artist: String(s?.artist ?? '').trim(),
+                title: String(s?.title ?? '').trim(),
+                why: String(s?.why ?? '').trim()
+              }))
+              .filter((s) => s.artist || s.title)
+          : []
+        if (!summary && !suggestions.length) return { error: "Couldn't research that seed." }
+        return { result: { summary, suggestions, sources } }
       } catch (err) {
         return { error: (err as Error).message }
       }
