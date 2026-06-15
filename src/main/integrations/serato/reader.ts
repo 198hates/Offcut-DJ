@@ -75,6 +75,7 @@ export function importFromIntegration(appDb: Database.Database, seratoDir: strin
             bitDepth: null,
             gainDb: null,
             phrases: null,
+            embedding: null,
             sourceIds: { serato: filePath }
           }
           insertTrack(track)

@@ -72,6 +72,7 @@ const COL_MAP: Record<string, string> = {
   sampleRate: 'sample_rate',
   bitDepth: 'bit_depth',
   gainDb: 'gain_db',
+  embedding: 'embedding',
   lastPlayedAt: 'last_played_at',
   playCount: 'play_count',
 }

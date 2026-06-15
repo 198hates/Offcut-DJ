@@ -150,6 +150,8 @@ export function applySchema(db: import('better-sqlite3').Database): void {
     "ALTER TABLE tracks ADD COLUMN gain_db REAL",
     // Phrase / song structure
     "ALTER TABLE tracks ADD COLUMN phrases TEXT",
+    // Audio-content feature vector (similarity)
+    "ALTER TABLE tracks ADD COLUMN embedding TEXT",
     // Date last modified (tag write-back timestamp)
     "ALTER TABLE tracks ADD COLUMN updated_at TEXT",
     // Session history playlist type

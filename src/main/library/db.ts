@@ -58,6 +58,7 @@ export function rowToTrack(row: Record<string, unknown>): Track {
     bitDepth:   (row.bit_depth   as number | null) ?? null,
     gainDb:     (row.gain_db     as number | null) ?? null,
     phrases:    row.phrases ? JSON.parse(row.phrases as string) : null,
+    embedding:  row.embedding ? JSON.parse(row.embedding as string) : null,
   }
 }
 

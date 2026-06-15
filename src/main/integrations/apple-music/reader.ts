@@ -159,6 +159,7 @@ export function importFromIntegration(db: Database.Database, xmlPath: string): I
         bitDepth: null,
         gainDb: null,
         phrases: null,
+        embedding: null,
         sourceIds: { 'apple-music': appleMusicId }
       }
 

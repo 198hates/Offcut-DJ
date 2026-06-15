@@ -213,6 +213,9 @@ export interface Track {
   // ── Phrase / song structure ───────────────────────────────────────────────
   /** Phrase segments detected by the phrase analyser */
   phrases: PhraseSegment[] | null
+  // ── Audio-content similarity ──────────────────────────────────────────────
+  /** Handcrafted audio feature vector (see lib/audioFeatures); null until analysed */
+  embedding: number[] | null
 }
 
 // ── Stem separation ───────────────────────────────────────────────────────────

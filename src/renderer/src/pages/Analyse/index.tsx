@@ -9,6 +9,7 @@ import { useLibraryStore } from '../../store/libraryStore'
 import { useAnalysisStore } from '../../store/analysisStore'
 import { analyzeAudio, generateCuesForFile, downbeatsForTrack } from '../../lib/analyzer'
 import { computeLufsGainDb } from '../../lib/loudness'
+import { audioFeatureVector } from '../../lib/audioFeatures'
 import { generateBeatgrid } from '../../lib/compatibility'
 import { getQuantiser, initQuantiser } from '../../lib/quantiser'
 import { batchInferGenres } from '../../lib/genreInference'
@@ -22,7 +23,8 @@ const ANALYSE_TOOLS = [
   { id: 'grid', label: 'Beat grid' },
   { id: 'cues', label: 'Auto-cue' },
   { id: 'genre', label: 'Genre' },
-  { id: 'gain', label: 'Auto-gain' }
+  { id: 'gain', label: 'Auto-gain' },
+  { id: 'similarity', label: 'Audio similarity' }
 ] as const
 type AnalyseTool = (typeof ANALYSE_TOOLS)[number]['id']
 
@@ -774,6 +776,91 @@ function GainSection(): JSX.Element {
   )
 }
 
+// ── Audio similarity ──────────────────────────────────────────────────────────
+
+function bufToMono(buf: AudioBuffer): Float32Array {
+  if (buf.numberOfChannels === 1) return buf.getChannelData(0)
+  const a = buf.getChannelData(0), b = buf.getChannelData(1)
+  const out = new Float32Array(buf.length)
+  for (let i = 0; i < out.length; i++) out[i] = 0.5 * (a[i] + b[i])
+  return out
+}
+
+function SimilaritySection(): JSX.Element {
+  const { tracks, updateTrack } = useLibraryStore()
+  const [running, setRunning]   = useState(false)
+  const [progress, setProgress] = useState({ current: 0, total: 0, label: '' })
+  const [done, setDone]         = useState(false)
+  const cancelRef = useRef(false)
+
+  const unanalysed = tracks.filter((t) => t.embedding == null)
+  const analysedCount = tracks.length - unanalysed.length
+
+  const run = useCallback(async () => {
+    cancelRef.current = false
+    setRunning(true)
+    setDone(false)
+    const ctx = new AudioContext()
+    const toProcess = tracks.filter((t) => t.embedding == null)
+    setProgress({ current: 0, total: toProcess.length, label: '' })
+    for (let i = 0; i < toProcess.length; i++) {
+      if (cancelRef.current) break
+      const t = toProcess[i]
+      setProgress({ current: i + 1, total: toProcess.length, label: t.title || t.filePath.split('/').pop() || t.id })
+      try {
+        const ab  = await window.api.audio.readFile(t.filePath)
+        const buf = await ctx.decodeAudioData(ab)
+        const embedding = audioFeatureVector(bufToMono(buf), buf.sampleRate)
+        await updateTrack({ id: t.id, embedding })
+      } catch { /* skip unreadable */ }
+    }
+    await ctx.close()
+    setRunning(false)
+    setDone(true)
+    setProgress({ current: 0, total: 0, label: '' })
+  }, [tracks, updateTrack])
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">audio similarity</h2>
+          <p className="font-mono text-[13px] text-muted mt-0.5">
+            builds a per-track audio fingerprint (timbre + harmony + spectral shape) for “tracks that sound like this”
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {running && (
+            <button onClick={() => { cancelRef.current = true }}
+              className="px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
+              cancel
+            </button>
+          )}
+          {!running && (
+            <button onClick={run} disabled={unanalysed.length === 0} className={btnPrimary}>
+              {done ? 're-analyse' : `analyse ${unanalysed.length} track${unanalysed.length !== 1 ? 's' : ''}`}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="analysed" value={analysedCount.toLocaleString()} sub={`of ${tracks.length.toLocaleString()} tracks`} accent={analysedCount > 0} />
+        <StatCard label="pending" value={unanalysed.length.toLocaleString()} />
+      </div>
+
+      {running && progress.total > 0 && (
+        <ProgressBar current={progress.current} total={progress.total} label="similarity analysis" title={progress.label} />
+      )}
+      {unanalysed.length === 0 && !running && tracks.length > 0 && (
+        <p className="font-mono text-[13px] text-green-600 dark:text-green-400 flex items-center gap-2">
+          <span>✓</span> every track has an audio fingerprint — use “Similar tracks” from a track’s menu
+        </p>
+      )}
+    </section>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function AnalysePage(): JSX.Element {
@@ -840,6 +927,7 @@ export function AnalysePage(): JSX.Element {
         {tool === 'cues' && <AutoCueSection />}
         {tool === 'genre' && <GenreSection />}
         {tool === 'gain' && <GainSection />}
+        {tool === 'similarity' && <SimilaritySection />}
       </div>
     </div>
   )

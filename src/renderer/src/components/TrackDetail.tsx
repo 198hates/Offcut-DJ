@@ -4,6 +4,7 @@ import { useToastStore } from '../store/toastStore'
 import { CamelotWheel } from './CamelotWheel'
 import { BeatgridEditor } from './BeatgridEditor'
 import { compatibilityScore, harmonicScore } from '../lib/compatibility'
+import { findSimilar } from '../lib/similarity'
 import { generateCuesForFile, analyzeAudio, downbeatsForTrack } from '../lib/analyzer'
 import { generateBeatgrid } from '../lib/compatibility'
 import { useDeckAStore, useDeckBStore } from '../store/playerStore'
@@ -1139,7 +1140,7 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
   const loadTrackA = useDeckAStore((s) => s.loadTrack)
   const loadTrackB = useDeckBStore((s) => s.loadTrack)
   const deckATrack = useDeckAStore((s) => s.currentTrack)
-  const [mode, setMode] = useState<'match' | 'next'>('match')
+  const [mode, setMode] = useState<'match' | 'next' | 'sound'>('match')
   const [showFactors, setShowFactors] = useState<string | null>(null)
 
   if (!track.bpm && !track.key) return null
@@ -1162,8 +1163,17 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
     .sort((a, b) => b.score - a.score)
     .slice(0, 8)
 
-  const candidates = mode === 'match' ? matchCandidates : nextCandidates
-  if (!candidates.length) return null
+  // SOUND mode — audio-content similarity (needs embeddings)
+  const soundCandidates = track.embedding
+    ? findSimilar(
+        track.embedding,
+        allTracks.filter((t) => t.id !== track.id && t.embedding).map((t) => ({ item: t, vec: t.embedding! })),
+        8
+      ).map((r) => ({ track: r.item, score: r.score, next: null as NextResult | null }))
+    : []
+
+  const candidates = mode === 'match' ? matchCandidates : mode === 'next' ? nextCandidates : soundCandidates
+  if (!candidates.length && mode !== 'sound') return null
 
   return (
     <div className="px-3 py-3 border-b border-border/30">
@@ -1173,7 +1183,7 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
           <span className="text-accent mr-1">04</span>mixable tracks
         </p>
         <div className="flex items-center border border-border/35 rounded overflow-hidden">
-          {(['match', 'next'] as const).map((m) => (
+          {(['match', 'next', 'sound'] as const).map((m) => (
             <button
               key={m}
               onClick={() => setMode(m)}
@@ -1190,6 +1200,14 @@ function MixablePanel({ track }: { track: Track }): JSX.Element | null {
       {mode === 'next' && (
         <p className="font-mono text-[11px] text-muted/50 mb-1.5">
           what plays well <em>after</em> this track
+        </p>
+      )}
+
+      {mode === 'sound' && (
+        <p className="font-mono text-[11px] text-muted/50 mb-1.5">
+          {track.embedding
+            ? <>tracks that <em>sound like</em> this one</>
+            : <>run “Audio similarity” in Analyse to enable this</>}
         </p>
       )}
 
