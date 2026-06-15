@@ -17,6 +17,15 @@ const hexToRgb = (h: string): [number, number, number] => {
   return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [255, 255, 255]
 }
 
+// Waveform-colour presets. The first few are built from Offcut's own palette
+// (terracotta accent #D86A4A, cream ink #ECE3CC, the deck waveform browns).
+const WAVEFORM_COLOR_PRESETS: { name: string; colors: UsbWaveformColors }[] = [
+  { name: 'Offcut', colors: { low: '#6b5a3e', mid: '#c2683e', high: '#ece3cc' } },
+  { name: 'Terracotta', colors: { low: '#7a3b22', mid: '#d86a4a', high: '#f0d8b0' } },
+  { name: 'Ember', colors: { low: '#5e2a12', mid: '#ef7a3c', high: '#e0a83c' } },
+  { name: 'Classic', colors: { low: '#1e64ff', mid: '#ff8c1a', high: '#ffffff' } }
+]
+
 /** Live preview of the exported RGB waveform: a synthetic 3-band waveform drawn
  *  with the magnitude-weighted blend of the chosen band colours — the same blend
  *  the export encodes into PWV5. */
@@ -181,6 +190,10 @@ export function RekordboxUsbPanel(): JSX.Element {
       void window.api.settings.save({ usbWaveformColors: next })
       return next
     })
+  }, [])
+  const applyWaveColors = useCallback((c: UsbWaveformColors) => {
+    setWaveColors(c)
+    void window.api.settings.save({ usbWaveformColors: c })
   }, [])
 
   const scan = useCallback(async () => {
@@ -618,18 +631,21 @@ export function RekordboxUsbPanel(): JSX.Element {
 
           {waveColors && (
             <div className="rounded border border-border/30 p-2.5 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="font-mono text-[10px] uppercase tracking-wide text-muted/60">Waveform colours · RGB mode</div>
-                <button
-                  onClick={() => {
-                    const d: UsbWaveformColors = { low: '#1e64ff', mid: '#ff8c1a', high: '#ffffff' }
-                    setWaveColors(d)
-                    void window.api.settings.save({ usbWaveformColors: d })
-                  }}
-                  className="font-mono text-[10px] text-muted/60 hover:text-ink"
-                >
-                  reset
-                </button>
+              <div className="font-mono text-[10px] uppercase tracking-wide text-muted/60">Waveform colours · RGB mode</div>
+              <div className="flex flex-wrap gap-1.5">
+                {WAVEFORM_COLOR_PRESETS.map((p) => {
+                  const active = waveColors.low === p.colors.low && waveColors.mid === p.colors.mid && waveColors.high === p.colors.high
+                  return (
+                    <button
+                      key={p.name}
+                      onClick={() => applyWaveColors(p.colors)}
+                      className={`flex items-center gap-1.5 rounded border px-1.5 py-1 font-mono text-[10px] transition-colors ${active ? 'border-accent/70 text-ink bg-accent/10' : 'border-border/40 text-muted/70 hover:text-ink hover:border-border'}`}
+                    >
+                      <span className="h-3 w-6 rounded-sm" style={{ background: `linear-gradient(90deg, ${p.colors.low}, ${p.colors.mid}, ${p.colors.high})` }} />
+                      {p.name}
+                    </button>
+                  )
+                })}
               </div>
               <WaveformColorPreview colors={waveColors} />
               <div className="grid grid-cols-3 gap-2">
