@@ -93,4 +93,24 @@ describe('buildExportPdb — CDJ-format export', () => {
     const len = (hdr >> 1) - 1
     expect(buf.toString('ascii', nameOff + 1, nameOff + 1 + len)).toBe('My Album')
   })
+
+  it('writes artwork rows and links tracks via artwork_id', () => {
+    const path = '/PIONEER/Artwork/00001/a1.jpg'
+    const buf = buildExportPdb(
+      [track(1, { artworkId: 1 })],
+      [{ id: 1, name: 'P', trackIds: [1] }],
+      history,
+      '2026-06-13',
+      [{ id: 1, path }]
+    )
+    // artwork data page = 28 (LAYOUTS); row = u4 id + DeviceSQL path inline.
+    const rowStart = 28 * 4096 + 0x28
+    expect(buf.readUInt32LE(rowStart)).toBe(1) // artwork id
+    const hdr = buf.readUInt8(rowStart + 4) // DeviceSQL short ASCII header
+    const len = (hdr >> 1) - 1
+    expect(buf.toString('ascii', rowStart + 5, rowStart + 5 + len)).toBe(path)
+    // track row carries the artwork_id (offset 0x1c within the 0x5e fixed header).
+    const trackRow = 2 * 4096 + 0x28
+    expect(buf.readUInt32LE(trackRow + 0x1c)).toBe(1)
+  })
 })

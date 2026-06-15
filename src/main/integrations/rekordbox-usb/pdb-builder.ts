@@ -46,6 +46,14 @@ export interface PdbTrack {
   /** Device-relative ANLZ path string (CDJ ignores it, but real exports store one). */
   analyzePath: string
   comment: string
+  /** Row id in the artwork table (0 = no album art). */
+  artworkId?: number
+}
+
+/** An album-art row: its id and the device-relative path to the JPEG. */
+export interface PdbArtwork {
+  id: number
+  path: string
 }
 
 export interface PdbPlaylist {
@@ -255,6 +263,19 @@ function nameRows(values: string[]): Rows {
   return { heap: Buffer.from(parts), offsets }
 }
 
+// artwork_row: u4 id + DeviceSQL path string (inline). Ids come pre-assigned.
+function artworkRows(arts: PdbArtwork[]): Rows {
+  const parts: number[] = []
+  const offsets: number[] = []
+  for (const a of arts) {
+    offsets.push(parts.length)
+    const id = Buffer.alloc(4); id.writeUInt32LE(a.id, 0)
+    parts.push(...id, ...encodeString(a.path))
+    alignTo4(parts)
+  }
+  return { heap: Buffer.from(parts), offsets }
+}
+
 function artistRows(values: string[]): Rows {
   const parts: number[] = []
   const offsets: number[] = []
@@ -420,7 +441,7 @@ function trackRows(tracks: PdbTrack[], ids: { artist: Map<string, number>; album
     u2(0x0024); u2((idx * 0x20) & 0xffff); u4(0x0700)
     u4(t.sampleRate || 44100); u4(0); u4(Math.min(t.fileSize, 0xffffffff) >>> 0)
     u4(((t.id + 5) | 0x100) >>> 0); u2(0xe5b6); u2(0x6a76)
-    u4(0) // artwork_id
+    u4(t.artworkId ?? 0) // artwork_id
     u4(keyNameToId(t.key)); u4(0); u4(ids.label.get(t.label.toLowerCase()) ?? 0); u4(ids.remixer.get(t.remixer.toLowerCase()) ?? 0)
     u4(t.bitrate || 0); u4(t.trackNumber || 0); u4(t.tempo || 0)
     u4(ids.genre.get(t.genre.toLowerCase()) ?? 0); u4(ids.album.get(t.album.toLowerCase()) ?? 0); u4(ids.artist.get(t.artist.toLowerCase()) ?? 0); u4(t.id)
@@ -464,7 +485,13 @@ function dedupCi(values: string[]): { unique: string[]; map: Map<string, number>
 }
 
 /** Build a complete CDJ-compatible export.pdb. `today` is YYYY-MM-DD. */
-export function buildExportPdb(tracks: PdbTrack[], playlists: PdbPlaylist[], history: HistoryBlobs, today: string): Buffer {
+export function buildExportPdb(
+  tracks: PdbTrack[],
+  playlists: PdbPlaylist[],
+  history: HistoryBlobs,
+  today: string,
+  artworks: PdbArtwork[] = []
+): Buffer {
   const artists = dedupCi(tracks.map((t) => t.artist))
   const albums = dedupCi(tracks.map((t) => t.album).filter(Boolean))
   const genres = dedupCi(tracks.map((t) => t.genre).filter(Boolean))
@@ -505,7 +532,8 @@ export function buildExportPdb(tracks: PdbTrack[], playlists: PdbPlaylist[], his
   data.set(0x06, { chunks: splitIntoPages(colorRows()), seq: 8 + 7 * 5 })
   set(0x07, playlistTreeRows(playlists), 6)
   set(0x08, playlistEntryRows(playlists), 11)
-  data.set(0x0d, { chunks: [{ heap: Buffer.alloc(0), offsets: [] }], seq: 5 }) // artwork (none)
+  if (artworks.length) set(0x0d, artworkRows(artworks), 5)
+  else data.set(0x0d, { chunks: [{ heap: Buffer.alloc(0), offsets: [] }], seq: 5 }) // artwork (none)
   data.set(0x10, { chunks: splitIntoPages(columnRows()), seq: 3 })
 
   // Allocate overflow pages (>1 data page) starting at 52.

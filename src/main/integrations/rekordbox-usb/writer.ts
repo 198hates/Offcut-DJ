@@ -15,7 +15,9 @@ import { join, basename, dirname } from 'path'
 import { resolveExportPdb, parseExportPdb } from './reader'
 import { buildDatAnlz, buildExtAnlz, build2exAnlz, anlzDirForPath, beatsFromMarkers, beatsFromBpm, type AnlzBeat, type AnlzCue } from './anlz'
 import { analyzeWaveform } from './waveform'
-import { buildExportPdb, type PdbTrack, type PdbPlaylist, type HistoryBlobs } from './pdb-builder'
+import { buildExportPdb, type PdbTrack, type PdbPlaylist, type PdbArtwork, type HistoryBlobs } from './pdb-builder'
+import { readEmbeddedArt, toStickJpeg } from './artwork'
+import { createHash } from 'node:crypto'
 import type { UsbPlaylistNode, UsbTrack } from './types'
 import type { BeatgridMarker, CuePoint } from '../../../shared/types'
 
@@ -721,6 +723,28 @@ export async function exportPlaylistsToUsb(
   const skipped: string[] = []
   let nextId = 1
 
+  // Album art, deduped by image bytes (tracks of the same album share one row).
+  const artDir = join(usbRoot, 'PIONEER', 'Artwork', '00001')
+  const artworkIdByHash = new Map<string, number>()
+  const artworks: PdbArtwork[] = []
+  let nextArtworkId = 1
+  const resolveArtwork = async (audioPath: string): Promise<number> => {
+    const raw = await readEmbeddedArt(audioPath)
+    if (!raw) return 0
+    const hash = createHash('md5').update(raw).digest('hex')
+    const existing = artworkIdByHash.get(hash)
+    if (existing != null) return existing
+    const jpeg = await toStickJpeg(raw)
+    if (!jpeg) return 0
+    const artId = nextArtworkId++
+    const devicePath = `/PIONEER/Artwork/00001/a${artId}.jpg`
+    mkdirSync(artDir, { recursive: true })
+    writeFileSync(join(artDir, `a${artId}.jpg`), jpeg)
+    artworks.push({ id: artId, path: devicePath })
+    artworkIdByHash.set(hash, artId)
+    return artId
+  }
+
   const resolveTrack = async (t: SyncTrackInput): Promise<number | null> => {
     const existing = trackIdByPath.get(t.audioFilePath)
     if (existing != null) return existing
@@ -760,13 +784,15 @@ export async function exportPlaylistsToUsb(
     const twoEx = build2exAnlz(anlzOpts)
     if (twoEx) writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.2EX'), twoEx)
 
+    const artworkId = await resolveArtwork(t.audioFilePath)
+
     trackIdByPath.set(t.audioFilePath, id)
     pdbTracks.push({
       id, title: t.title, artist: t.artist, album: t.album || '', genre: t.genre || '', label: '', remixer: '',
       key: t.key || '', sampleRate: 44100, fileSize, bitrate: t.bitrate || 0, trackNumber: 0,
       tempo: Math.round((t.bpm || 0) * 100), discNumber: 0, year: t.year || 0, durationSecs: t.durationSec || 0,
       fileName: safeFileName, fileExt: basename(t.audioFilePath).split('.').pop() || 'mp3',
-      usbPath: deviceFilePath, analyzePath, comment: ''
+      usbPath: deviceFilePath, analyzePath, comment: '', artworkId
     })
     return id
   }
@@ -788,7 +814,7 @@ export async function exportPlaylistsToUsb(
     resultPlaylists.push({ name: pl.name, tracks: ids.length })
   }
 
-  writeFileSync(pdbPath, buildExportPdb(pdbTracks, pdbPlaylists, opts.history, opts.today))
+  writeFileSync(pdbPath, buildExportPdb(pdbTracks, pdbPlaylists, opts.history, opts.today, artworks))
   writeRekordboxStructure(usbRoot, opts.settingsDir)
 
   return { backupPath, playlists: resultPlaylists, totalTracks: pdbTracks.length, skipped }
