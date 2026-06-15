@@ -6,6 +6,7 @@
  */
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
+import { useAnalysisStore } from '../../store/analysisStore'
 import { analyzeAudio, generateCuesForFile, computeRmsGainDb, downbeatsForTrack } from '../../lib/analyzer'
 import { generateBeatgrid } from '../../lib/compatibility'
 import { getQuantiser, initQuantiser } from '../../lib/quantiser'
@@ -780,13 +781,52 @@ function GainSection(): JSX.Element {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function AnalysePage(): JSX.Element {
+  const tracks = useLibraryStore((s) => s.tracks)
+  const running = useAnalysisStore((s) => s.running)
+  const [busy, setBusy] = useState(false)
+
+  // Tracks needing each step (matches the per-section targeting below).
+  const needGrid = tracks.filter((t) => !t.beatgrid?.length).length
+  const needMeta = tracks.filter((t) => !t.bpm || !t.key || t.energy == null).length
+  const needCues = tracks.filter((t) => t.cuePoints.length === 0 && t.bpm != null).length
+  const needAny  = needGrid + needMeta + needCues
+
+  // One-click full pipeline across the library: beat grid → BPM/key/energy →
+  // auto-cue, each scoped to only the tracks still missing that step (so it
+  // skips work that's already done). Progress shows in the global bar.
+  const runEverything = useCallback(async () => {
+    setBusy(true)
+    try {
+      const store = useAnalysisStore.getState()
+      const snap = () => useLibraryStore.getState().tracks
+      const grid = snap().filter((t) => !t.beatgrid?.length).map((t) => t.id)
+      if (grid.length) await store.analyseBeats(grid)
+      const meta = snap().filter((t) => !t.bpm || !t.key || t.energy == null).map((t) => t.id)
+      if (meta.length) await store.analyseBpm(meta)
+      const cues = snap().filter((t) => t.cuePoints.length === 0 && t.bpm != null).map((t) => t.id)
+      if (cues.length) await store.autoCue(cues)
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
   return (
     <div className="h-full overflow-y-auto p-6 space-y-8 max-w-3xl">
-      <div>
-        <h1 className="text-base font-mono font-bold uppercase tracking-[0.12em] text-ink mb-0.5">
-          <span className="text-accent mr-2">→</span>analyse
-        </h1>
-        <p className="font-mono text-xs text-muted">automated batch processing — bpm, keys, beat grids, cue points, gain</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-base font-mono font-bold uppercase tracking-[0.12em] text-ink mb-0.5">
+            <span className="text-accent mr-2">→</span>analyse
+          </h1>
+          <p className="font-mono text-xs text-muted">automated batch processing — bpm, keys, beat grids, cue points, gain</p>
+        </div>
+        <button
+          onClick={runEverything}
+          disabled={busy || running || needAny === 0}
+          title="Run beat grid, BPM/key/energy and auto-cue across every track that still needs it"
+          className="shrink-0 px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[13px] uppercase tracking-[0.12em] rounded transition-colors"
+        >
+          {busy || running ? 'analysing…' : needAny === 0 ? 'all analysed' : `analyse everything (${needAny.toLocaleString()})`}
+        </button>
       </div>
 
       <BpmKeySection />

@@ -63,6 +63,7 @@ export function useTrackMenu(): {
   const analyseEnergy = useAnalysisStore((s) => s.analyseEnergy)
   const analyseBeats = useAnalysisStore((s) => s.analyseBeats)
   const autoCue = useAnalysisStore((s) => s.autoCue)
+  const analyseAll = useAnalysisStore((s) => s.analyseAll)
   const writeTags = useAnalysisStore((s) => s.writeTags)
 
   const openTrackMenu = useCallback((e: React.MouseEvent, opts: OpenTrackMenuOpts) => {
@@ -136,7 +137,8 @@ export function useTrackMenu(): {
       },
       {
         items: [
-          { label: isMulti ? `Analyse ${n} tracks` : 'Analyse BPM + key', action: () => analyseBpm(ids) },
+          { label: isMulti ? `Analyse all (${n})` : 'Analyse all', action: () => analyseAll(ids) },
+          { label: isMulti ? `Analyse BPM + key (${n})` : 'Analyse BPM + key', action: () => analyseBpm(ids) },
           { label: isMulti ? `Analyse energy (${n})` : 'Analyse energy', action: () => analyseEnergy(ids) },
           { label: isMulti ? `Detect beat grid (${n})` : 'Detect beat grid', action: () => analyseBeats(ids) },
           { label: isMulti ? `Auto-cue (${n})` : 'Auto-cue', action: () => autoCue(ids) },

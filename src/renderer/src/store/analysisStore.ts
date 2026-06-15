@@ -32,6 +32,8 @@ interface AnalysisState {
   analyseEnergy: (ids: string[]) => Promise<void>
   analyseBeats: (ids: string[]) => Promise<void>
   autoCue: (ids: string[]) => Promise<void>
+  /** Run the full chain: beat grid → BPM/key/energy → auto-cue, in order. */
+  analyseAll: (ids: string[]) => Promise<void>
   writeTags: (ids: string[]) => Promise<void>
 }
 
@@ -164,6 +166,18 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     await actx.close()
     set({ progress: null, running: false })
     toast(`Auto-cued ${ids.length} track${plural(ids.length)}`, 'success')
+  },
+
+  analyseAll: async (ids) => {
+    if (get().running || ids.length === 0) return
+    // Order matters: the beat grid runs first so its real downbeats are present
+    // when BPM/key/energy and auto-cue read them (auto-cue anchors to the real
+    // bars — Phase A). Each step manages the `running` flag itself, so analyseAll
+    // simply awaits them in sequence rather than holding the flag across all.
+    await get().analyseBeats(ids)
+    await get().analyseBpm(ids)
+    await get().autoCue(ids)
+    toast(`Full analysis complete for ${ids.length} track${plural(ids.length)}`, 'success')
   },
 
   writeTags: async (ids) => {
