@@ -22,5 +22,8 @@ export function getAnthropic(): Anthropic | null {
   return _client
 }
 
-/** Default model for AI reasoning features. */
+/** Default model for AI reasoning features (search, sequencing). */
 export const AI_MODEL = 'claude-opus-4-8'
+
+/** Cheap model for high-volume, low-reasoning work (bulk metadata tidy). */
+export const AI_CHEAP_MODEL = 'claude-haiku-4-5'

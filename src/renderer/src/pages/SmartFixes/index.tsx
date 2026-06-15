@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { inferGenre } from '../../lib/genreInference'
 import type { Track } from '@shared/types'
@@ -174,7 +174,29 @@ interface Fix {
   label: string
   description: string
   icon: string
-  scan: (tracks: Track[]) => FixResult[]
+  scan?: (tracks: Track[]) => FixResult[]
+  /** Async scan backed by the AI main-process bridge. Mutually exclusive with scan. */
+  aiScan?: (tracks: Track[]) => Promise<FixResult[]>
+}
+
+// ── AI tidy: candidate selection ──────────────────────────────────────────────
+// Cap how many tracks we send per pass — keeps cost bounded and the preview snappy.
+const AI_TIDY_CAP = 80
+
+/** Heuristic "how messy does this look" score — used to prioritise AI-tidy candidates. */
+function messiness(t: Track): number {
+  let s = 0
+  const blob = `${t.title ?? ''} ${t.artist ?? ''}`
+  if (/_/.test(blob)) s += 2
+  if (/https?:\/\/|www\.|\S+@\S+\.\w/.test(blob)) s += 3
+  if (/free\s*(?:download|dl)|out\s*now|promo|exclusive|buy\s*now/i.test(blob)) s += 3
+  if (/[[\](){}]/.test(t.title ?? '')) s += 1
+  if (/\d/.test(t.title ?? '')) s += 1
+  for (const v of [t.title, t.artist]) {
+    if (v && v.length > 2 && (v === v.toUpperCase() || v === v.toLowerCase())) s += 1
+  }
+  if (!t.genre) s += 1
+  return s
 }
 
 const FIXES: Fix[] = [
@@ -495,6 +517,45 @@ const FIXES: Fix[] = [
       return results
     }
   },
+  {
+    id: 'ai-tidy',
+    label: 'AI tidy metadata',
+    description: 'AI cleans messy titles & artist names a rule can’t (mixed junk, odd casing, embedded credits) and fills missing genres — every change previewed before applying',
+    icon: '✦',
+    aiScan: async (tracks) => {
+      const candidates = tracks
+        .filter((t) => t.title || t.artist)
+        .map((t) => ({ t, m: messiness(t) }))
+        .filter((x) => x.m > 0)
+        .sort((a, b) => b.m - a.m)
+        .slice(0, AI_TIDY_CAP)
+        .map((x) => x.t)
+      if (!candidates.length) return []
+
+      const payload = candidates.map((t) => ({
+        id: t.id, title: t.title || '', artist: t.artist || '',
+        album: t.album || '', genre: t.genre || ''
+      }))
+      const { results, error } = await window.api.ai.tidyMetadata(payload)
+      if (error || !results) throw new Error(error ?? 'AI tidy failed')
+
+      const byId = new Map(candidates.map((t) => [t.id, t]))
+      const out: FixResult[] = []
+      for (const r of results) {
+        const t = byId.get(r.trackId)
+        if (!t) continue
+        const clean = (s: string): string => s.replace(/\s+/g, ' ').trim()
+        const title = clean(r.title), artist = clean(r.artist), genre = clean(r.genre)
+        if (title && title !== (t.title ?? ''))
+          out.push({ trackId: t.id, display: t.title || t.filePath, field: 'title', before: t.title || '—', after: title })
+        if (artist && artist !== (t.artist ?? ''))
+          out.push({ trackId: t.id, display: t.title || t.filePath, field: 'artist', before: t.artist || '—', after: artist })
+        if (genre && genre !== (t.genre ?? ''))
+          out.push({ trackId: t.id, display: t.title || t.filePath, field: 'genre', before: t.genre || '—', after: genre })
+      }
+      return out
+    }
+  },
 ]
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -506,13 +567,35 @@ export function SmartFixesPage(): JSX.Element {
   const [selections, setSelections] = useState<Record<string, Set<number>>>({})  // fix.id → set of selected indices
   const [applying, setApplying] = useState<string | null>(null)
   const [applied, setApplied] = useState<Record<string, number>>({})
+  const [scanning, setScanning] = useState<string | null>(null)
+  const [scanError, setScanError] = useState<Record<string, string>>({})
+  const [aiEnabled, setAiEnabled] = useState(false)
 
-  const scan = useCallback((fix: Fix) => {
-    const res = fix.scan(tracks)
+  useEffect(() => {
+    window.api.ai.status().then((s) => setAiEnabled(s.enabled && s.hasKey)).catch(() => setAiEnabled(false))
+  }, [])
+
+  const visibleFixes = aiEnabled ? FIXES : FIXES.filter((f) => !f.aiScan)
+
+  const scan = useCallback(async (fix: Fix) => {
+    setOpenFix(fix.id)
+    setScanError((e) => { const n = { ...e }; delete n[fix.id]; return n })
+    let res: FixResult[] = []
+    if (fix.aiScan) {
+      setScanning(fix.id)
+      try {
+        res = await fix.aiScan(tracks)
+      } catch (err) {
+        setScanError((e) => ({ ...e, [fix.id]: (err as Error).message }))
+      } finally {
+        setScanning(null)
+      }
+    } else if (fix.scan) {
+      res = fix.scan(tracks)
+    }
     setResults((r) => ({ ...r, [fix.id]: res }))
     // Default: all results selected
     setSelections((s) => ({ ...s, [fix.id]: new Set(res.map((_, i) => i)) }))
-    setOpenFix(fix.id)
   }, [tracks])
 
   const toggleSelection = useCallback((fixId: string, idx: number) => {
@@ -558,13 +641,15 @@ export function SmartFixesPage(): JSX.Element {
         </p>
       </div>
 
-      {FIXES.map((fix, i) => {
+      {visibleFixes.map((fix, i) => {
         const isOpen    = openFix === fix.id
         const res       = results[fix.id] ?? []
         const sel       = selections[fix.id] ?? new Set(res.map((_, j) => j))
         const selCount  = res.filter((_, j) => sel.has(j)).length
         const isApplied = applied[fix.id] != null
         const isBusy    = applying === fix.id
+        const isScanning = scanning === fix.id
+        const err       = scanError[fix.id]
 
         return (
           <div key={fix.id} className="border border-border/30 rounded overflow-hidden">
@@ -573,7 +658,12 @@ export function SmartFixesPage(): JSX.Element {
               className={`flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors ${
                 isOpen ? 'bg-chassis-soft' : 'bg-ink/[0.02] hover:bg-ink/[0.04]'
               }`}
-              onClick={() => isOpen ? setOpenFix(null) : scan(fix)}
+              onClick={() => {
+                if (isOpen) { setOpenFix(null); return }
+                // Don't re-charge an AI scan that already produced results/an error.
+                if (fix.aiScan && (res.length > 0 || err)) { setOpenFix(fix.id); return }
+                scan(fix)
+              }}
             >
               {/* Number */}
               <span className="font-mono text-[12px] text-muted w-4 shrink-0 tabular-nums text-right">
@@ -598,12 +688,14 @@ export function SmartFixesPage(): JSX.Element {
                     ✓ {applied[fix.id]} fixed
                   </span>
                 )}
-                {!isOpen ? (
+                {isScanning ? (
+                  <span className="font-mono text-[12px] text-accent uppercase tracking-[0.1em]">scanning…</span>
+                ) : !isOpen ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); scan(fix) }}
                     className="px-3 py-1 font-mono text-[12px] uppercase tracking-[0.1em] bg-ink/5 hover:bg-ink/10 border border-border/40 rounded transition-colors text-ink-soft hover:text-ink"
                   >
-                    scan
+                    {fix.aiScan ? '✦ scan' : 'scan'}
                   </button>
                 ) : (
                   <span className="font-mono text-[12px] text-muted uppercase tracking-[0.1em]">
@@ -616,7 +708,17 @@ export function SmartFixesPage(): JSX.Element {
             {/* Expanded results */}
             {isOpen && (
               <div className="border-t border-border/20">
-                {res.length === 0 ? (
+                {isScanning ? (
+                  <div className="px-4 py-4 flex items-center gap-2">
+                    <span className="text-accent font-mono text-[13px]">✦</span>
+                    <span className="font-mono text-[13px] text-muted">asking AI to review {Math.min(tracks.length, AI_TIDY_CAP)} track{tracks.length !== 1 ? 's' : ''}…</span>
+                  </div>
+                ) : err ? (
+                  <div className="px-4 py-4 flex items-center gap-2">
+                    <span className="text-red-500 font-mono text-[13px]">✕</span>
+                    <span className="font-mono text-[13px] text-red-400/90">{err}</span>
+                  </div>
+                ) : res.length === 0 ? (
                   <div className="px-4 py-4 flex items-center gap-2">
                     <span className="text-green-600 dark:text-green-400 font-mono text-[13px]">✓</span>
                     <span className="font-mono text-[13px] text-muted">no issues found</span>

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, Playlist, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult } from '../shared/types'
+import type { Track, Playlist, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult } from '../shared/types'
 
 const api = {
   library: {
@@ -344,7 +344,11 @@ const api = {
       tracks: AiSeqTrack[],
       intent?: string
     ): Promise<{ result?: AiSequenceResult; error?: string }> =>
-      ipcRenderer.invoke('ai:sequenceSet', tracks, intent)
+      ipcRenderer.invoke('ai:sequenceSet', tracks, intent),
+    tidyMetadata: (
+      tracks: AiTidyTrack[]
+    ): Promise<{ results?: AiTidyResult[]; error?: string }> =>
+      ipcRenderer.invoke('ai:tidyMetadata', tracks)
   }
 }
 

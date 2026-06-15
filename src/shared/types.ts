@@ -439,6 +439,23 @@ export interface AiSequenceResult {
   arc: string               // one-paragraph narrative of the set's shape
 }
 
+/** Candidate track metadata sent to the AI metadata-tidy pass. */
+export interface AiTidyTrack {
+  id: string
+  title: string
+  artist: string
+  album: string
+  genre: string
+}
+
+/** Cleaned metadata returned by the AI tidy pass (one per input track). */
+export interface AiTidyResult {
+  trackId: string
+  title: string
+  artist: string
+  genre: string
+}
+
 // ── ProLink B2B Capture ───────────────────────────────────────────────────────
 
 /** Play state of a CDJ on the network */

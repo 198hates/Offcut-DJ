@@ -1,8 +1,10 @@
 import { ipcMain } from 'electron'
 import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema'
-import { getAnthropic, AI_MODEL } from '../integrations/ai/client'
+import { getAnthropic, AI_MODEL, AI_CHEAP_MODEL } from '../integrations/ai/client'
 import { getSettings } from '../settings'
-import type { AiSearchFilter, AiSeqTrack, AiSequenceResult } from '../../shared/types'
+import type {
+  AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult
+} from '../../shared/types'
 
 // JSON-schema for structured output. Every field is required (strict mode);
 // numeric dimensions are nullable so "unconstrained" is explicit.
@@ -84,6 +86,39 @@ Principles:
 
 Return the full ordering. Each step's "reason" is one short clause on why that track follows the previous one (harmonic move, energy step, mood shift). The "arc" is one paragraph describing the set's overall shape.`
 
+// ── Metadata tidy ─────────────────────────────────────────────────────────────
+
+const TIDY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          trackId: { type: 'string' },
+          title: { type: 'string' },
+          artist: { type: 'string' },
+          genre: { type: 'string' }
+        },
+        required: ['trackId', 'title', 'artist', 'genre']
+      }
+    }
+  },
+  required: ['results']
+} as const
+
+const TIDY_SYSTEM = `You clean messy DJ track metadata. For each input track you receive id, title, artist, album, genre.
+
+Return, for EVERY track, the corrected title, artist and genre:
+- title: fix casing (Title Case), expand/strip nothing musical. Remove promo junk ("free download", "out now", URLs, store tags) and stray numbering. KEEP remixer/version credits that belong in the title, e.g. "(Someone Remix)", "(Extended Mix)".
+- artist: canonical spelling/casing of the primary artist(s). Keep stylised names as the scene writes them (e.g. "deadmau5", "ZHU"). Do not move featured artists around unless the title clearly belongs there.
+- genre: a single common DJ genre (e.g. "House", "Tech House", "Drum & Bass", "Techno", "Trance", "Disco"). If the existing genre is already reasonable, echo it. If you genuinely cannot tell, return the existing genre, or "" if there was none.
+
+Echo each track's id as trackId. Only correct what is clearly wrong — when a field is already clean, return it unchanged. Never invent artists or titles.`
+
 export function registerAiHandlers(): void {
   ipcMain.handle('ai:status', () => {
     const s = getSettings()
@@ -164,6 +199,35 @@ export function registerAiHandlers(): void {
           if (!seen.has(t.id)) order.push({ trackId: t.id, reason: '(appended — not placed by AI)' })
         }
         return { result: { order, arc: raw.arc } }
+      } catch (err) {
+        return { error: (err as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'ai:tidyMetadata',
+    async (
+      _e,
+      tracks: AiTidyTrack[]
+    ): Promise<{ results?: AiTidyResult[]; error?: string }> => {
+      const client = getAnthropic()
+      if (!client) return { error: 'AI is off or no API key is set (Settings → AI).' }
+      if (!tracks?.length) return { error: 'No tracks to tidy.' }
+      try {
+        const known = new Set(tracks.map((t) => t.id))
+        const msg = await client.messages.parse({
+          model: AI_CHEAP_MODEL,
+          max_tokens: 8192,
+          output_config: { format: jsonSchemaOutputFormat(TIDY_SCHEMA) },
+          system: TIDY_SYSTEM,
+          messages: [{ role: 'user', content: `Tracks:\n${JSON.stringify(tracks)}` }]
+        })
+        const raw = msg.parsed_output as { results: AiTidyResult[] } | null
+        if (!raw) return { error: "Couldn't tidy that metadata." }
+        // Keep only results that map back to a real input id.
+        const results = raw.results.filter((r) => known.has(r.trackId))
+        return { results }
       } catch (err) {
         return { error: (err as Error).message }
       }
