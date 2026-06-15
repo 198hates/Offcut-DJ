@@ -12,6 +12,7 @@ import { generateBeatgrid } from '../../lib/compatibility'
 import { getQuantiser, initQuantiser } from '../../lib/quantiser'
 import { batchInferGenres } from '../../lib/genreInference'
 import { PageHeader } from '../../components/PageHeader'
+import { tabClass, btnPrimary } from '../../lib/ui'
 import type { Track } from '@shared/types'
 
 const ANALYSE_TOOLS = [
@@ -827,7 +828,7 @@ export function AnalysePage(): JSX.Element {
             onClick={runEverything}
             disabled={busy || running || needAny === 0}
             title="Run beat grid, BPM/key/energy and auto-cue across every track that still needs it"
-            className="px-4 py-1.5 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[12px] uppercase tracking-[0.1em] rounded transition-colors"
+            className={btnPrimary}
           >
             {busy || running ? 'analysing…' : needAny === 0 ? 'all analysed' : `analyse everything (${needAny.toLocaleString()})`}
           </button>
@@ -838,13 +839,7 @@ export function AnalysePage(): JSX.Element {
         {/* Tools — one at a time instead of a long stacked scroll */}
         <div className="flex flex-wrap gap-1 border-b border-border/20 pb-2">
           {ANALYSE_TOOLS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTool(t.id)}
-              className={`font-mono text-[12px] uppercase tracking-[0.08em] px-3 py-1 rounded transition-colors ${
-                tool === t.id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink hover:bg-ink/[0.05]'
-              }`}
-            >
+            <button key={t.id} onClick={() => setTool(t.id)} className={tabClass(tool === t.id)}>
               {t.label}
             </button>
           ))}

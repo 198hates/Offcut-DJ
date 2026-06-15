@@ -4,6 +4,7 @@ import { useWaveformStore, type WaveformStyle, type KeyNotation } from '../../st
 import { useThemeStore } from '../../store/themeStore'
 import { MidiSettings } from '../../components/MidiSettings'
 import { AI_SETTINGS_CHANGED } from '../../hooks/useAiStatus'
+import { tabClass } from '../../lib/ui'
 
 type SettingsPatch = Partial<AppSettings>
 
@@ -122,13 +123,7 @@ export function SettingsPage(): JSX.Element {
       {/* Category tabs */}
       <div className="sticky top-0 z-10 -mx-6 px-6 py-2 bg-chassis/95 backdrop-blur border-b border-border/25 flex flex-wrap gap-1">
         {CATEGORIES.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => setActiveCat(c.id)}
-            className={`font-mono text-[12px] uppercase tracking-[0.1em] px-3 py-1 rounded transition-colors ${
-              activeCat === c.id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink hover:bg-ink/[0.05]'
-            }`}
-          >
+          <button key={c.id} onClick={() => setActiveCat(c.id)} className={tabClass(activeCat === c.id)}>
             {c.label}
           </button>
         ))}

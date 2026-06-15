@@ -11,6 +11,7 @@ import { useLibraryStore } from '../../store/libraryStore'
 import { dbscan, clusterName, clusterKeyLabel } from '../../lib/clustering'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
 import { PageHeader } from '../../components/PageHeader'
+import { tabClass, btnGhost } from '../../lib/ui'
 import type { Track, Playlist } from '@shared/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -801,7 +802,7 @@ function BackupSection({ tracks, playlists }: { tracks: Track[]; playlists: Play
             a.click()
             URL.revokeObjectURL(url)
           }}
-          className="font-mono text-[12px] uppercase tracking-[0.1em] px-4 py-1.5 rounded border transition-colors border-border/40 text-muted hover:text-ink hover:border-border/70"
+          className={btnGhost}
         >
           export {tracks.length} tracks as JSON
         </button>
@@ -840,13 +841,7 @@ export function HealthPage(): JSX.Element {
         {/* Tools — one at a time instead of a long stacked scroll */}
         <div className="flex flex-wrap gap-1 border-y border-border/20 py-2">
           {HEALTH_TOOLS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTool(t.id)}
-              className={`font-mono text-[12px] uppercase tracking-[0.08em] px-3 py-1 rounded transition-colors ${
-                tool === t.id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink hover:bg-ink/[0.05]'
-              }`}
-            >
+            <button key={t.id} onClick={() => setTool(t.id)} className={tabClass(tool === t.id)}>
               {t.label}
             </button>
           ))}
