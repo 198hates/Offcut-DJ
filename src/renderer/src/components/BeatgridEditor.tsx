@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { generateBeatgrid } from '../lib/compatibility'
+import { formatTime } from '../lib/format'
 import type { Track, BeatgridMarker } from '@shared/types'
 
 // Re-flag downbeats so bar 1 falls on beat `phase` (0–3) of every 4, letting the
@@ -107,13 +108,8 @@ function playClick(ctx: AudioContext, when: number, accent: boolean): void {
 }
 
 // mm:ss.d from milliseconds (one decimal of seconds — enough to read a sweep).
-function fmtTime(ms: number): string {
-  if (!isFinite(ms) || ms < 0) ms = 0
-  const total = ms / 1000
-  const m = Math.floor(total / 60)
-  const s = total - m * 60
-  return `${m}:${s.toFixed(1).padStart(4, '0')}`
-}
+/** ms → "m:ss.t" — delegates to the shared seconds-based formatter. */
+const fmtTime = (ms: number): string => formatTime(ms / 1000)
 
 // ── Canvas rendering ──────────────────────────────────────────────────────────
 

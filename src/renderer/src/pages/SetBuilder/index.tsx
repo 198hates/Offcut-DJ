@@ -4,6 +4,7 @@ import { useDeckAStore } from '../../store/playerStore'
 import { useToastStore } from '../../store/toastStore'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { compatibilityScore, magicSort } from '../../lib/compatibility'
+import { formatDuration } from '../../lib/format'
 import { setTrackDragData, acceptsTrackDrop, readTrackIds } from '../../lib/trackDrag'
 import { GraphView } from './GraphView'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
@@ -117,11 +118,7 @@ function arcTransition(a: ChapterProfile, b: ChapterProfile): ArcTransition {
 
 // ── Misc helpers ──────────────────────────────────────────────────────────────
 
-function fmt(secs: number | null): string {
-  if (!secs) return '—'
-  const m = Math.floor(secs / 60), s = Math.round(secs % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
+const fmt = formatDuration
 
 function fmtBpmRange(p: ChapterProfile): string {
   if (!p.bpmMin || !p.bpmMax) return '—'

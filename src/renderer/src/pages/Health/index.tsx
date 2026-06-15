@@ -11,6 +11,7 @@ import { useLibraryStore } from '../../store/libraryStore'
 import { dbscan, clusterName, clusterKeyLabel } from '../../lib/clustering'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
 import { PageHeader } from '../../components/PageHeader'
+import { StatCard } from '../../components/StatCard'
 import { tabClass, btnGhost } from '../../lib/ui'
 import type { Track, Playlist } from '@shared/types'
 
@@ -58,16 +59,6 @@ function trackScore(t: Track): number {
   )
 }
 
-function StatCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }): JSX.Element {
-  return (
-    <div className={`border rounded p-3 space-y-0.5 ${accent ? 'bg-amber-500/[0.06] border-amber-500/25' : 'bg-ink/[0.03] border-border/25'}`}>
-      <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-muted">{label}</p>
-      <p className={`font-mono text-lg font-bold tabular-nums ${accent ? 'text-amber-400' : 'text-ink'}`}>{value}</p>
-      {sub && <p className="font-mono text-[12px] text-muted/70">{sub}</p>}
-    </div>
-  )
-}
-
 // ── Library Stats ─────────────────────────────────────────────────────────────
 
 function StatsSection({ tracks }: { tracks: Track[] }): JSX.Element {
@@ -94,7 +85,7 @@ function StatsSection({ tracks }: { tracks: Track[] }): JSX.Element {
         <StatCard label="with genre"   value={withGenre.toLocaleString()} sub={pct(withGenre, n)} />
         <StatCard label="with cues"    value={withCues.toLocaleString()} sub={pct(withCues, n)} />
         <StatCard label="beatgrid v2"  value={withBeatgrid.toLocaleString()} sub={pct(withBeatgrid, n)} />
-        <StatCard label="needs analysis" value={needsAny.toLocaleString()} sub={pct(needsAny, n)} accent={needsAny > 0} />
+        <StatCard label="needs analysis" value={needsAny.toLocaleString()} sub={pct(needsAny, n)} accent={needsAny > 0} tone="amber" />
         <StatCard label="rated"        value={rated.toLocaleString()} sub={pct(rated, n)} />
         <StatCard label="tagged"       value={tagged.toLocaleString()} sub={pct(tagged, n)} />
       </div>

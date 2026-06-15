@@ -16,6 +16,7 @@ import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
 import { useAiStatus } from '../../hooks/useAiStatus'
+import { formatDuration } from '../../lib/format'
 import type { Track, SmartRule, AiSearchFilter } from '@shared/types'
 
 // ── Dual-handle range slider ──────────────────────────────────────────────────
@@ -113,7 +114,7 @@ function KeyGrid({ selected, onToggle }: { selected: Set<string>; onToggle: (k: 
 // ── Search result row ─────────────────────────────────────────────────────────
 
 function ResultRow({ track, onLoadA, onLoadB, onContextMenu }: { track: Track; onLoadA: (t: Track) => void; onLoadB: (t: Track) => void; onContextMenu: (e: React.MouseEvent, t: Track) => void }): JSX.Element {
-  const fmt = (s: number | null) => s ? `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}` : '—'
+  const fmt = formatDuration
   return (
     <div
       className="flex items-center gap-2 px-3 py-1.5 border-b border-border/15 hover:bg-ink/[0.03] group transition-colors"

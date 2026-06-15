@@ -12,6 +12,7 @@ import { generateBeatgrid } from '../../lib/compatibility'
 import { getQuantiser, initQuantiser } from '../../lib/quantiser'
 import { batchInferGenres } from '../../lib/genreInference'
 import { PageHeader } from '../../components/PageHeader'
+import { StatCard } from '../../components/StatCard'
 import { tabClass, btnPrimary } from '../../lib/ui'
 import type { Track } from '@shared/types'
 
@@ -25,18 +26,6 @@ const ANALYSE_TOOLS = [
 type AnalyseTool = (typeof ANALYSE_TOOLS)[number]['id']
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
-
-function StatCard({ label, value, sub, accent }: {
-  label: string; value: string; sub?: string; accent?: boolean
-}): JSX.Element {
-  return (
-    <div className="bg-ink/[0.03] border border-border/25 rounded p-3 space-y-0.5">
-      <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-muted">{label}</p>
-      <p className={`font-mono text-lg font-bold tabular-nums ${accent ? 'text-accent' : 'text-ink'}`}>{value}</p>
-      {sub && <p className="font-mono text-[12px] text-muted/70">{sub}</p>}
-    </div>
-  )
-}
 
 function ProgressBar({ current, total, label, title, startTime }: {
   current: number; total: number; label: string; title: string; startTime?: number
