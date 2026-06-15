@@ -313,7 +313,6 @@ export function LibraryPage(): JSX.Element {
       {!showBulkBar && (
         <div className="relative flex items-center gap-1.5 px-3 py-1 border-b border-border/20 shrink-0">
           <span className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted">
-            <span className="text-accent mr-1">02</span>
             {activePlaylist ? activePlaylist.name : 'all tracks'}
           </span>
           <span className="font-mono text-[12px] text-muted ml-auto tabular-nums">

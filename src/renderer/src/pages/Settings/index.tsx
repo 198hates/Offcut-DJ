@@ -102,7 +102,7 @@ export function SettingsPage(): JSX.Element {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-mono text-base font-bold uppercase tracking-[0.12em] text-ink">
-            <span className="text-accent mr-2">01</span>settings
+            <span className="text-accent mr-2">⚙</span>settings
           </h1>
           <p className="font-mono text-[13px] text-muted mt-0.5">configure integration paths and preferences</p>
         </div>

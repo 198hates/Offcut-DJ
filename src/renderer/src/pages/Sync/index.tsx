@@ -65,7 +65,7 @@ export function SyncPage(): JSX.Element {
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
-      <PageHeader marker="02" title="sync" subtitle={fmtLastImport ? `last import: ${fmtLastImport}` : undefined} />
+      <PageHeader marker="⇅" title="sync" subtitle={fmtLastImport ? `last import: ${fmtLastImport}` : undefined} />
 
       <div className="px-5 py-5 space-y-8 max-w-lg">
         {/* Import */}
