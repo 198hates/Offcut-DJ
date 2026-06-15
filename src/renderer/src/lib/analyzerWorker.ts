@@ -440,108 +440,244 @@ function detectStructuralCues(
   // Mean bar length — real grids can vary slightly; used for energy windows.
   const barMs = (bars[bars.length - 1] - bars[0]) / (bars.length - 1)
 
-  // Downsample to ~4 kHz for fast energy computation — over the FULL track.
-  // A 6-minute cap here put Break/Outro auto-cues in the wrong place on any
-  // longer track (the energy curve simply ended at 6:00).
-  const TARGET = 4000
-  const factor  = Math.max(1, Math.floor(sampleRate / TARGET))
-  const actual  = sampleRate / factor
-  const len     = Math.floor(samples.length / factor)
+  // ── Band-split energy per bar (Phase B) ───────────────────────────────────
+  // In dance music the KICK/BASS is the structural signal — it's what enters at
+  // the mix-in, drops out in a breakdown, and slams back in at the drop. A
+  // single broadband RMS conflates that with pads/vocals/risers, which is why a
+  // breakdown (kick gone, pads sustaining) used to read as "still high energy".
+  // So we split each bar into low (<200 Hz), mid and high, and cue on the bands.
+  const { low, mid, high, full } = bandEnergyPerBar(samples, sampleRate, bars, barMs)
+
+  // Robust per-track normalisation: divide by the 90th-percentile bar level,
+  // not the single max. This makes the thresholds below adapt to each track's
+  // own loudness instead of being absolute amplitudes (one loud transient no
+  // longer crushes the whole curve).
+  const lowN  = robustNorm(low)
+  const midN  = robustNorm(mid)
+  const highN = robustNorm(high)
+  const fullN = robustNorm(full)
+  const nBars = bars.length
+  if (nBars === 0) return []
+
+  // ── Phrase detection (Phase C) ────────────────────────────────────────────
+  // Dance music is built in 16- or 32-bar phrases, and every structural change
+  // (drop, breakdown, outro) lands on a phrase boundary. We find that grid by
+  // measuring where the biggest bar-to-bar energy CHANGES line up: for each
+  // candidate phrase length + phase, score the average "novelty" at the bars
+  // that would be phrase starts, and keep the best. Cues then snap to this
+  // detected phrase grid instead of an arbitrary multiple of 4/8 from bar 0.
+  const novelty = new Float32Array(nBars)
+  for (let i = 1; i < nBars; i++)
+    novelty[i] = Math.abs(fullN[i] - fullN[i - 1]) + Math.abs(lowN[i] - lowN[i - 1])
+
+  const phraseFit = (P: number): { phi: number; score: number } => {
+    let bestPhi = 0, best = -1
+    for (let phi = 0; phi < P; phi++) {
+      let s = 0, c = 0
+      for (let i = phi; i < nBars; i += P) { s += novelty[i]; c++ }
+      const avg = c > 0 ? s / c : 0
+      if (avg > best) { best = avg; bestPhi = phi }
+    }
+    return { phi: bestPhi, score: best }
+  }
+
+  let phraseLen = 16, phrasePhi = 0
+  if (nBars < 24) {
+    phraseLen = 8; phrasePhi = phraseFit(8).phi
+  } else {
+    const f16 = phraseFit(16)
+    phraseLen = 16; phrasePhi = f16.phi
+    if (nBars >= 64) {
+      const f32 = phraseFit(32)
+      if (f32.score > f16.score * 1.05) { phraseLen = 32; phrasePhi = f32.phi }
+    }
+  }
+
+  // Snap a bar to the detected phrase grid. `denom` sub-divides the phrase:
+  // 1 = phrase boundary, 2 = half-phrase (8 bars for a 16-bar phrase).
+  const snapPhrase = (i: number, denom: number): number => {
+    const step = Math.max(1, Math.round(phraseLen / denom))
+    const k = Math.round((i - phrasePhi) / step)
+    return Math.min(nBars - 1, Math.max(0, phrasePhi + k * step))
+  }
+
+  // ── Cue 1: mix-in (intro end) ─────────────────────────────────────────────
+  // First bar where the KICK enters and sustains for 4+ bars (low band crosses
+  // ~half the track's typical level), snapped to the phrase grid.
+  let mixInBar = -1
+  for (let i = 1; i < nBars - 4; i++) {
+    if (lowN[i] > 0.5 && lowN[i + 1] > 0.45 && lowN[i + 2] > 0.45 && lowN[i + 3] > 0.45) {
+      mixInBar = snapPhrase(i, 2)
+      break
+    }
+  }
+  if (mixInBar < 0) mixInBar = Math.min(phraseLen, nBars - 1)
+
+  // ── Cue 2: first drop ─────────────────────────────────────────────────────
+  // The first strong full-energy re-entry after mix-in: a bar near peak level
+  // (≥0.88) with a loud kick (≥0.7) that JUMPED up from the preceding 4 bars
+  // (≥0.15 rise) — the beat dropping back in, not just the loudest bar. Falls
+  // back to the global peak for flat, kick-throughout tracks.
+  const dropSearchStart = mixInBar + 8
+  let dropBar = -1
+  for (let i = dropSearchStart; i < nBars - 2; i++) {
+    let prevMin = Infinity
+    for (let j = Math.max(0, i - 4); j < i; j++) if (fullN[j] < prevMin) prevMin = fullN[j]
+    if (fullN[i] >= 0.88 && lowN[i] >= 0.7 && fullN[i] - prevMin >= 0.15) { dropBar = i; break }
+  }
+  if (dropBar < 0) {
+    let v = -1
+    for (let i = dropSearchStart; i < nBars - 2; i++) if (fullN[i] > v) { v = fullN[i]; dropBar = i }
+  }
+  if (dropBar >= 0) dropBar = snapPhrase(dropBar, 2)
+
+  // ── Cue 3: build / riser (Phase C) ────────────────────────────────────────
+  // The run-up into the drop: kick suppressed but mid/high climbing (snare
+  // rolls, white-noise risers). Only added when a clear ramp into the drop
+  // exists. Placed at the phrase boundary where the riser begins.
+  let buildBar = -1
+  if (dropBar >= 0) {
+    const intoDrop = midN[dropBar - 1] + highN[dropBar - 1]
+    const from = Math.max(mixInBar + 1, dropBar - 12)
+    for (let i = from; i < dropBar - 1; i++) {
+      if (lowN[i] < 0.6 && intoDrop - (midN[i] + highN[i]) > 0.4) {
+        buildBar = snapPhrase(i, 2)
+        break
+      }
+    }
+    if (buildBar >= dropBar || buildBar <= mixInBar) buildBar = -1
+  }
+
+  // ── Cue 4: breakdown ──────────────────────────────────────────────────────
+  // Deepest sustained KICK dip after the drop — 3 consecutive bars whose mean
+  // low-band level falls below half. Using the low band (not total) is what
+  // makes this land on the actual beat-drop, even when pads/vocals carry on.
+  let bdBar = -1
+  if (dropBar >= 0) {
+    let bdVal = 2
+    for (let i = dropBar + 4; i < nBars - 4; i++) {
+      const seg = (lowN[i] + lowN[i + 1] + lowN[i + 2]) / 3
+      if (seg < 0.5 && seg < bdVal) { bdVal = seg; bdBar = i }
+    }
+    if (bdBar >= 0) bdBar = snapPhrase(bdBar, 2)
+  }
+
+  // ── Cue 5: outro ──────────────────────────────────────────────────────────
+  // Last point in the second half where the kick is still going; the outro
+  // starts the bar after. Must leave at least 8 bars of outro.
+  const halfBar = Math.floor(nBars / 2)
+  let outroBar  = -1
+  for (let i = nBars - 2; i > halfBar; i--) {
+    if (lowN[i] > 0.5) { outroBar = i + 1; break }
+  }
+  if (outroBar >= 0 && (nBars - outroBar < 8 || outroBar === dropBar)) outroBar = -1
+  if (outroBar >= 0) outroBar = snapPhrase(outroBar, 1)
+
+  // ── Assemble — one cue per bar, time-ordered ──────────────────────────────
+  // Insert in priority order so that when two cues snap to the same phrase bar,
+  // the more important one wins; then emit sorted by position.
+  const byBar = new Map<number, SuggestedCue>()
+  const place = (bar: number, label: string, color: string): void => {
+    if (bar < 0 || bar >= nBars || byBar.has(bar)) return
+    byBar.set(bar, { positionMs: bars[bar], label, color })
+  }
+  place(dropBar,  'Drop',   '#D86A4A')
+  place(bdBar,    'Break',  '#3CA8C0')
+  place(mixInBar, 'Mix In', '#3CA86A')
+  place(buildBar, 'Build',  '#E0B43C')
+  place(outroBar, 'Outro',  '#A855C8')
+
+  return Array.from(byBar.values()).sort((a, b) => a.positionMs - b.positionMs)
+}
+
+// ── Band-split bar energies (low / mid / high / full) ─────────────────────────
+// STFT over the whole track at ~11 kHz; each frame's spectral power is split
+// into low (<200 Hz), mid (200–2000 Hz) and high (>2000 Hz) and accumulated into
+// the bar its centre falls in. Returns per-bar RMS for each band plus the sum.
+
+interface BandBars { low: Float32Array; mid: Float32Array; high: Float32Array; full: Float32Array }
+
+function bandEnergyPerBar(
+  samples: Float32Array,
+  sampleRate: number,
+  bars: number[],
+  barMs: number,
+): BandBars {
+  const nBars = bars.length
+  const low = new Float32Array(nBars)
+  const mid = new Float32Array(nBars)
+  const high = new Float32Array(nBars)
+  const full = new Float32Array(nBars)
+  const cnt = new Float32Array(nBars)
+
+  const TARGET = 11025
+  const factor = Math.max(1, Math.floor(sampleRate / TARGET))
+  const actual = sampleRate / factor
+  const len = Math.floor(samples.length / factor)
+  if (len < 1024) return { low, mid, high, full }
 
   const down = new Float32Array(len)
   for (let i = 0; i < len; i++) {
     let s = 0
-    for (let j = 0; j < factor; j++) s += Math.abs(samples[i * factor + j] ?? 0)
-    down[i] = s / factor
+    const base = i * factor
+    const end = Math.min(base + factor, samples.length)
+    for (let j = base; j < end; j++) s += samples[j]
+    down[i] = s / (end - base)
   }
 
-  // RMS per bar (window = this downbeat → the next one)
-  const barRms = bars.map((barStart, idx) => {
-    const barEnd = idx + 1 < bars.length ? bars[idx + 1] : barStart + barMs
-    const s0 = Math.floor((barStart / 1000) * actual)
-    const s1 = Math.min(len, Math.floor((barEnd / 1000) * actual))
-    if (s1 <= s0) return 0
-    let sum = 0
-    for (let i = s0; i < s1; i++) sum += down[i] * down[i]
-    return Math.sqrt(sum / (s1 - s0))
-  })
+  const FFT = 1024
+  const HOP = 512
+  const half = FFT >> 1
+  const nFrames = Math.floor((len - FFT) / HOP)
+  if (nFrames < 1) return { low, mid, high, full }
 
-  // 3-bar moving-average smooth
-  const smooth = barRms.map((_, i) => {
-    const lo = Math.max(0, i - 1)
-    const hi = Math.min(barRms.length - 1, i + 1)
-    let s = 0
-    for (let j = lo; j <= hi; j++) s += barRms[j]
-    return s / (hi - lo + 1)
-  })
+  const hann = new Float32Array(FFT)
+  for (let i = 0; i < FFT; i++) hann[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (FFT - 1))
+  const re = new Float64Array(FFT)
+  const im = new Float64Array(FFT)
 
-  const maxE = Math.max(...smooth)
-  if (maxE === 0) return []
-  const norm = smooth.map((v) => v / maxE)
+  const lowMaxBin = Math.max(1, Math.floor((200 * FFT) / actual))
+  const midMaxBin = Math.max(lowMaxBin, Math.floor((2000 * FFT) / actual))
 
-  // Helper: snap bar index to the nearest multiple of `phrase` bars
-  const snap = (i: number, phrase: number): number =>
-    Math.min(bars.length - 1, Math.max(0, Math.round(i / phrase) * phrase))
-
-  const cues: SuggestedCue[] = []
-
-  // ── Cue 1: mix-in (intro end) ─────────────────────────────────────────────
-  // First bar where energy rises above 35% and sustains for 3+ bars.
-  // Snapped to an 8-bar phrase boundary so it's always on a musical grid.
-  let mixInBar = -1
-  for (let i = 1; i < norm.length - 4; i++) {
-    if (norm[i] > 0.35 && norm[i + 1] > 0.30 && norm[i + 2] > 0.28) {
-      mixInBar = snap(i, 8)
-      break
+  const lastBarEnd = bars[nBars - 1] + barMs
+  let bi = 0
+  for (let f = 0; f < nFrames; f++) {
+    const start = f * HOP
+    for (let i = 0; i < FFT; i++) { re[i] = (down[start + i] ?? 0) * hann[i]; im[i] = 0 }
+    fft(re, im)
+    let lp = 0, mp = 0, hp = 0
+    for (let bin = 1; bin < half; bin++) {
+      const p = re[bin] * re[bin] + im[bin] * im[bin]
+      if (bin <= lowMaxBin) lp += p
+      else if (bin <= midMaxBin) mp += p
+      else hp += p
     }
-  }
-  if (mixInBar < 0) mixInBar = Math.min(8, bars.length - 1)
-
-  if (mixInBar < bars.length) {
-    cues.push({ positionMs: bars[mixInBar], label: 'Mix In', color: '#3CA86A' })
-  }
-
-  // ── Cue 2: first drop ─────────────────────────────────────────────────────
-  // Global energy peak after mix-in + 8 bars, snapped to 4-bar phrase.
-  const dropSearchStart = mixInBar + 8
-  let dropBar = -1, dropVal = -1
-  for (let i = dropSearchStart; i < norm.length - 2; i++) {
-    if (norm[i] > dropVal) { dropVal = norm[i]; dropBar = i }
-  }
-  if (dropBar >= 0) {
-    dropBar = snap(dropBar, 4)
-    cues.push({ positionMs: bars[dropBar], label: 'Drop', color: '#D86A4A' })
+    const tc = ((start + half) / actual) * 1000   // frame-centre time (ms)
+    if (tc < bars[0] || tc >= lastBarEnd) continue
+    while (bi + 1 < nBars && tc >= bars[bi + 1]) bi++
+    low[bi] += lp; mid[bi] += mp; high[bi] += hp; full[bi] += lp + mp + hp; cnt[bi]++
   }
 
-  // ── Cue 3: breakdown ──────────────────────────────────────────────────────
-  // First significant energy dip (< 60 % of drop level) after drop + 4 bars.
-  if (dropBar >= 0) {
-    let bdBar = -1, bdVal = 2
-    const dropLevel = norm[dropBar] * 0.60
-    for (let i = dropBar + 4; i < norm.length - 4; i++) {
-      if (norm[i] < dropLevel && norm[i] < bdVal) { bdVal = norm[i]; bdBar = i }
-    }
-    if (bdBar >= 0) {
-      bdBar = snap(bdBar, 4)
-      cues.push({ positionMs: bars[bdBar], label: 'Break', color: '#3CA8C0' })
-    }
+  for (let i = 0; i < nBars; i++) {
+    const c = cnt[i] || 1
+    low[i] = Math.sqrt(low[i] / c)
+    mid[i] = Math.sqrt(mid[i] / c)
+    high[i] = Math.sqrt(high[i] / c)
+    full[i] = Math.sqrt(full[i] / c)
   }
+  return { low, mid, high, full }
+}
 
-  // ── Cue 4: outro ─────────────────────────────────────────────────────────
-  // Last point where energy falls below 40 % and stays low until the end.
-  // Must be in the second half of the track and leave at least 8 bars of outro.
-  const halfBar = Math.floor(bars.length / 2)
-  let outroBar  = -1
-  for (let i = bars.length - 2; i > halfBar; i--) {
-    if (norm[i] > 0.42) { outroBar = i + 1; break }
-  }
-  if (outroBar >= 0 && bars.length - outroBar >= 8 && outroBar !== dropBar) {
-    outroBar = snap(outroBar, 4)
-    if (outroBar < bars.length)
-      cues.push({ positionMs: bars[outroBar], label: 'Outro', color: '#A855C8' })
-  }
-
-  return cues
+// Normalise to the 90th-percentile of the non-zero values — a robust "near max"
+// that isn't thrown off by a single loud transient. Output sits roughly in
+// [0, 1.1]; values can slightly exceed 1 at the very loudest bars.
+function robustNorm(arr: Float32Array): Float32Array {
+  const sorted = Array.from(arr).filter((v) => v > 0).sort((a, b) => a - b)
+  const out = new Float32Array(arr.length)
+  if (sorted.length === 0) return out
+  const p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))]
+  if (p90 > 0) for (let i = 0; i < arr.length; i++) out[i] = arr[i] / p90
+  return out
 }
 
 // ── Mood / Valence (−1 dark → +1 euphoric) ───────────────────────────────────
