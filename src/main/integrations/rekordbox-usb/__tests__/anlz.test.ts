@@ -92,10 +92,27 @@ describe('ANLZ .EXT', () => {
     const ext = buildExtAnlz(opts)
     expect(ext.toString('ascii', 0, 4)).toBe('PMAI')
     expect(ext.readUInt32BE(8)).toBe(ext.length)
-    // 3-band PWV6/PWV7 live in the .2EX file, NOT here.
+    // 3-band PWV6/PWV7 live in the .2EX file, NOT here. Cue sections come LAST,
+    // after every waveform, so populated cues can't block waveform parsing.
     expect(sections(ext).map((s) => s.tag)).toEqual([
-      'PPTH', 'PWV3', 'PCOB', 'PCOB', 'PCO2', 'PCO2', 'PQT2', 'PWV5', 'PWV4', 'PVB2'
+      'PPTH', 'PWV3', 'PQT2', 'PWV5', 'PWV4', 'PVB2', 'PCOB', 'PCOB', 'PCO2', 'PCO2'
     ])
+  })
+
+  it('keeps every waveform section before the cue sections, even with cues', () => {
+    const cues = [
+      { hotCueNumber: 1, timeMs: 5000 },
+      { hotCueNumber: 0, timeMs: 30000 }
+    ]
+    const tags = sections(buildExtAnlz({ ...opts, cues })).map((s) => s.tag)
+    const lastWave = Math.max(tags.indexOf('PWV3'), tags.indexOf('PWV5'), tags.indexOf('PWV4'))
+    const firstCue = Math.min(
+      ...['PCOB', 'PCO2'].map((t) => tags.indexOf(t)).filter((i) => i >= 0)
+    )
+    expect(lastWave).toBeLessThan(firstCue)
+    // Hot cue lands in the first PCO2 (24-byte header + one PCP2 entry).
+    const pco2 = sections(buildExtAnlz({ ...opts, cues })).filter((s) => s.tag === 'PCO2')
+    expect(pco2[0].total).toBeGreaterThan(24) // hot list is populated
   })
 
   it('colour-waveform entry counts scale with duration (150/sec)', () => {

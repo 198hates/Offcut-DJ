@@ -515,11 +515,13 @@ export function buildDatAnlz(opts: BuildAnlzOptions): Buffer {
 }
 
 /**
- * Build the ANLZ `.EXT`: colour waveforms + extended cues + extended beat grid.
+ * Build the ANLZ `.EXT`: colour waveforms + extended beat grid + extended cues.
  * The CDJ-3000 requires this file to treat a track as analysed (otherwise it
- * re-analyses on load). Section order: PPTH → PWV3 → PCOB → PCOB → PCO2 → PCO2
- * → PQT2 → PWV5 → PWV4 → PVB2. (The 3-band PWV6/PWV7 live in the .2EX file, not
- * here — see build2exAnlz.)
+ * re-analyses on load). Section order: PPTH → PWV3 → PQT2 → PWV5 → PWV4 → PVB2
+ * → PCOB → PCOB → PCO2 → PCO2. The cue sections come LAST, after every waveform:
+ * populated cue sections placed before the waveforms stopped the CDJ reading
+ * them, so keeping cues at the tail lets a player parse all waveforms first.
+ * (The 3-band PWV6/PWV7 live in the .2EX file, not here — see build2exAnlz.)
  */
 export function buildExtAnlz(opts: BuildAnlzOptions): Buffer {
   const mono = buildMonoPreview(opts.bands?.peaks ?? opts.peaks)
@@ -532,14 +534,14 @@ export function buildExtAnlz(opts: BuildAnlzOptions): Buffer {
   return pmaiFile([
     ppth(opts.audioPath),
     pwv3(mono, count, bands),
-    pcob(1, []), // EXT PCOBs are always empty; real cues go in PCO2
-    pcob(0, []),
-    pco2(1, hot),
-    pco2(0, memory),
     pqt2(opts.beats, duration),
     pwv5(mono, count, bands, opts.bandColors),
     pwv4(mono, bands),
-    pvb2()
+    pvb2(),
+    pcob(1, []), // EXT PCOBs are always empty; real cues go in PCO2
+    pcob(0, []),
+    pco2(1, hot),
+    pco2(0, memory)
   ])
 }
 

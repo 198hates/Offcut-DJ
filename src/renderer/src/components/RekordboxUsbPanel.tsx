@@ -170,11 +170,17 @@ export function RekordboxUsbPanel(): JSX.Element {
   // Device settings + RGB-waveform colours written on export (persisted in app settings).
   const [devSettings, setDevSettings] = useState<UsbDeviceSettings | null>(null)
   const [waveColors, setWaveColors] = useState<UsbWaveformColors | null>(null)
+  const [exportCues, setExportCues] = useState(false)
   useEffect(() => {
     window.api.settings.get().then((s) => {
       setDevSettings(s.usbDeviceSettings)
       setWaveColors(s.usbWaveformColors)
+      setExportCues(s.usbExportCues ?? false)
     })
+  }, [])
+  const updateExportCues = useCallback((on: boolean) => {
+    setExportCues(on)
+    void window.api.settings.save({ usbExportCues: on })
   }, [])
   const updateDevSetting = useCallback((key: keyof UsbDeviceSettings, value: string) => {
     setDevSettings((prev) => {
@@ -667,6 +673,16 @@ export function RekordboxUsbPanel(): JSX.Element {
               </div>
             </div>
           )}
+
+          <label className="flex items-center gap-2 font-mono text-[11px] text-muted cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={exportCues}
+              onChange={(e) => updateExportCues(e.target.checked)}
+              className="accent-accent"
+            />
+            <span>Export hot cues &amp; memory cues <span className="text-muted/50">(beta — verify on your player; turn off if waveforms don&apos;t show)</span></span>
+          </label>
 
           <div className="flex items-center gap-2">
             <div className="flex-1 font-mono text-[11px] text-muted/70">

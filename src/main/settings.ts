@@ -39,7 +39,8 @@ const DEFAULTS: AppSettings = {
     hotcueAutoload: 'off',
     timeMode: 'elapsed'
   },
-  usbWaveformColors: { low: '#1e64ff', mid: '#ff8c1a', high: '#ffffff' }
+  usbWaveformColors: { low: '#1e64ff', mid: '#ff8c1a', high: '#ffffff' },
+  usbExportCues: false
 }
 
 // Simple JSON-file settings store (no external dependency)

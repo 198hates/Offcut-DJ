@@ -1124,6 +1124,7 @@ ${rows}
           settingsDir: tdir, history, today, backupPath,
           deviceSettings: settings.usbDeviceSettings,
           bandColors: wc ? { low: hexToRgb(wc.low), mid: hexToRgb(wc.mid), high: hexToRgb(wc.high) } : undefined,
+          exportCues: settings.usbExportCues ?? false,
           mode,
           onProgress: (p) => { if (!e.sender.isDestroyed()) e.sender.send('rekordboxUsb:syncProgress', p) }
         })

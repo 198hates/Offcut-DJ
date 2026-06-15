@@ -703,7 +703,7 @@ export interface ExportToUsbResult {
 export async function exportPlaylistsToUsb(
   usbRoot: string,
   playlists: { name: string; tracks: SyncTrackInput[] }[],
-  opts: { settingsDir: string; history: HistoryBlobs; today: string; backupPath?: string; deviceSettings?: UsbDeviceSettings; bandColors?: AnlzBandColors; mode?: 'replace' | 'add'; onProgress?: (p: SyncProgress) => void }
+  opts: { settingsDir: string; history: HistoryBlobs; today: string; backupPath?: string; deviceSettings?: UsbDeviceSettings; bandColors?: AnlzBandColors; mode?: 'replace' | 'add'; exportCues?: boolean; onProgress?: (p: SyncProgress) => void }
 ): Promise<ExportToUsbResult> {
   const rbDir = join(usbRoot, 'PIONEER', 'rekordbox')
   mkdirSync(rbDir, { recursive: true })
@@ -806,12 +806,11 @@ export async function exportPlaylistsToUsb(
     const analyzePath = `/${anlzDir}/ANLZ0000.DAT`
     mkdirSync(join(usbRoot, anlzDir), { recursive: true })
     const beats: AnlzBeat[] = t.beatgrid?.length ? beatsFromMarkers(t.beatgrid, t.bpm) : beatsFromBpm(t.bpm, t.durationSec)
-    // Cues are temporarily disabled: populated PCOB/PCO2 sections precede the
-    // waveform sections in the .EXT, and our cue layout (though it parses in
-    // rekordcrate) stops the CDJ reading the waveforms after them. Re-enable once
-    // verified against a real export that actually contains cues.
-    const anlzOpts = { audioPath: deviceFilePath, beats, durationSecs: t.durationSec, bands, bandColors: opts.bandColors, cues: [] as AnlzCue[] }
-    void toAnlzCues
+    // Cue export is opt-in (beta): cue sections now sit AFTER every waveform in
+    // the .EXT (see buildExtAnlz) so they can't block waveform parsing, but this
+    // is still pending validation on real hardware — hence the toggle.
+    const anlzCues = opts.exportCues ? toAnlzCues(t.cuePoints) : ([] as AnlzCue[])
+    const anlzOpts = { audioPath: deviceFilePath, beats, durationSecs: t.durationSec, bands, bandColors: opts.bandColors, cues: anlzCues }
     writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.DAT'), buildDatAnlz(anlzOpts))
     writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.EXT'), buildExtAnlz(anlzOpts))
     // .2EX holds the CDJ-3000's native 3-band waveforms (only when we have bands).
