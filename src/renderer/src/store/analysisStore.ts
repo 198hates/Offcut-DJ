@@ -3,7 +3,7 @@
  *
  * The BPM/key, energy, beat-grid and auto-cue routines used to live inside the
  * Library page, so only Library could trigger them. They now live here so the
- * right-click menu on *any* page (Orders, Set Builder, Search, Compass, Health…)
+ * right-click menu on *any* page (Orders, Set Builder, Search, Health…)
  * can run them, with a single shared progress bar rendered globally in App.
  *
  * All reads go through `useLibraryStore.getState()` so there is no dependency on

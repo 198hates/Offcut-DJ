@@ -1,4 +1,4 @@
-export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'compass' | 'orders' | 'search' | 'prolink' | 'lineage' | 'assistant' | 'usb' | 'settings'
+export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'orders' | 'search' | 'prolink' | 'lineage' | 'assistant' | 'usb' | 'settings'
 
 interface Props {
   active: Section
@@ -97,25 +97,6 @@ function OrdersIcon() {
   )
 }
 
-/** Compass — scatter dot: library spatial map */
-function CompassIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
-      {/* Crosshair circle */}
-      <circle cx="8" cy="8" r="5.5"/>
-      <line x1="8" y1="2" x2="8" y2="4.5"/>
-      <line x1="8" y1="11.5" x2="8" y2="14"/>
-      <line x1="2" y1="8" x2="4.5" y2="8"/>
-      <line x1="11.5" y1="8" x2="14" y2="8"/>
-      {/* Scatter dots */}
-      <circle cx="6"  cy="6.5" r="1" fill="currentColor" stroke="none"/>
-      <circle cx="10" cy="5.5" r="1" fill="currentColor" stroke="none"/>
-      <circle cx="7"  cy="10" r="1" fill="currentColor" stroke="none"/>
-      <circle cx="11" cy="9.5" r="1" fill="currentColor" stroke="none"/>
-    </svg>
-  )
-}
-
 /** ProLink — broadcast tower: live ProLink network capture */
 function ProLinkIcon() {
   return (
@@ -190,7 +171,6 @@ const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; l
   { id: 'builder', Icon: BuilderIcon, label: 'Set Builder'     },
   { id: 'search',  Icon: SearchIcon,  label: 'Advanced Search' },
   { id: 'orders',  Icon: OrdersIcon,   label: 'Running Orders'  },
-  { id: 'compass', Icon: CompassIcon,  label: 'Library Compass' },
   { id: 'prolink', Icon: ProLinkIcon,  label: 'ProLink Capture' },
   { id: 'lineage',   Icon: LineageIcon,    label: 'Lineage'    },
   { id: 'assistant', Icon: AssistantIcon,  label: 'Assistant'  },

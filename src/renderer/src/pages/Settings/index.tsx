@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, createContext, useContext } from 'react'
 import type { AppSettings } from '@shared/types'
 import { useWaveformStore, type WaveformStyle, type KeyNotation } from '../../store/waveformStore'
 import { useThemeStore } from '../../store/themeStore'
@@ -6,6 +6,22 @@ import { MidiSettings } from '../../components/MidiSettings'
 import { AI_SETTINGS_CHANGED } from '../../hooks/useAiStatus'
 
 type SettingsPatch = Partial<AppSettings>
+
+// ── Settings categories ───────────────────────────────────────────────────────
+// The page is split into a few tabs so each view shows only a handful of
+// sections instead of one long scroll. Each <Section> declares its category and
+// hides itself unless that tab is active (see CategoryContext below).
+type SettingsCategory = 'integrations' | 'ai' | 'playback' | 'library' | 'general'
+
+const CATEGORIES: { id: SettingsCategory; label: string }[] = [
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'ai', label: 'AI & Discovery' },
+  { id: 'playback', label: 'Playback' },
+  { id: 'library', label: 'Library' },
+  { id: 'general', label: 'General' }
+]
+
+const CategoryContext = createContext<SettingsCategory>('integrations')
 
 interface PathFieldProps {
   label: string
@@ -24,6 +40,7 @@ const WAVEFORM_STYLES: { value: WaveformStyle; label: string; desc: string }[] =
 
 export function SettingsPage(): JSX.Element {
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [activeCat, setActiveCat] = useState<SettingsCategory>('integrations')
   const {
     style: waveformStyle, setStyle: setWaveformStyle,
     keyNotation, setKeyNotation,
@@ -102,8 +119,25 @@ export function SettingsPage(): JSX.Element {
         </button>
       </div>
 
+      {/* Category tabs */}
+      <div className="sticky top-0 z-10 -mx-6 px-6 py-2 bg-chassis/95 backdrop-blur border-b border-border/25 flex flex-wrap gap-1">
+        {CATEGORIES.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => setActiveCat(c.id)}
+            className={`font-mono text-[12px] uppercase tracking-[0.1em] px-3 py-1 rounded transition-colors ${
+              activeCat === c.id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink hover:bg-ink/[0.05]'
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      <CategoryContext.Provider value={activeCat}>
+
       {/* Rekordbox */}
-      <Section title="Rekordbox" icon="◈">
+      <Section title="Rekordbox" icon="◈" category="integrations">
         <PathField
           label="Library XML"
           description="Exported via File › Export Collection in xml format in Rekordbox"
@@ -126,7 +160,7 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* Traktor */}
-      <Section title="Traktor Pro" icon="◉">
+      <Section title="Traktor Pro" icon="◉" category="integrations">
         <PathField
           label="collection.nml"
           description="Your Traktor library file (auto-detected if installed)"
@@ -138,7 +172,7 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* Serato */}
-      <Section title="Serato DJ" icon="◎">
+      <Section title="Serato DJ" icon="◎" category="integrations">
         <PathField
           label="_Serato_ folder"
           description="The root Serato folder containing Subcrates (usually ~/Music/_Serato_)"
@@ -150,7 +184,7 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* Apple Music */}
-      <Section title="Apple Music" icon="♪">
+      <Section title="Apple Music" icon="♪" category="integrations">
         <PathField
           label="Library.xml"
           description="Export via File › Library › Export Library… in Music.app"
@@ -166,7 +200,7 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* Engine DJ */}
-      <Section title="Engine DJ" icon="◆">
+      <Section title="Engine DJ" icon="◆" category="integrations">
         <PathField
           label="Engine Library database (m.db)"
           description="Used by Pioneer standalone hardware (CDJ-3000, XDJ-XZ, PRIME series) and Algoriddim djay Pro"
@@ -178,7 +212,7 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* M3U Playlists */}
-      <Section title="M3U Playlists" icon="≡">
+      <Section title="M3U Playlists" icon="≡" category="integrations">
         <PathField
           label="Export folder"
           description="Folder where .m3u8 playlist files will be written (one file per playlist)"
@@ -193,7 +227,7 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* Lineage */}
-      <Section title="Lineage" icon="⛏">
+      <Section title="Lineage" icon="⛏" category="ai">
         <div className="space-y-1">
           <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted block">
             Discogs personal access token
@@ -294,7 +328,7 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* AI */}
-      <Section title="AI" icon="✦">
+      <Section title="AI" icon="✦" category="ai">
         <label className="flex items-center gap-2 font-mono text-[12px] text-muted cursor-pointer select-none">
           <input
             type="checkbox"
@@ -333,7 +367,7 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* Stems */}
-      <Section title="Stems (Demucs)" icon="◫">
+      <Section title="Stems (Demucs)" icon="◫" category="playback">
         <div className="space-y-1">
           <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted block">
             Python executable
@@ -357,7 +391,7 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* Export defaults */}
-      <Section title="Export Defaults" icon="↑">
+      <Section title="Export Defaults" icon="↑" category="library">
         <PathField
           label="Default export folder"
           description="Where exported files are saved by default"
@@ -368,7 +402,7 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* Waveform */}
-      <Section title="Waveform" icon="〰">
+      <Section title="Waveform" icon="〰" category="playback">
         <div className="space-y-2">
           <p className="font-mono text-[12px] text-muted uppercase tracking-[0.12em]">colour mode</p>
           <div className="grid grid-cols-3 gap-2">
@@ -418,7 +452,7 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* Preferences */}
-      <Section title="Preferences" icon="⚙">
+      <Section title="Preferences" icon="⚙" category="general">
         <div className="space-y-4">
           {/* Theme */}
           <div>
@@ -470,28 +504,28 @@ export function SettingsPage(): JSX.Element {
       </Section>
 
       {/* Pre-listen / Headphone cue */}
-      <Section title="Pre-listen (Cue)" icon="🎧">
+      <Section title="Pre-listen (Cue)" icon="🎧" category="playback">
         <PreListenSettings />
       </Section>
 
       {/* Watch Folders */}
-      <Section title="Watch Folders" icon="⊙">
+      <Section title="Watch Folders" icon="⊙" category="library">
         <WatchFoldersTool />
       </Section>
 
       {/* Path Mappings */}
-      <Section title="Path Mappings" icon="⇄">
+      <Section title="Path Mappings" icon="⇄" category="library">
         <PathMappingTool />
       </Section>
 
       {/* MIDI Controllers */}
-      <Section title="MIDI Controllers" icon="◈">
+      <Section title="MIDI Controllers" icon="◈" category="general">
         <MidiSettings />
       </Section>
 
       {/* Quick import shortcuts using saved paths */}
       {(settings.traktorCollectionPath || settings.seratoDir || settings.rekordboxXmlPath || settings.engineDjDbPath) && (
-        <Section title="Quick Import" icon="↓">
+        <Section title="Quick Import" icon="↓" category="library">
           <p className="font-mono text-[12px] text-muted mb-2">import directly from your detected integrations</p>
           <div className="flex flex-wrap gap-2">
             {settings.rekordboxXmlPath && (
@@ -521,11 +555,18 @@ export function SettingsPage(): JSX.Element {
           </div>
         </Section>
       )}
+
+      </CategoryContext.Provider>
     </div>
   )
 }
 
-function Section({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }): JSX.Element {
+function Section(
+  { title, icon, category, children }:
+  { title: string; icon: string; category: SettingsCategory; children: React.ReactNode }
+): JSX.Element | null {
+  const active = useContext(CategoryContext)
+  if (category !== active) return null
   return (
     <section className="space-y-3">
       <div className="flex items-center gap-2 pb-1 border-b border-border/20">

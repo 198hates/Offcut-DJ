@@ -10,7 +10,6 @@ import { SmartFixesPage } from './pages/SmartFixes'
 import { SettingsPage } from './pages/Settings'
 import { SyncPage } from './pages/Sync'
 import { SetBuilderPage } from './pages/SetBuilder'
-import { CompassPage } from './pages/Compass'
 import { OrdersPage } from './pages/Orders'
 import { SearchPage } from './pages/Search'
 import { ProLinkPage } from './pages/ProLink'
@@ -112,7 +111,6 @@ export default function App(): JSX.Element {
             {activePage === 'builder' && <ErrorBoundary name="builder"><SetBuilderPage /></ErrorBoundary>}
             {activePage === 'search'  && <ErrorBoundary name="search"><SearchPage /></ErrorBoundary>}
             {activePage === 'orders'  && <ErrorBoundary name="orders"><OrdersPage /></ErrorBoundary>}
-            {activePage === 'compass' && <ErrorBoundary name="compass"><CompassPage /></ErrorBoundary>}
             {activePage === 'prolink' && <ErrorBoundary name="prolink"><ProLinkPage /></ErrorBoundary>}
             {activePage === 'lineage'   && <ErrorBoundary name="lineage"><LineagePage /></ErrorBoundary>}
             {activePage === 'assistant' && <ErrorBoundary name="assistant"><AssistantPage /></ErrorBoundary>}

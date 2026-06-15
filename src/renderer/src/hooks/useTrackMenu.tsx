@@ -2,7 +2,7 @@
  * useTrackMenu — one shared right-click menu for tracks, usable on any page.
  *
  * The Library page used to own a ~100-line inline context-menu block; every
- * other page (Orders, Set Builder, Search, Compass, Health…) had none. This
+ * other page (Orders, Set Builder, Search, Health…) had none. This
  * hook builds that menu once — preview, load A/B, playlists, analysis, reveal,
  * delete — and exposes a tiny API:
  *
