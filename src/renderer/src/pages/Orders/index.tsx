@@ -21,7 +21,7 @@ import type { Playlist } from '@shared/types'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { acceptsTrackDrop, readTrackIds } from '../../lib/trackDrag'
 import { formatDuration, formatBpm } from '../../lib/format'
-import { compatibilityScore, camelotDistance, harmonicScore, magicSort } from '../../lib/compatibility'
+import { compatibilityScore, camelotDistance, harmonicScore } from '../../lib/compatibility'
 import { scoreLibrary, transitionContext } from '../../lib/roadNotTaken'
 import { scoreTransition, BAND_LABEL, BAND_GLYPH, BAND_COLOR, BAND_BG, BAND_BORDER } from '../../lib/automix'
 import type { RunningOrder, OrderEntry, TransitionKind, Track, AutoMixDecision } from '@shared/types'
@@ -526,17 +526,6 @@ export function OrdersPage(): JSX.Element {
     setActiveId(ro.id)
   }
 
-  const magicSortOrder = useCallback(async () => {
-    if (!active || activeTrackList.length < 2) return
-    const ts = activeTrackList.filter(Boolean) as NonNullable<typeof activeTrackList[number]>[]
-    const { sorted } = magicSort(ts)
-    const newEntries: OrderEntry[] = sorted.map((t) => {
-      const existing = active.entries.find((e) => e.trackId === t.id)
-      return existing ?? { id: crypto.randomUUID(), trackId: t.id, plannedTransition: null, note: null, flexible: false }
-    })
-    await update({ entries: newEntries })
-  }, [active, activeTrackList, update])
-
   const createFromPlaylist = useCallback(async (pl: Playlist) => {
     setShowPlaylistPicker(false)
     const ro = await window.api.library.createRunningOrder(pl.name)
@@ -915,17 +904,6 @@ export function OrdersPage(): JSX.Element {
                   )}
                 </div>
               </div>
-            )}
-
-            {/* Magic sort */}
-            {active.entries.length >= 2 && (
-              <button
-                onClick={magicSortOrder}
-                className="shrink-0 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded px-2 py-0.5 transition-colors"
-                title="Reorder by harmonic compatibility (greedy nearest-neighbour)"
-              >
-                ⟳ sort
-              </button>
             )}
 
             {/* Copy as text */}

@@ -5,7 +5,7 @@ import { FilterBar } from '../../components/FilterBar'
 import { BulkEditBar } from '../../components/BulkEditBar'
 import { SetTimeline } from '../../components/SetTimeline'
 import { keyBlipColor } from '../../components/CamelotWheel'
-import { magicSort, compatibilityScore } from '../../lib/compatibility'
+import { compatibilityScore } from '../../lib/compatibility'
 import { usePreview } from '../../hooks/usePreview'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
 import { useToastStore } from '../../store/toastStore'
@@ -60,7 +60,7 @@ function formatModified(iso: string | null): string {
 }
 
 export function LibraryPage(): JSX.Element {
-  const { isLoading, selectedTrackIds, setSelectedTrackIds, setDragging, clearDragging, activePlaylistId, playlists, addTracksToPlaylist, reorderPlaylistTracks } = useLibraryStore()
+  const { isLoading, selectedTrackIds, setSelectedTrackIds, setDragging, clearDragging, activePlaylistId, playlists, addTracksToPlaylist } = useLibraryStore()
   const showToast = useToastStore((s) => s.show)
   const loadTrackA = useDeckAStore((s) => s.loadTrack)
   const loadTrackB = useDeckBStore((s) => s.loadTrack)
@@ -270,22 +270,6 @@ export function LibraryPage(): JSX.Element {
   // shared analysisStore so every page's right-click menu can run it; the
   // progress bar is rendered globally in App.
 
-  const handleMagicSort = useCallback(async () => {
-    if (!activePlaylistId) return
-    const pl = playlists.find((p) => p.id === activePlaylistId)
-    if (!pl || pl.isSmart) return
-    const plTracks = pl.trackIds
-      .map((id) => allTracks.find((t) => t.id === id))
-      .filter((t): t is Track => !!t)
-    if (plTracks.length < 2) return
-    const { sorted, flagged } = magicSort(plTracks)
-    await reorderPlaylistTracks(activePlaylistId, sorted.map((t) => t.id))
-    const msg = flagged.size > 0
-      ? `Sorted ${sorted.length} tracks · ${flagged.size} hard transition${flagged.size > 1 ? 's' : ''} flagged`
-      : `Sorted ${sorted.length} tracks by compatibility`
-    showToast(msg, flagged.size > 0 ? 'info' : 'success')
-  }, [activePlaylistId, playlists, allTracks, reorderPlaylistTracks, showToast])
-
   const selectedArr = [...selectedTrackIds]
   const showBulkBar = selectedArr.length >= 2
 
@@ -319,19 +303,6 @@ export function LibraryPage(): JSX.Element {
             {sorted.length.toLocaleString()} trks
             {selectedTrackIds.size === 1 && ' · 1 selected'}
           </span>
-          {activePlaylist && !activePlaylist.isSmart && sorted.length >= 2 && (
-            <button
-              onClick={handleMagicSort}
-              title="Magic Sort — reorder by harmonic + energy compatibility"
-              className="ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[12px] text-muted hover:text-accent hover:bg-accent/10 transition-colors"
-            >
-              <svg width="9" height="9" viewBox="0 0 9 9" fill="currentColor" aria-hidden="true">
-                <path d="M0 1.5h6M0 4.5h4M0 7.5h2"/>
-                <path d="M7 3L9 4.5L7 6" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              sort
-            </button>
-          )}
           {activePlaylist && sorted.length >= 1 && (
             <button
               onClick={() => setShowSuggest((v) => !v)}

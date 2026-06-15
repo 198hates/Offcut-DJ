@@ -1,14 +1,9 @@
 /**
- * Library Health — maintenance and diagnostics.
- * 01 · Library stats
- * 02 · Duplicate scanner
- * 03 · Missing file scanner
- * 04 · Play history
- * 05 · Auto group (DBSCAN clustering)
+ * Library Health — maintenance and diagnostics. A pinned stats overview plus
+ * tabbed tools: duplicates, missing files, play history, genre playlists, backup.
  */
 import { useState, useCallback, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
-import { dbscan, clusterName, clusterKeyLabel } from '../../lib/clustering'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
 import { PageHeader } from '../../components/PageHeader'
 import { StatCard } from '../../components/StatCard'
@@ -592,100 +587,6 @@ function PlayHistorySection({ tracks }: { tracks: Track[] }): JSX.Element {
   )
 }
 
-// ── Auto Group ────────────────────────────────────────────────────────────────
-
-function AutoGroupSection({ tracks }: { tracks: Track[] }): JSX.Element {
-  const loadLibrary = useLibraryStore((s) => s.loadLibrary)
-  const [epsilon, setEpsilon] = useState(0.15)
-  const [minPts,  setMinPts]  = useState(0)
-  const [running, setRunning] = useState(false)
-  const [preview, setPreview] = useState<{ name: string; count: number; keyLabel: string }[] | null>(null)
-  const [noiseCount, setNoiseCount] = useState(0)
-  const [saved,   setSaved]   = useState(false)
-
-  const effectiveMinPts = minPts > 0 ? minPts : Math.max(5, Math.floor(tracks.length / 100))
-
-  const run = useCallback(() => {
-    setRunning(true)
-    setSaved(false)
-    setTimeout(() => {
-      const { clusters, noise } = dbscan(tracks, epsilon, effectiveMinPts)
-      setPreview(clusters.map((c) => ({ name: clusterName(c), count: c.length, keyLabel: clusterKeyLabel(c) })))
-      setNoiseCount(noise.length)
-      setRunning(false)
-    }, 20)
-  }, [tracks, epsilon, effectiveMinPts])
-
-  const save = useCallback(async () => {
-    if (!preview) return
-    setRunning(true)
-    const { clusters } = dbscan(tracks, epsilon, effectiveMinPts)
-    await window.api.library.runAutoGroup(clusters.map((c) => ({ name: clusterName(c), trackIds: c.map((t) => t.id) })))
-    await loadLibrary()
-    setSaved(true)
-    setRunning(false)
-  }, [preview, tracks, epsilon, effectiveMinPts, loadLibrary])
-
-  const eligible = tracks.filter((t) => t.bpm != null).length
-
-  return (
-    <section className="space-y-4">
-      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">auto group
-      </h2>
-      <p className="font-mono text-[12px] text-muted/80 leading-relaxed">
-        Clusters the library by BPM, key, and energy using DBSCAN. Creates non-destructive playlists
-        under <span className="text-ink">Auto Groups</span> in the sidebar. Re-running replaces previous groups.
-      </p>
-      <div className="flex items-center gap-4 flex-wrap">
-        <div className="flex items-center gap-2">
-          <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted">ε</label>
-          <input type="range" min="0.05" max="0.40" step="0.01" value={epsilon}
-            onChange={(e) => { setEpsilon(parseFloat(e.target.value)); setPreview(null) }}
-            className="w-28 accent-accent" />
-          <span className="font-mono text-[13px] text-ink tabular-nums w-8">{epsilon.toFixed(2)}</span>
-          <span className="font-mono text-[12px] text-muted/60">{epsilon < 0.10 ? 'tight' : epsilon < 0.18 ? 'balanced' : 'broad'}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted">min tracks</label>
-          <input type="number" min="2" max="50" value={minPts || ''} placeholder={String(effectiveMinPts)}
-            onChange={(e) => { setMinPts(parseInt(e.target.value) || 0); setPreview(null) }}
-            className="w-16 bg-paper border border-border/40 rounded px-2 py-1 font-mono text-[13px] text-ink outline-none focus:border-accent" />
-        </div>
-        <span className="font-mono text-[12px] text-muted/50">{eligible.toLocaleString()} of {tracks.length.toLocaleString()} tracks eligible</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <button onClick={run} disabled={running || tracks.length === 0}
-          className="px-4 py-2 bg-ink/5 hover:bg-ink/10 border border-border/40 rounded font-mono text-[13px] uppercase tracking-[0.12em] text-ink-soft hover:text-ink transition-colors disabled:opacity-40">
-          {running ? 'running…' : 'preview groups'}
-        </button>
-        {preview && !saved && (
-          <button onClick={save} disabled={running || preview.length === 0}
-            className="px-4 py-2 bg-accent hover:bg-accent/90 text-paper rounded font-mono text-[13px] uppercase tracking-[0.12em] transition-colors disabled:opacity-40">
-            save {preview.length} groups to library
-          </button>
-        )}
-        {saved && <span className="font-mono text-[13px] text-green-600 dark:text-green-400">✓ Groups saved — check Auto Groups in the sidebar</span>}
-      </div>
-      {preview && (
-        <div className="space-y-2">
-          <p className="font-mono text-[12px] text-muted uppercase tracking-[0.12em]">{preview.length} groups · {noiseCount} ungrouped</p>
-          <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
-            {preview.map((g, i) => (
-              <div key={i} className="flex items-center gap-3 py-1.5 px-3 bg-ink/[0.03] border border-border/25 rounded">
-                <span className="font-mono text-[12px] text-muted/50 tabular-nums w-5 text-right shrink-0">{i + 1}</span>
-                <span className="flex-1 font-mono text-[13px] text-ink truncate">{g.name}</span>
-                {g.keyLabel && <span className="font-mono text-[12px] text-muted shrink-0">{g.keyLabel}</span>}
-                <span className="font-mono text-[13px] font-bold text-accent tabular-nums shrink-0">{g.count}</span>
-              </div>
-            ))}
-          </div>
-          {preview.length === 0 && <p className="font-mono text-[12px] text-muted/60 italic">No groups found — try raising ε or lowering min tracks</p>}
-        </div>
-      )}
-    </section>
-  )
-}
-
 // ── Genre Playlists ────────────────────────────────────────────────────────────
 
 function GenrePlaylistsSection({ tracks, playlists }: { tracks: Track[]; playlists: Playlist[] }): JSX.Element {
@@ -811,7 +712,6 @@ const HEALTH_TOOLS = [
   { id: 'duplicates', label: 'Duplicates' },
   { id: 'missing', label: 'Missing files' },
   { id: 'history', label: 'Play history' },
-  { id: 'groups', label: 'Auto group' },
   { id: 'genres', label: 'Genre playlists' },
   { id: 'backup', label: 'Backup' }
 ] as const
@@ -841,7 +741,6 @@ export function HealthPage(): JSX.Element {
         {tool === 'duplicates' && <DuplicatesSection tracks={tracks} playlists={playlists} deleteTracks={deleteTracks} />}
         {tool === 'missing' && <MissingFilesSection deleteTracks={deleteTracks} updateTrack={updateTrack} />}
         {tool === 'history' && <PlayHistorySection tracks={tracks} />}
-        {tool === 'groups' && <AutoGroupSection tracks={tracks} />}
         {tool === 'genres' && <GenrePlaylistsSection tracks={tracks} playlists={playlists} />}
         {tool === 'backup' && <BackupSection tracks={tracks} playlists={playlists} />}
       </div>
