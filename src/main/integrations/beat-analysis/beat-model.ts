@@ -20,13 +20,19 @@ let _session: ort.InferenceSession | null = null
 let _runCount = 0
 
 export function getDefaultModelPath(): string {
-  // Packaged builds ship the model under Resources/models; a user-supplied copy
-  // in userData/models still wins (lets people swap checkpoints without a rebuild).
+  // A user-supplied copy in userData/models always wins (lets people swap
+  // checkpoints without a rebuild).
   const userCopy = join(app.getPath('userData'), 'models', 'beat_this.onnx')
   if (existsSync(userCopy)) return userCopy
   if (app.isPackaged) {
+    // Packaged builds ship the model under Resources/models.
     const bundled = join(process.resourcesPath, 'models', 'beat_this.onnx')
     if (existsSync(bundled)) return bundled
+  } else {
+    // Dev: use the repo's build/models copy (the same file electron-builder
+    // bundles) so beat analysis works without manually seeding userData.
+    const repoCopy = join(app.getAppPath(), 'build', 'models', 'beat_this.onnx')
+    if (existsSync(repoCopy)) return repoCopy
   }
   return userCopy
 }
