@@ -703,7 +703,7 @@ export interface ExportToUsbResult {
 export async function exportPlaylistsToUsb(
   usbRoot: string,
   playlists: { name: string; tracks: SyncTrackInput[] }[],
-  opts: { settingsDir: string; history: HistoryBlobs; today: string; backupPath?: string; deviceSettings?: UsbDeviceSettings; bandColors?: AnlzBandColors; onProgress?: (p: SyncProgress) => void }
+  opts: { settingsDir: string; history: HistoryBlobs; today: string; backupPath?: string; deviceSettings?: UsbDeviceSettings; bandColors?: AnlzBandColors; mode?: 'replace' | 'add'; onProgress?: (p: SyncProgress) => void }
 ): Promise<ExportToUsbResult> {
   const rbDir = join(usbRoot, 'PIONEER', 'rekordbox')
   mkdirSync(rbDir, { recursive: true })
@@ -746,9 +746,42 @@ export async function exportPlaylistsToUsb(
     return artId
   }
 
+  // "Add" mode: preload the tracks + playlists already on the stick so the sync
+  // extends the library instead of replacing it. Existing tracks keep their id,
+  // device path and ANLZ (no re-copy/re-analyse); only artwork is re-derived from
+  // the on-stick audio so it survives the rebuild.
+  const existingByName = new Map<string, number>() // stripped device filename → existing id
+  const existingPlaylists: PdbPlaylist[] = []
+  if (opts.mode === 'add' && existsSync(pdbPath)) {
+    try {
+      const prev = parseExportPdb(readFileSync(pdbPath))
+      for (const u of prev.tracks) {
+        const onStick = join(usbRoot, u.filePath.replace(/^\//, ''))
+        let fileSize = 0
+        try { fileSize = statSync(onStick).size } catch { continue } // audio gone → drop the row
+        const artworkId = await resolveArtwork(onStick)
+        pdbTracks.push({
+          id: u.id, title: u.title, artist: u.artist, album: u.album || '', genre: u.genre || '', label: '', remixer: '',
+          key: u.key || '', sampleRate: 44100, fileSize, bitrate: 0, trackNumber: 0,
+          tempo: Math.round((u.bpm || 0) * 100), discNumber: 0, year: u.year || 0, durationSecs: u.durationSeconds || 0,
+          fileName: basename(u.filePath), fileExt: basename(u.filePath).split('.').pop() || 'mp3',
+          usbPath: u.filePath, analyzePath: u.analyzePath, comment: '', artworkId
+        })
+        nextId = Math.max(nextId, u.id + 1)
+        existingByName.set(basename(u.filePath).replace(/^[0-9a-f]{8}_/i, '').toLowerCase(), u.id)
+      }
+      for (const p of flatten(prev.playlists)) {
+        if (!p.isFolder) existingPlaylists.push({ id: p.id, name: p.name, trackIds: p.trackIds ?? [] })
+      }
+    } catch { /* unreadable existing db — fall back to a fresh build */ }
+  }
+
   const resolveTrack = async (t: SyncTrackInput): Promise<number | null> => {
     const existing = trackIdByPath.get(t.audioFilePath)
     if (existing != null) return existing
+    // Already on the stick (matched by filename)? Reuse it — no copy/analyse.
+    const reused = existingByName.get(basename(t.audioFilePath).toLowerCase())
+    if (reused != null) { trackIdByPath.set(t.audioFilePath, reused); return reused }
     let fileSize = 0
     try {
       fileSize = statSync(t.audioFilePath).size
@@ -798,7 +831,10 @@ export async function exportPlaylistsToUsb(
     return id
   }
 
-  const pdbPlaylists: PdbPlaylist[] = []
+  // Start from the existing playlists in "add" mode; a synced playlist with the
+  // same name replaces its contents, a new name is appended.
+  const pdbPlaylists: PdbPlaylist[] = [...existingPlaylists]
+  let nextPlaylistId = pdbPlaylists.reduce((m, p) => Math.max(m, p.id), 0) + 1
   const resultPlaylists: { name: string; tracks: number }[] = []
   for (const [pi, pl] of playlists.entries()) {
     const ids: number[] = []
@@ -811,7 +847,9 @@ export async function exportPlaylistsToUsb(
       const id = await resolveTrack(t)
       if (id != null) ids.push(id)
     }
-    pdbPlaylists.push({ id: pi + 1, name: pl.name, trackIds: ids })
+    const same = pdbPlaylists.find((p) => p.name === pl.name)
+    if (same) same.trackIds = ids
+    else pdbPlaylists.push({ id: nextPlaylistId++, name: pl.name, trackIds: ids })
     resultPlaylists.push({ name: pl.name, tracks: ids.length })
   }
 

@@ -157,6 +157,7 @@ export function RekordboxUsbPanel(): JSX.Element {
   const showToast = useToastStore((s) => s.show)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [writing, setWriting] = useState(false)
+  const [syncMode, setSyncMode] = useState<'add' | 'replace'>('add')
   const [progress, setProgress] = useState<{
     playlist: string; playlistIndex: number; playlistTotal: number
     track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy'
@@ -372,7 +373,7 @@ export function RekordboxUsbPanel(): JSX.Element {
           cuePoints: t.cuePoints
         }))
     }))
-    const res = await window.api.rekordboxUsb.syncPlaylists(usbRoot, payload)
+    const res = await window.api.rekordboxUsb.syncPlaylists(usbRoot, payload, syncMode)
     setWriting(false)
     setProgress(null)
     if ('error' in res) {
@@ -385,7 +386,7 @@ export function RekordboxUsbPanel(): JSX.Element {
     if (skippedCount) parts.push(`${skippedCount} skipped`)
     showToast(`Synced ${n} playlist${n === 1 ? '' : 's'} → USB · ${parts.join(' · ')} · backup saved`, 'success')
     await read(usbRoot)
-  }, [usbRoot, selectedPlaylists, libTrackById, showToast, read])
+  }, [usbRoot, selectedPlaylists, libTrackById, showToast, read, syncMode])
 
   return (
     <div className="rounded border border-border/40 overflow-hidden">
@@ -674,6 +675,17 @@ export function RekordboxUsbPanel(): JSX.Element {
                   {aggregate.total} tracks · {aggregate.onUsb} on USB · {aggregate.toCopy} to copy
                 </>
               )}
+            </div>
+            <div className="flex rounded border border-border/40 overflow-hidden font-mono text-[10px]" title="Add: keep what's on the stick. Replace: wipe and write only these.">
+              {(['add', 'replace'] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setSyncMode(m)}
+                  className={`px-2 py-1 transition-colors ${syncMode === m ? 'bg-accent/15 text-ink' : 'text-muted/60 hover:text-ink'}`}
+                >
+                  {m}
+                </button>
+              ))}
             </div>
             <button
               onClick={syncSelected}

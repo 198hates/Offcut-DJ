@@ -98,7 +98,8 @@ declare global {
         >
         syncPlaylists: (
           usbRoot: string,
-          playlists: { name: string; tracks: { artist: string; title: string; audioFilePath: string; bpm: number; durationSec: number; beatgrid?: BeatgridMarker[]; bitrate?: number; year?: number; key?: string; album?: string; genre?: string; cuePoints?: CuePoint[] }[] }[]
+          playlists: { name: string; tracks: { artist: string; title: string; audioFilePath: string; bpm: number; durationSec: number; beatgrid?: BeatgridMarker[]; bitrate?: number; year?: number; key?: string; album?: string; genre?: string; cuePoints?: CuePoint[] }[] }[],
+          mode?: 'replace' | 'add'
         ) => Promise<
           { backupPath: string | null; playlists: { name: string; tracks: number }[]; totalTracks: number; skipped: string[] } | { error: string }
         >

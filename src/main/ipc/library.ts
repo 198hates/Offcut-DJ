@@ -1097,7 +1097,7 @@ ${rows}
 
   ipcMain.handle(
     'rekordboxUsb:syncPlaylists',
-    async (e, usbRoot: string, playlists: { name: string; tracks: SyncTrackInput[] }[]) => {
+    async (e, usbRoot: string, playlists: { name: string; tracks: SyncTrackInput[] }[], mode?: 'replace' | 'add') => {
       try {
         const dir = join(app.getPath('userData'), 'usb-backups')
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
@@ -1124,6 +1124,7 @@ ${rows}
           settingsDir: tdir, history, today, backupPath,
           deviceSettings: settings.usbDeviceSettings,
           bandColors: wc ? { low: hexToRgb(wc.low), mid: hexToRgb(wc.mid), high: hexToRgb(wc.high) } : undefined,
+          mode,
           onProgress: (p) => { if (!e.sender.isDestroyed()) e.sender.send('rekordboxUsb:syncProgress', p) }
         })
       } catch (err) {

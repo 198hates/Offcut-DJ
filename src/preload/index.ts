@@ -148,11 +148,12 @@ const api = {
           beatgrid?: import('../shared/types').BeatgridMarker[]; bitrate?: number; year?: number
           key?: string; album?: string; genre?: string; cuePoints?: import('../shared/types').CuePoint[]
         }[]
-      }[]
+      }[],
+      mode?: 'replace' | 'add'
     ): Promise<
       { backupPath: string | null; playlists: { name: string; tracks: number }[]; totalTracks: number; skipped: string[] }
       | { error: string }
-    > => ipcRenderer.invoke('rekordboxUsb:syncPlaylists', usbRoot, playlists),
+    > => ipcRenderer.invoke('rekordboxUsb:syncPlaylists', usbRoot, playlists, mode),
     onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy' }) => void): (() => void) => {
       const h = (_e: unknown, p: Parameters<typeof cb>[0]): void => cb(p)
       ipcRenderer.on('rekordboxUsb:syncProgress', h)
