@@ -285,8 +285,8 @@ export function RekordboxUsbPanel(): JSX.Element {
       return
     }
     const n = res.playlists.length
-    const skippedCount = res.playlists.reduce((s, p) => s + p.skipped.length, 0)
-    const parts = [`${res.totalLinked} linked`, `${res.totalAdded} copied`]
+    const skippedCount = res.skipped.length
+    const parts = [`${res.totalTracks} track${res.totalTracks === 1 ? '' : 's'}`]
     if (skippedCount) parts.push(`${skippedCount} skipped`)
     showToast(`Synced ${n} playlist${n === 1 ? '' : 's'} → USB · ${parts.join(' · ')} · backup saved`, 'success')
     await read(usbRoot)

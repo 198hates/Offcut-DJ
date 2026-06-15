@@ -100,7 +100,7 @@ declare global {
           usbRoot: string,
           playlists: { name: string; tracks: { artist: string; title: string; audioFilePath: string; bpm: number; durationSec: number; beatgrid?: BeatgridMarker[]; bitrate?: number; year?: number; key?: string; album?: string; genre?: string; cuePoints?: CuePoint[] }[] }[]
         ) => Promise<
-          { backupPath: string; totalAdded: number; totalLinked: number; playlists: { name: string; linked: number; added: number; newEntries: number; updatedExisting: boolean; skipped: string[] }[] } | { error: string }
+          { backupPath: string | null; playlists: { name: string; tracks: number }[]; totalTracks: number; skipped: string[] } | { error: string }
         >
         onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy' }) => void) => () => void
       }

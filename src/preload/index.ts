@@ -150,7 +150,7 @@ const api = {
         }[]
       }[]
     ): Promise<
-      { backupPath: string; totalAdded: number; totalLinked: number; playlists: { name: string; linked: number; added: number; newEntries: number; updatedExisting: boolean; skipped: string[] }[] }
+      { backupPath: string | null; playlists: { name: string; tracks: number }[]; totalTracks: number; skipped: string[] }
       | { error: string }
     > => ipcRenderer.invoke('rekordboxUsb:syncPlaylists', usbRoot, playlists),
     onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy' }) => void): (() => void) => {
