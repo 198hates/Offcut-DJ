@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
+import { PageHeader } from '../../components/PageHeader'
 import { useAiStatus } from '../../hooks/useAiStatus'
 import { inferGenre } from '../../lib/genreInference'
 import type { Track } from '@shared/types'
@@ -628,16 +629,10 @@ export function SmartFixesPage(): JSX.Element {
   }, [results, selections, updateTrack])
 
   return (
-    <div className="h-full overflow-y-auto p-6 space-y-2 max-w-3xl">
-      <div className="mb-6">
-        <h1 className="font-mono text-base font-bold uppercase tracking-[0.12em] text-ink">
-          <span className="text-accent mr-2">01</span>smart fixes
-        </h1>
-        <p className="font-mono text-[13px] text-muted mt-0.5">
-          scan · preview · apply — each fix shows exact before/after before changing anything
-        </p>
-      </div>
+    <div className="flex flex-col h-full overflow-hidden">
+      <PageHeader marker="✶" title="smart fixes" subtitle="scan · preview · apply — each fix shows exact before/after before changing anything" />
 
+      <div className="flex-1 overflow-y-auto p-6 space-y-2 max-w-3xl">
       {visibleFixes.map((fix, i) => {
         const isOpen    = openFix === fix.id
         const res       = results[fix.id] ?? []
@@ -793,6 +788,7 @@ export function SmartFixesPage(): JSX.Element {
           </div>
         )
       })}
+      </div>
     </div>
   )
 }

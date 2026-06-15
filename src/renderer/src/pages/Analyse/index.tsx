@@ -11,7 +11,17 @@ import { analyzeAudio, generateCuesForFile, computeRmsGainDb, downbeatsForTrack 
 import { generateBeatgrid } from '../../lib/compatibility'
 import { getQuantiser, initQuantiser } from '../../lib/quantiser'
 import { batchInferGenres } from '../../lib/genreInference'
+import { PageHeader } from '../../components/PageHeader'
 import type { Track } from '@shared/types'
+
+const ANALYSE_TOOLS = [
+  { id: 'meta', label: 'BPM · Key · Energy' },
+  { id: 'grid', label: 'Beat grid' },
+  { id: 'cues', label: 'Auto-cue' },
+  { id: 'genre', label: 'Genre' },
+  { id: 'gain', label: 'Auto-gain' }
+] as const
+type AnalyseTool = (typeof ANALYSE_TOOLS)[number]['id']
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -180,8 +190,7 @@ function BpmKeySection(): JSX.Element {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
-            <span className="text-accent mr-1.5">01</span>bpm + key + energy
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">bpm + key + energy
           </h2>
           <p className="font-mono text-[13px] text-muted mt-0.5">reads embedded tags first · falls back to audio analysis</p>
         </div>
@@ -335,8 +344,7 @@ function BeatGridSection(): JSX.Element {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
-            <span className="text-accent mr-1.5">02</span>beat grid analysis
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">beat grid analysis
           </h2>
           <p className="font-mono text-[13px] text-muted mt-0.5">
             {modelStatus?.available
@@ -469,8 +477,7 @@ function AutoCueSection(): JSX.Element {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
-            <span className="text-accent mr-1.5">03</span>auto-cue generation
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">auto-cue generation
           </h2>
           <p className="font-mono text-[13px] text-muted mt-0.5">analyses energy curve to place mix-in, drop, breakdown and outro markers</p>
         </div>
@@ -581,8 +588,7 @@ function GenreSection(): JSX.Element {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
-            <span className="text-accent mr-1.5">04</span>genre inference
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">genre inference
           </h2>
           <p className="font-mono text-[13px] text-muted mt-0.5">
             rule-based · bpm + energy + mood + key → genre suggestion
@@ -723,8 +729,7 @@ function GainSection(): JSX.Element {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
-            <span className="text-accent mr-1.5">05</span>auto-gain (RMS normalisation)
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">auto-gain (RMS normalisation)
           </h2>
           <p className="font-mono text-[13px] text-muted mt-0.5">
             measures per-track loudness · stores gain_db correction to −14 dBFS target
@@ -784,6 +789,7 @@ export function AnalysePage(): JSX.Element {
   const tracks = useLibraryStore((s) => s.tracks)
   const running = useAnalysisStore((s) => s.running)
   const [busy, setBusy] = useState(false)
+  const [tool, setTool] = useState<AnalyseTool>('meta')
 
   // Tracks needing each step (matches the per-section targeting below).
   const needGrid = tracks.filter((t) => !t.beatgrid?.length).length
@@ -811,33 +817,45 @@ export function AnalysePage(): JSX.Element {
   }, [])
 
   return (
-    <div className="h-full overflow-y-auto p-6 space-y-8 max-w-3xl">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-base font-mono font-bold uppercase tracking-[0.12em] text-ink mb-0.5">
-            <span className="text-accent mr-2">→</span>analyse
-          </h1>
-          <p className="font-mono text-xs text-muted">automated batch processing — bpm, keys, beat grids, cue points, gain</p>
-        </div>
-        <button
-          onClick={runEverything}
-          disabled={busy || running || needAny === 0}
-          title="Run beat grid, BPM/key/energy and auto-cue across every track that still needs it"
-          className="shrink-0 px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[13px] uppercase tracking-[0.12em] rounded transition-colors"
-        >
-          {busy || running ? 'analysing…' : needAny === 0 ? 'all analysed' : `analyse everything (${needAny.toLocaleString()})`}
-        </button>
-      </div>
+    <div className="flex flex-col h-full overflow-hidden">
+      <PageHeader
+        marker="→"
+        title="analyse"
+        subtitle="automated batch processing — bpm, keys, beat grids, cue points, gain"
+        right={
+          <button
+            onClick={runEverything}
+            disabled={busy || running || needAny === 0}
+            title="Run beat grid, BPM/key/energy and auto-cue across every track that still needs it"
+            className="px-4 py-1.5 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[12px] uppercase tracking-[0.1em] rounded transition-colors"
+          >
+            {busy || running ? 'analysing…' : needAny === 0 ? 'all analysed' : `analyse everything (${needAny.toLocaleString()})`}
+          </button>
+        }
+      />
 
-      <BpmKeySection />
-      <div className="border-t border-border/20" />
-      <BeatGridSection />
-      <div className="border-t border-border/20" />
-      <AutoCueSection />
-      <div className="border-t border-border/20" />
-      <GenreSection />
-      <div className="border-t border-border/20" />
-      <GainSection />
+      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6 max-w-3xl">
+        {/* Tools — one at a time instead of a long stacked scroll */}
+        <div className="flex flex-wrap gap-1 border-b border-border/20 pb-2">
+          {ANALYSE_TOOLS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTool(t.id)}
+              className={`font-mono text-[12px] uppercase tracking-[0.08em] px-3 py-1 rounded transition-colors ${
+                tool === t.id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink hover:bg-ink/[0.05]'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tool === 'meta' && <BpmKeySection />}
+        {tool === 'grid' && <BeatGridSection />}
+        {tool === 'cues' && <AutoCueSection />}
+        {tool === 'genre' && <GenreSection />}
+        {tool === 'gain' && <GainSection />}
+      </div>
     </div>
   )
 }
