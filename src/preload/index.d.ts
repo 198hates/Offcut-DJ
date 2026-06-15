@@ -6,6 +6,7 @@ import type {
   EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed,
   StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef,
   StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, BeatgridMarker, CuePoint,
+  AiSearchFilter,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -162,6 +163,14 @@ declare global {
         separate: (trackId: string, filePath: string) => Promise<StemSeparateResult>
         clear: (trackId: string) => Promise<boolean>
         onProgress: (cb: (p: StemProgress) => void) => () => void
+      }
+      /** AI features bridge (Claude). Metadata only — never audio. */
+      ai: {
+        status: () => Promise<{ enabled: boolean; hasKey: boolean }>
+        nlSearch: (
+          query: string,
+          facets: { genres: string[]; keys: string[] }
+        ) => Promise<{ filter?: AiSearchFilter; error?: string }>
       }
       /** Native Rust audio engine IPC bridge (id·2026·009). */
       engine: {

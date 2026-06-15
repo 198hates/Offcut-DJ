@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, Playlist, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport } from '../shared/types'
+import type { Track, Playlist, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter } from '../shared/types'
 
 const api = {
   library: {
@@ -331,6 +331,15 @@ const api = {
       ipcRenderer.on('stems:progress', handler)
       return () => ipcRenderer.removeListener('stems:progress', handler)
     }
+  },
+  ai: {
+    status: (): Promise<{ enabled: boolean; hasKey: boolean }> =>
+      ipcRenderer.invoke('ai:status'),
+    nlSearch: (
+      query: string,
+      facets: { genres: string[]; keys: string[] }
+    ): Promise<{ filter?: AiSearchFilter; error?: string }> =>
+      ipcRenderer.invoke('ai:nlSearch', query, facets)
   }
 }
 

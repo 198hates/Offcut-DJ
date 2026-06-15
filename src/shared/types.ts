@@ -383,6 +383,35 @@ export interface AppSettings {
   usbWaveformColors: UsbWaveformColors
   /** Beta: write Offcut hot cues / memory cues into the exported ANLZ files. */
   usbExportCues?: boolean
+  /** Opt in to AI features (natural-language search, set building…). */
+  aiEnabled?: boolean
+  /** Anthropic API key for AI features. Only track metadata is ever sent — never audio. */
+  anthropicApiKey?: string
+}
+
+/**
+ * Structured filter produced by AI natural-language search. Every numeric field
+ * is null when the query didn't constrain that dimension; the renderer maps the
+ * non-null ones onto the Search page filter state.
+ */
+export interface AiSearchFilter {
+  bpmMin: number | null
+  bpmMax: number | null
+  energyMin: number | null
+  energyMax: number | null
+  danceMin: number | null
+  danceMax: number | null
+  moodMin: number | null
+  moodMax: number | null
+  ratingMin: number | null
+  ratingMax: number | null
+  keys: string[]
+  genres: string[]
+  hasCues: boolean
+  hasGrid: boolean
+  unplayed: boolean
+  sortBy: 'title' | 'bpm' | 'energy' | 'rating'
+  explanation: string
 }
 
 // ── ProLink B2B Capture ───────────────────────────────────────────────────────

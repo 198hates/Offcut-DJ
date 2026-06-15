@@ -290,6 +290,45 @@ export function SettingsPage(): JSX.Element {
         </div>
       </Section>
 
+      {/* AI */}
+      <Section title="AI" icon="✦">
+        <label className="flex items-center gap-2 font-mono text-[12px] text-muted cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={settings.aiEnabled ?? false}
+            onChange={(e) => patch({ aiEnabled: e.target.checked })}
+            className="accent-accent"
+          />
+          Enable AI features
+        </label>
+        <div className="space-y-1">
+          <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted block">
+            Anthropic API key
+          </label>
+          <p className="font-mono text-[12px] text-muted/70">
+            Required for AI features (natural-language search, set building). Get one from
+            console.anthropic.com. Stored locally and only used by the main process.
+          </p>
+          <input
+            type="password"
+            value={settings.anthropicApiKey ?? ''}
+            onChange={(e) => patch({ anthropicApiKey: e.target.value })}
+            placeholder="sk-ant-…"
+            spellCheck={false}
+            autoComplete="off"
+            className="w-full bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/60"
+          />
+        </div>
+        <div className="flex items-start gap-2 font-mono text-[12px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
+          <span className="shrink-0 text-accent">ℹ</span>
+          <span>
+            Privacy: AI features send only track <em>metadata</em> (titles, BPM, key, energy…) to
+            Anthropic — never your audio. The key never leaves the main process. Save settings after
+            editing.
+          </span>
+        </div>
+      </Section>
+
       {/* Stems */}
       <Section title="Stems (Demucs)" icon="◫">
         <div className="space-y-1">

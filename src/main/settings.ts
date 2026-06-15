@@ -40,7 +40,9 @@ const DEFAULTS: AppSettings = {
     timeMode: 'elapsed'
   },
   usbWaveformColors: { low: '#1e64ff', mid: '#ff8c1a', high: '#ffffff' },
-  usbExportCues: false
+  usbExportCues: false,
+  aiEnabled: false,
+  anthropicApiKey: ''
 }
 
 // Simple JSON-file settings store (no external dependency)

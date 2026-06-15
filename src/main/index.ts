@@ -8,6 +8,7 @@ import { registerAudioHandlers } from './ipc/audio'
 import { registerProLinkHandlers } from './ipc/prolink'
 import { registerLineageHandlers } from './ipc/lineage'
 import { registerStemHandlers } from './ipc/stems'
+import { registerAiHandlers } from './ipc/ai'
 import { killAllSeparations } from './stems'
 import { loadNativeEngine, registerEngineHandlers } from './engine'
 import { warmModel } from './integrations/beat-analysis'
@@ -93,6 +94,7 @@ app.whenReady().then(() => {
   registerProLinkHandlers()
   registerLineageHandlers()
   registerStemHandlers()
+  registerAiHandlers()
   registerEngineHandlers()
   loadNativeEngine()    // non-fatal: logs warning if .node not compiled yet
   setupAutoUpdater()

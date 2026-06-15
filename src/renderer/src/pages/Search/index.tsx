@@ -15,7 +15,7 @@ import { useLibraryStore } from '../../store/libraryStore'
 import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
-import type { Track, SmartRule } from '@shared/types'
+import type { Track, SmartRule, AiSearchFilter } from '@shared/types'
 
 // ── Dual-handle range slider ──────────────────────────────────────────────────
 
@@ -167,10 +167,21 @@ export function SearchPage(): JSX.Element {
   const [showOrderSend, setShowOrderSend] = useState(false)
   const [runningOrders, setRunningOrders] = useState<{ id: string; title: string; catalogNum: number }[]>([])
 
+  // ── AI natural-language search ───────────────────────────────────────────
+  const [aiQuery,   setAiQuery]   = useState('')
+  const [aiEnabled, setAiEnabled] = useState(false)
+  const [aiBusy,    setAiBusy]    = useState(false)
+  const [aiNote,    setAiNote]    = useState<string | null>(null)
+  const [aiError,   setAiError]   = useState<string | null>(null)
+
   useEffect(() => {
     window.api.library.getRunningOrders().then((ros) =>
       setRunningOrders(ros.map((r) => ({ id: r.id, title: r.title, catalogNum: r.catalogNum })))
     )
+  }, [])
+
+  useEffect(() => {
+    window.api.ai.status().then((s) => setAiEnabled(s.enabled && s.hasKey)).catch(() => setAiEnabled(false))
   }, [])
 
   // ── Available filter options ──────────────────────────────────────────────
@@ -224,6 +235,40 @@ export function SearchPage(): JSX.Element {
     setMood([-1,1]); setRating([0,5]); setKeys(new Set()); setGenres(new Set())
     setMoodCats(new Set()); setFlags({ hasBpm:false, hasKey:false, hasCues:false, hasGrid:false, unplayed:false })
   }, [bpmRange])
+
+  // Translate an AI filter into the existing slider/chip/flag state. Nulls leave
+  // a dimension at its full range (unconstrained).
+  const applyAiFilter = useCallback((f: AiSearchFilter) => {
+    reset()
+    setBpm([f.bpmMin ?? bpmRange[0], f.bpmMax ?? bpmRange[1]])
+    setEnergy([f.energyMin ?? 1, f.energyMax ?? 10])
+    setDanceability([f.danceMin ?? 0, f.danceMax ?? 1])
+    setMood([f.moodMin ?? -1, f.moodMax ?? 1])
+    setRating([f.ratingMin ?? 0, f.ratingMax ?? 5])
+    if (f.keys.length) setKeys(new Set(f.keys.map((k) => k.toUpperCase())))
+    if (f.genres.length) {
+      const valid = new Set(allGenres)
+      setGenres(new Set(f.genres.filter((g) => valid.has(g))))
+    }
+    setFlags({ hasBpm: false, hasKey: false, hasCues: f.hasCues, hasGrid: f.hasGrid, unplayed: f.unplayed })
+    setSortBy(f.sortBy)
+  }, [reset, bpmRange, allGenres])
+
+  const runAiSearch = useCallback(async () => {
+    const q = aiQuery.trim()
+    if (!q || aiBusy) return
+    setAiBusy(true); setAiError(null); setAiNote(null)
+    try {
+      const res = await window.api.ai.nlSearch(q, { genres: allGenres, keys: ALL_KEYS })
+      if (res.error || !res.filter) { setAiError(res.error ?? 'No result.'); return }
+      applyAiFilter(res.filter)
+      setAiNote(res.filter.explanation || null)
+    } catch (err) {
+      setAiError((err as Error).message)
+    } finally {
+      setAiBusy(false)
+    }
+  }, [aiQuery, aiBusy, allGenres, applyAiFilter])
 
   // ── Save as Smart Playlist ────────────────────────────────────────────────
   const saveAsSmartPlaylist = useCallback(async () => {
@@ -341,6 +386,33 @@ export function SearchPage(): JSX.Element {
 
       {/* ── Results panel ───────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        {/* AI natural-language search */}
+        {aiEnabled && (
+          <div className="shrink-0 flex flex-col gap-1 px-4 py-2 border-b border-border/30 bg-ink/[0.02]">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[12px] text-accent shrink-0" title="AI search">✦</span>
+              <input
+                value={aiQuery}
+                onChange={(e) => setAiQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') runAiSearch() }}
+                placeholder="Describe what you want — e.g. “peak-time techno around 130, uplifting, in 8A or 9A”"
+                spellCheck={false}
+                disabled={aiBusy}
+                className="flex-1 bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/50 disabled:opacity-50"
+              />
+              <button
+                onClick={runAiSearch}
+                disabled={aiBusy || !aiQuery.trim()}
+                className="font-mono text-[11px] uppercase tracking-[0.1em] text-accent hover:text-ink border border-accent/30 hover:border-accent/60 rounded px-3 py-1.5 transition-colors disabled:opacity-30 shrink-0"
+              >
+                {aiBusy ? '…' : 'search'}
+              </button>
+            </div>
+            {aiNote && <span className="font-mono text-[11px] text-muted pl-6">{aiNote}</span>}
+            {aiError && <span className="font-mono text-[11px] text-red-400/80 pl-6">{aiError}</span>}
+          </div>
+        )}
+
         {/* Toolbar */}
         <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-border/30 bg-chassis">
           <span className="font-mono text-[13px] font-bold text-ink tabular-nums">
