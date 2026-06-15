@@ -64,23 +64,27 @@ function highpass(fc: number, sr: number, q = Math.SQRT1_2): Biquad {
 // narrow sub-bass/kick band — a wider one captures sustained low-mids and reads
 // too blue; basslines belong to "mid", which is how rekordbox treats them.
 const LOW_HZ = 40
-const HIGH_HZ = 1800
+const HIGH_HZ = 1500
 
 // Columns are smoothed across ±this many neighbours. Real rekordbox waveforms
 // have ~3-4x less column-to-column variation than a raw peak/RMS envelope; a box
 // smooth of this radius matches their adjacent-column variation (measured ≈2.5).
 const SMOOTH_RADIUS = 3
 
+// Per-band gains applied before the shared normalisation, tuned by matching our
+// PWV7 band means to a real rekordbox export of the SAME tracks. Music's
+// spectral tilt makes treble quieter; rekordbox lifts it so highs stay visible.
+const BAND_GAIN = { low: 1.2, mid: 1.0, high: 1.5 }
+
 /**
  * Run `samples` through a cascade of biquads (series) and accumulate the
- * per-bucket RMS of the output into `out`. RMS (not peak) gives the smooth,
- * filled envelope rekordbox draws. Cascading two sections gives a steeper
- * 4th-order rolloff so the bands are well separated. One O(N) pass.
+ * per-bucket peak |output| into `out`. Peak (not RMS) matches rekordbox — its
+ * bass is kick-driven and peaky; the cross-column smooth afterwards supplies the
+ * filled look. Cascading two sections gives a steep 4th-order rolloff. O(N).
  */
-function filterRms(samples: Float32Array, stages: Biquad[], out: Float32Array): void {
+function filterPeaks(samples: Float32Array, stages: Biquad[], out: Float32Array): void {
   const total = samples.length
   const spb = total / out.length
-  const cnt = new Float64Array(out.length)
   const z1 = new Float64Array(stages.length)
   const z2 = new Float64Array(stages.length)
   for (let i = 0; i < total; i++) {
@@ -92,11 +96,10 @@ function filterRms(samples: Float32Array, stages: Biquad[], out: Float32Array): 
       z2[s] = f.b2 * x - f.a2 * y
       x = y
     }
+    const a = x < 0 ? -x : x
     const b = Math.min(out.length - 1, Math.floor(i / spb))
-    out[b] += x * x
-    cnt[b]++
+    if (a > out[b]) out[b] = a
   }
-  for (let b = 0; b < out.length; b++) out[b] = cnt[b] > 0 ? Math.sqrt(out[b] / cnt[b]) : 0
 }
 
 /** Box-smooth an envelope across ±r columns (O(N) via a prefix sum). */
@@ -115,12 +118,12 @@ function smooth(a: Float32Array, r: number): Float32Array {
 }
 
 /**
- * Split mono PCM into 3 frequency bands (bass < 40 Hz, mid 40 Hz–1.8 kHz, treble
- * > 1.8 kHz) with steep 4th-order Butterworth crossovers, reduce each to
- * `buckets` per-bucket RMS, box-smooth across columns, and normalise each band
- * to its OWN peak. Real rekordbox exports do all of this — per-band normalisation
- * (every band's maxima reach ~127 independently) for warm mid/high-forward
- * colour, and cross-column smoothing for the filled, non-spiky envelope.
+ * Split mono PCM into 3 frequency bands (bass < 40 Hz, mid 40 Hz–1.5 kHz, treble
+ * > 1.5 kHz) with steep 4th-order Butterworth crossovers, reduce each to
+ * `buckets` per-bucket peaks, box-smooth across columns, apply the perceptual
+ * BAND_GAIN, then normalise ALL bands by one SHARED scale. This matches a real
+ * rekordbox export of the same tracks: bass stays tiny on average (it isn't
+ * inflated to its own peak), mids dominate, treble is lifted to stay visible.
  */
 export function computeWaveformBands(
   samples: Float32Array,
@@ -146,19 +149,26 @@ export function computeWaveformBands(
 
   // 4th-order = two cascaded 2nd-order Butterworth sections; mid is a band-pass
   // built from a high-pass then low-pass cascade (flat passband, steep skirts).
-  filterRms(samples, [lowpass(lowHz, sampleRate), lowpass(lowHz, sampleRate)], low)
-  filterRms(samples, [highpass(lowHz, sampleRate), lowpass(highHz, sampleRate)], mid)
-  filterRms(samples, [highpass(highHz, sampleRate), highpass(highHz, sampleRate)], high)
+  filterPeaks(samples, [lowpass(lowHz, sampleRate), lowpass(lowHz, sampleRate)], low)
+  filterPeaks(samples, [highpass(lowHz, sampleRate), lowpass(highHz, sampleRate)], mid)
+  filterPeaks(samples, [highpass(highHz, sampleRate), highpass(highHz, sampleRate)], high)
 
   peaks = smooth(peaks, SMOOTH_RADIUS)
   low = smooth(low, SMOOTH_RADIUS)
   mid = smooth(mid, SMOOTH_RADIUS)
   high = smooth(high, SMOOTH_RADIUS)
 
-  scale(peaks, maxOf(peaks))
-  scale(low, maxOf(low)) // per-band normalisation (each band → its own peak)
-  scale(mid, maxOf(mid))
-  scale(high, maxOf(high))
+  // Perceptual gain, then ONE shared scale across all three bands (so a quiet
+  // bass band is not lifted to mid's level — the key to matching rekordbox).
+  for (let i = 0; i < n; i++) {
+    low[i] *= BAND_GAIN.low
+    high[i] *= BAND_GAIN.high
+  }
+  scale(peaks, maxOf(peaks)) // mono outline keeps its own scale
+  const shared = Math.max(maxOf(low), maxOf(mid), maxOf(high))
+  scale(low, shared)
+  scale(mid, shared)
+  scale(high, shared)
   return { peaks, low, mid, high }
 }
 
