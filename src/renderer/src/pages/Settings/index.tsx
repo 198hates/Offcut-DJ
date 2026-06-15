@@ -3,6 +3,7 @@ import type { AppSettings } from '@shared/types'
 import { useWaveformStore, type WaveformStyle, type KeyNotation } from '../../store/waveformStore'
 import { useThemeStore } from '../../store/themeStore'
 import { MidiSettings } from '../../components/MidiSettings'
+import { AI_SETTINGS_CHANGED } from '../../hooks/useAiStatus'
 
 type SettingsPatch = Partial<AppSettings>
 
@@ -65,6 +66,8 @@ export function SettingsPage(): JSX.Element {
     await window.api.settings.save(settings)
     setSaving(false)
     setSaved(true)
+    // Let AI-gated UI (Search, SetBuilder, SmartFixes) refresh immediately.
+    window.dispatchEvent(new Event(AI_SETTINGS_CHANGED))
     setTimeout(() => setSaved(false), 2000)
   }
 

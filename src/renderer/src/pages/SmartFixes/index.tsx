@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
+import { useAiStatus } from '../../hooks/useAiStatus'
 import { inferGenre } from '../../lib/genreInference'
 import type { Track } from '@shared/types'
 
@@ -569,11 +570,7 @@ export function SmartFixesPage(): JSX.Element {
   const [applied, setApplied] = useState<Record<string, number>>({})
   const [scanning, setScanning] = useState<string | null>(null)
   const [scanError, setScanError] = useState<Record<string, string>>({})
-  const [aiEnabled, setAiEnabled] = useState(false)
-
-  useEffect(() => {
-    window.api.ai.status().then((s) => setAiEnabled(s.enabled && s.hasKey)).catch(() => setAiEnabled(false))
-  }, [])
+  const aiEnabled = useAiStatus()
 
   const visibleFixes = aiEnabled ? FIXES : FIXES.filter((f) => !f.aiScan)
 

@@ -7,6 +7,7 @@ import { compatibilityScore, magicSort } from '../../lib/compatibility'
 import { setTrackDragData, acceptsTrackDrop, readTrackIds } from '../../lib/trackDrag'
 import { GraphView } from './GraphView'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
+import { useAiStatus } from '../../hooks/useAiStatus'
 import type { Playlist, Track } from '@shared/types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -275,13 +276,9 @@ export function SetBuilderPage(): JSX.Element {
   }, [chapterTracks, reorderPlaylistTracks, showToast])
 
   // ── AI sequencing ─────────────────────────────────────────────────────────
-  const [aiEnabled,    setAiEnabled]    = useState(false)
+  const aiEnabled = useAiStatus()
   const [aiSeqBusyId,  setAiSeqBusyId]  = useState<string | null>(null)
   const [aiSeq,        setAiSeq]        = useState<{ chapterId: string; arc: string } | null>(null)
-
-  useEffect(() => {
-    window.api.ai.status().then((s) => setAiEnabled(s.enabled && s.hasKey)).catch(() => setAiEnabled(false))
-  }, [])
 
   const handleAiSequence = useCallback(async (chapterId: string) => {
     const trs = chapterTracks.get(chapterId) ?? []

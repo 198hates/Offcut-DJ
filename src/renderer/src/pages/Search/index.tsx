@@ -15,6 +15,7 @@ import { useLibraryStore } from '../../store/libraryStore'
 import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
+import { useAiStatus } from '../../hooks/useAiStatus'
 import type { Track, SmartRule, AiSearchFilter } from '@shared/types'
 
 // ── Dual-handle range slider ──────────────────────────────────────────────────
@@ -169,7 +170,7 @@ export function SearchPage(): JSX.Element {
 
   // ── AI natural-language search ───────────────────────────────────────────
   const [aiQuery,   setAiQuery]   = useState('')
-  const [aiEnabled, setAiEnabled] = useState(false)
+  const aiEnabled = useAiStatus()
   const [aiBusy,    setAiBusy]    = useState(false)
   const [aiNote,    setAiNote]    = useState<string | null>(null)
   const [aiError,   setAiError]   = useState<string | null>(null)
@@ -178,10 +179,6 @@ export function SearchPage(): JSX.Element {
     window.api.library.getRunningOrders().then((ros) =>
       setRunningOrders(ros.map((r) => ({ id: r.id, title: r.title, catalogNum: r.catalogNum })))
     )
-  }, [])
-
-  useEffect(() => {
-    window.api.ai.status().then((s) => setAiEnabled(s.enabled && s.hasKey)).catch(() => setAiEnabled(false))
   }, [])
 
   // ── Available filter options ──────────────────────────────────────────────
