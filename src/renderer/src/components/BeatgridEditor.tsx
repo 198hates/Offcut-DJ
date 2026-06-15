@@ -24,17 +24,11 @@ function withDownbeatPhase(markers: BeatgridMarker[], phase: number): BeatgridMa
 }
 
 // ── Audio helpers ─────────────────────────────────────────────────────────────
-
-function mixToMono(buf: AudioBuffer, limitSamples?: number): Float32Array {
-  const len = limitSamples ? Math.min(buf.length, limitSamples) : buf.length
-  const mono = new Float32Array(len)
-  const inv = 1 / buf.numberOfChannels
-  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-    const d = buf.getChannelData(ch)
-    for (let i = 0; i < len; i++) mono[i] += d[i] * inv
-  }
-  return mono
-}
+//
+// Audio is decoded to mono float PCM by the main process (ffmpeg) rather than
+// the renderer's Web Audio `decodeAudioData`, which throws "EncodingError" on
+// formats DJs routinely use (FLAC, AIFF, ALAC). So every helper here works on a
+// plain mono Float32Array plus its sample rate.
 
 interface EditorPeaks {
   full: Float32Array
@@ -44,18 +38,16 @@ interface EditorPeaks {
 // Per-bucket peaks for the full signal AND a low-passed (kick) envelope, both
 // normalised to the full-signal max so kicks show as tall spikes against a
 // faint full waveform. A one-pole low-pass (~150 Hz) isolates the kick.
-function computeBandPeaks(buf: AudioBuffer, buckets: number): EditorPeaks {
+function computeBandPeaks(mono: Float32Array, sampleRate: number, buckets: number): EditorPeaks {
   const full = new Float32Array(buckets)
   const low = new Float32Array(buckets)
-  const n = buf.length
+  const n = mono.length
   if (n === 0) return { full, low }
   const spb = n / buckets
-  const ch0 = buf.getChannelData(0)
-  const ch1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : ch0
-  const a = 1 - Math.exp((-2 * Math.PI * 150) / buf.sampleRate)
+  const a = 1 - Math.exp((-2 * Math.PI * 150) / sampleRate)
   let lp = 0
   for (let i = 0; i < n; i++) {
-    const x = (ch0[i] + ch1[i]) * 0.5
+    const x = mono[i]
     lp += a * (x - lp)
     const b = Math.min(buckets - 1, Math.floor(i / spb))
     const af = x < 0 ? -x : x
@@ -69,11 +61,11 @@ function computeBandPeaks(buf: AudioBuffer, buckets: number): EditorPeaks {
   return { full, low }
 }
 
-function detectFirstBeatMs(buf: AudioBuffer, bpmHint: number): number {
-  const sr = buf.sampleRate
+function detectFirstBeatMs(mono: Float32Array, sampleRate: number, bpmHint: number): number {
+  const sr = sampleRate
   const beatMs = 60000 / Math.max(60, bpmHint)
-  const analyseSecs = Math.min(buf.duration, Math.max(4, (beatMs * 8) / 1000))
-  const mono = mixToMono(buf, Math.floor(sr * analyseSecs))
+  const analyseSecs = Math.max(4, (beatMs * 8) / 1000)
+  mono = mono.subarray(0, Math.min(mono.length, Math.floor(sr * analyseSecs)))
 
   const winN = Math.max(1, Math.floor(sr * 0.01))   // 10 ms windows
   const nFrames = Math.floor(mono.length / winN)
@@ -99,6 +91,15 @@ function detectFirstBeatMs(buf: AudioBuffer, bpmHint: number): number {
   return 0
 }
 
+// mm:ss.d from milliseconds (one decimal of seconds — enough to read a sweep).
+function fmtTime(ms: number): string {
+  if (!isFinite(ms) || ms < 0) ms = 0
+  const total = ms / 1000
+  const m = Math.floor(total / 60)
+  const s = total - m * 60
+  return `${m}:${s.toFixed(1).padStart(4, '0')}`
+}
+
 // ── Canvas rendering ──────────────────────────────────────────────────────────
 
 interface ViewState {
@@ -112,8 +113,9 @@ function drawEditor(
   duration: number,
   markers: BeatgridMarker[],
   view: ViewState,
-  offsetMs: number,
+  anchorMs: number,
   hoveredMs: number | null,
+  playheadMs: number,
 ): void {
   const dpr = window.devicePixelRatio || 1
   const W = canvas.offsetWidth
@@ -178,8 +180,8 @@ function drawEditor(
     }
   }
 
-  // ── Anchor handle (the normalised first-beat / phase-0 position) ──────────
-  const anchorX = Math.round(((offsetMs - view.startMs) / visMs) * W)
+  // ── Anchor handle (the chosen downbeat / "the 1") ─────────────────────────
+  const anchorX = Math.round(((anchorMs - view.startMs) / visMs) * W)
   if (anchorX >= -8 && anchorX <= W + 8) {
     ctx.fillStyle = 'rgba(96,200,230,0.95)' // cyan — distinct from accent downbeats
     ctx.fillRect(anchorX - 1, 0, 2, H - 18)
@@ -187,6 +189,21 @@ function drawEditor(
     ctx.moveTo(anchorX - 6, 0)
     ctx.lineTo(anchorX + 6, 0)
     ctx.lineTo(anchorX, 9)
+    ctx.closePath()
+    ctx.fill()
+  }
+
+  // ── Playhead ──────────────────────────────────────────────────────────────
+  // Bright yellow vertical line tracking playback position — distinct from the
+  // cyan anchor and terracotta downbeats so it reads clearly while sweeping.
+  if (playheadMs >= view.startMs - 50 && playheadMs <= endMs + 50) {
+    const px = Math.round(((playheadMs - view.startMs) / visMs) * W)
+    ctx.fillStyle = 'rgba(255,214,64,0.95)'
+    ctx.fillRect(px, 0, 1.5, H - 18)
+    ctx.beginPath()
+    ctx.moveTo(px - 5, 0)
+    ctx.lineTo(px + 5, 0)
+    ctx.lineTo(px, 8)
     ctx.closePath()
     ctx.fill()
   }
@@ -244,20 +261,40 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
     track.bpm ??
     128
   )
-  const initOffset: number = (
-    track.beatgrid.length > 0
-      ? track.beatgrid[0].positionMs          // existing manual grid
-      : track.analysedBeatgrid?.firstBeatMs   // seed from auto-analysis
-        ?? 0
-  )
+  // The grid is defined by ONE thing: the absolute position of bar 1's
+  // downbeat (the "1"). Everything else — beat phase and which beats are
+  // downbeats — derives from it. Seed it from an existing downbeat, else the
+  // first beat, else the auto-analysed first beat.
+  const initAnchor: number = (() => {
+    const db = track.beatgrid.find((m) => m.isDownbeat)
+    if (db) return db.positionMs
+    if (track.beatgrid.length > 0) return track.beatgrid[0].positionMs
+    return track.analysedBeatgrid?.firstBeatMs ?? 0
+  })()
 
   const [bpm,      setBpm]      = useState(initBpm)
-  const [offsetMs, setOffsetMs] = useState(initOffset)
-  // Which of the 4 beats is the downbeat (bar 1) — lets the user place the "1".
-  const [downbeatPhase, setDownbeatPhase] = useState(0)
+  // anchorMs = absolute ms of the chosen downbeat (bar 1). Click a kick to set it.
+  const [anchorMs, setAnchorMs] = useState(initAnchor)
   const [view,     setView]     = useState<ViewState>({ startMs: 0, pps: DEFAULT_PPS })
   const [hovered,  setHovered]  = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
+
+  // ── Playback (monitor alignment by ear + a moving playhead) ───────────────
+  const [playing,    setPlaying]    = useState(false)
+  const [playheadMs, setPlayheadMs] = useState(0)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const audioBufRef = useRef<AudioBuffer | null>(null)
+  const srcRef      = useRef<AudioBufferSourceNode | null>(null)
+  const playRafRef  = useRef(0)
+  const playStartRef = useRef({ ctxTime: 0, headMs: 0 })
+  const playingRef  = useRef(false)
+
+  // Derive the generator inputs (first-beat phase + which beat-of-4 is the
+  // downbeat) from the single anchor, so a beat always lands ON the anchor and
+  // that beat is flagged as the "1".
+  const beatMs = 60000 / bpm
+  const offsetMs = ((anchorMs % beatMs) + beatMs) % beatMs
+  const downbeatPhase = ((Math.round((anchorMs - offsetMs) / beatMs) % 4) + 4) % 4
 
   const markers = useMemo(
     () => withDownbeatPhase(generateBeatgrid(bpm, offsetMs, duration * 1000), downbeatPhase),
@@ -268,26 +305,30 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
 
   useEffect(() => {
     let cancelled = false
-    const actx = new AudioContext()
 
-    window.api.audio.readFile(track.filePath)
-      .then((ab) => actx.decodeAudioData(ab))
-      .then((buf) => {
+    window.api.audio.decodePcm(track.filePath)
+      .then(({ samples, sampleRate }) => {
         if (cancelled) return
-        setPeaks(computeBandPeaks(buf, 4000))
-        setDuration(buf.duration)
+        setPeaks(computeBandPeaks(samples, sampleRate, 4000))
+        setDuration(samples.length / sampleRate)
         setLoading(false)
+
+        // Keep a playable AudioBuffer (mono, decoded rate) for the playhead.
+        const ctx = audioCtxRef.current ?? (audioCtxRef.current = new AudioContext())
+        const buf = ctx.createBuffer(1, Math.max(1, samples.length), sampleRate)
+        buf.getChannelData(0).set(samples)
+        audioBufRef.current = buf
 
         // Auto-detect first beat only when no grid exists at all
         if (track.beatgrid.length === 0 && !track.analysedBeatgrid) {
-          setOffsetMs(detectFirstBeatMs(buf, initBpm))
+          setAnchorMs(detectFirstBeatMs(samples, sampleRate, initBpm))
         }
       })
       .catch((e) => {
         if (!cancelled) { setLoading(false); setError(String(e)) }
       })
 
-    return () => { cancelled = true; actx.close() }
+    return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track.filePath])
 
@@ -295,8 +336,8 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
 
   const redraw = useCallback(() => {
     if (!canvasRef.current || !peaks) return
-    drawEditor(canvasRef.current, peaks, duration, markers, view, offsetMs, hovered)
-  }, [peaks, duration, markers, view, offsetMs, hovered])
+    drawEditor(canvasRef.current, peaks, duration, markers, view, anchorMs, hovered, playheadMs)
+  }, [peaks, duration, markers, view, anchorMs, hovered, playheadMs])
 
   useEffect(() => {
     cancelAnimationFrame(rafRef.current)
@@ -353,7 +394,7 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
     return () => canvas.removeEventListener('wheel', handler)
   }, [duration])   // duration is the only external dep; view is read via setState updater
 
-  // ── Click / drag — phase snap ─────────────────────────────────────────────
+  // ── Click / drag — place the downbeat ─────────────────────────────────────
 
   const msAtX = useCallback((clientX: number): number => {
     const rect = canvasRef.current!.getBoundingClientRect()
@@ -361,57 +402,139 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
     return view.startMs + frac * (rect.width / view.pps) * 1000
   }, [view])
 
-  const snapBeatToMs = useCallback((clickMs: number): void => {
-    // Make the beat grid land exactly on clickMs.
-    //
-    // Beat positions are: offsetMs + n*beatMs for integer n.
-    // We want some beat to fall at clickMs, which means:
-    //   offsetMs = clickMs mod beatMs
-    //
-    // The modulo keeps offsetMs in [0, beatMs), so the orange anchor is
-    // always visible near the start of the track.
-    // (The old code subtracted beatMs when offset > beatMs/2, producing a
-    //  negative offsetMs and making the anchor invisible — that was wrong.)
-    const beatMs = 60000 / bpm
-    const raw    = clickMs % beatMs
-    setOffsetMs(raw < 0 ? raw + beatMs : raw)    // guard against negative clickMs
-  }, [bpm])
+  // Snap the click to the loudest kick within ±half a beat, so clicking "on the
+  // kick" lands precisely on its transient instead of wherever the cursor fell.
+  const snapToKick = useCallback((clickMs: number): number => {
+    if (!peaks || duration <= 0) return clickMs
+    const nP = peaks.low.length
+    const msPerBucket = (duration * 1000) / nP
+    const win = Math.max(1, Math.round((30000 / bpm) / msPerBucket))   // ±half a beat
+    const center = Math.round(clickMs / msPerBucket)
+    let bestIdx = center
+    let bestVal = -1
+    for (let i = Math.max(0, center - win); i <= Math.min(nP - 1, center + win); i++) {
+      if (peaks.low[i] > bestVal) { bestVal = peaks.low[i]; bestIdx = i }
+    }
+    // Only snap if there's a real kick here; otherwise keep the exact click.
+    return bestVal > 0.12 ? bestIdx * msPerBucket : clickMs
+  }, [peaks, duration, bpm])
+
+  // ── Playback transport ────────────────────────────────────────────────────
+
+  const stopPlayback = useCallback((): void => {
+    if (srcRef.current) {
+      try { srcRef.current.onended = null; srcRef.current.stop() } catch { /* already stopped */ }
+      srcRef.current = null
+    }
+    cancelAnimationFrame(playRafRef.current)
+    playingRef.current = false
+    setPlaying(false)
+  }, [])
+
+  const tick = useCallback((): void => {
+    const ctx = audioCtxRef.current
+    if (!ctx || !playingRef.current) return
+    const durMs = duration * 1000
+    let head = playStartRef.current.headMs + (ctx.currentTime - playStartRef.current.ctxTime) * 1000
+    if (head >= durMs) { setPlayheadMs(durMs); stopPlayback(); return }
+    setPlayheadMs(head)
+    // Follow-scroll: keep the playhead on screen as it sweeps.
+    setView((v) => {
+      const w = canvasRef.current?.offsetWidth ?? 0
+      if (w === 0) return v
+      const visMs = (w / v.pps) * 1000
+      if (head < v.startMs || head > v.startMs + visMs * 0.85) {
+        const maxStart = Math.max(0, durMs - visMs)
+        return { ...v, startMs: Math.max(0, Math.min(maxStart, head - visMs * 0.3)) }
+      }
+      return v
+    })
+    playRafRef.current = requestAnimationFrame(tick)
+  }, [duration, stopPlayback])
+
+  const startPlayback = useCallback((fromMs: number): void => {
+    const ctx = audioCtxRef.current
+    const buf = audioBufRef.current
+    if (!ctx || !buf) return
+    if (srcRef.current) {
+      try { srcRef.current.onended = null; srcRef.current.stop() } catch { /* already stopped */ }
+      srcRef.current = null
+    }
+    void ctx.resume()
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    const gain = ctx.createGain()
+    gain.gain.value = 0.85
+    src.connect(gain).connect(ctx.destination)
+    src.start(0, Math.max(0, Math.min(buf.duration - 0.01, fromMs / 1000)))
+    srcRef.current = src
+    playStartRef.current = { ctxTime: ctx.currentTime, headMs: fromMs }
+    playingRef.current = true
+    setPlaying(true)
+    cancelAnimationFrame(playRafRef.current)
+    playRafRef.current = requestAnimationFrame(tick)
+  }, [tick])
+
+  const togglePlay = useCallback((): void => {
+    if (playingRef.current) stopPlayback()
+    else startPlayback(playheadMs >= duration * 1000 - 1 ? 0 : playheadMs)
+  }, [playheadMs, duration, startPlayback, stopPlayback])
+
+  // Space = play/pause, Escape = close.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.code === 'Space') { e.preventDefault(); togglePlay() }
+      else if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [togglePlay, onClose])
+
+  // Tear down audio on unmount — stop playback and free the AudioContext.
+  useEffect(() => () => {
+    if (srcRef.current) { try { srcRef.current.stop() } catch { /* already stopped */ } }
+    cancelAnimationFrame(playRafRef.current)
+    if (audioCtxRef.current) void audioCtxRef.current.close()
+  }, [])
+
+  // ── Click / drag — place the downbeat + cue playback there ────────────────
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     setDragging(true)
-    snapBeatToMs(msAtX(e.clientX))
-  }, [msAtX, snapBeatToMs])
+    const ms = Math.max(0, snapToKick(msAtX(e.clientX)))
+    setAnchorMs(ms)             // place the "1"
+    setPlayheadMs(ms)           // …and cue playback there
+    if (playingRef.current) startPlayback(ms)
+  }, [msAtX, snapToKick, startPlayback])
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const ms = msAtX(e.clientX)
     setHovered(ms)
-    if (dragging) snapBeatToMs(ms)
-  }, [msAtX, snapBeatToMs, dragging])
+    if (dragging) setAnchorMs(Math.max(0, ms))   // free drag, no kick-snap mid-drag
+  }, [msAtX, dragging])
 
   const handleMouseUp   = useCallback(() => setDragging(false), [])
   const handleMouseLeave = useCallback(() => { setHovered(null); setDragging(false) }, [])
 
-  // ── BPM and offset nudge ──────────────────────────────────────────────────
+  // ── BPM and anchor nudge ──────────────────────────────────────────────────
 
   const nudgeBpm = (delta: number): void =>
     setBpm((b) => Math.round((b + delta) * 1000) / 1000)
 
-  const nudgeOffset = (deltaMs: number): void =>
-    setOffsetMs((o) => {
-      const beatMs = 60000 / bpm
-      const raw = (o + deltaMs) % beatMs
-      return raw < 0 ? raw + beatMs : raw
-    })
+  // Micro-shift the whole grid (and the "1" with it) by ±ms.
+  const nudgeAnchor = (deltaMs: number): void =>
+    setAnchorMs((a) => Math.max(0, a + deltaMs))
+
+  // Move the downbeat to the previous / next beat without changing the phase.
+  const nudgeDownbeat = (dir: number): void =>
+    setAnchorMs((a) => Math.max(0, a + dir * (60000 / bpm)))
 
   const autoDetect = async (): Promise<void> => {
     setLoading(true)
     try {
-      const ab  = await window.api.audio.readFile(track.filePath)
-      const actx = new AudioContext()
-      const buf  = await actx.decodeAudioData(ab)
-      setOffsetMs(detectFirstBeatMs(buf, bpm))
-      await actx.close()
+      const { samples, sampleRate } = await window.api.audio.decodePcm(track.filePath)
+      setAnchorMs(detectFirstBeatMs(samples, sampleRate, bpm))
     } catch { /* ignore */ }
     setLoading(false)
   }
@@ -433,11 +556,38 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
         style={{ fontFamily: "'JetBrains Mono', monospace" }}
       >
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 border-b border-border/30 bg-chassis-soft flex-wrap">
+      <div className="shrink-0 px-4 py-2.5 border-b border-border/30 bg-chassis-soft">
 
-        <div className="flex-1 min-w-0">
-          <p className="text-[12px] font-bold uppercase tracking-[0.2em] text-accent">beatgrid editor</p>
-          <p className="text-[13px] text-ink truncate mt-0.5">{track.title} · {track.artist}</p>
+        {/* Title row + actions */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-[12px] font-bold uppercase tracking-[0.2em] text-accent">beatgrid editor</p>
+            <p className="text-[13px] text-ink truncate mt-0.5">{track.title} · {track.artist}</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={onClose}
+              className="px-3 py-1.5 text-[12px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
+              cancel
+            </button>
+            <button onClick={handleSave}
+              className="px-3 py-1.5 text-[12px] uppercase tracking-[0.1em] bg-accent hover:bg-accent/90 text-paper rounded transition-colors">
+              save beatgrid
+            </button>
+          </div>
+        </div>
+
+        {/* Controls row */}
+        <div className="flex items-center gap-x-4 gap-y-2 mt-2.5 flex-wrap">
+
+        {/* Transport */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={togglePlay} disabled={loading || !!error}
+            className="px-2.5 py-1 text-[12px] uppercase tracking-[0.1em] text-accent hover:text-paper hover:bg-accent border border-accent/50 rounded transition-colors disabled:opacity-40 min-w-[4.5rem] text-center">
+            {playing ? '❚❚ pause' : '▶ play'}
+          </button>
+          <span className="text-[12px] text-muted tabular-nums select-none">
+            {fmtTime(playheadMs)}<span className="text-muted/40"> / {fmtTime(duration * 1000)}</span>
+          </span>
         </div>
 
         {/* BPM */}
@@ -464,20 +614,20 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
             className="px-2 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">×2</button>
         </div>
 
-        {/* Offset */}
+        {/* Fine-align — micro-shift the whole grid by ±ms */}
         <div className="flex items-center gap-1 shrink-0">
-          <span className="text-[12px] text-muted uppercase tracking-[0.12em] mr-1">offset</span>
+          <span className="text-[12px] text-muted uppercase tracking-[0.12em] mr-1">nudge</span>
           {([-5, -1] as const).map((d) => (
-            <button key={d} onClick={() => nudgeOffset(d)}
+            <button key={d} onClick={() => nudgeAnchor(d)}
               className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">
               {d}ms
             </button>
           ))}
           <span className="px-2 py-1 text-[13px] text-ink tabular-nums select-none min-w-[4rem] text-center">
-            {(offsetMs / 1000).toFixed(3)}s
+            {(anchorMs / 1000).toFixed(3)}s
           </span>
           {([1, 5] as const).map((d) => (
-            <button key={d} onClick={() => nudgeOffset(d)}
+            <button key={d} onClick={() => nudgeAnchor(d)}
               className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">
               +{d}ms
             </button>
@@ -488,14 +638,13 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
           </button>
         </div>
 
-        {/* Downbeat (which beat is bar 1) */}
+        {/* Downbeat — move the "1" to the previous / next beat */}
         <div className="flex items-center gap-1 shrink-0">
-          <span className="text-[12px] text-accent uppercase tracking-[0.12em] mr-1">downbeat</span>
-          <button onClick={() => setDownbeatPhase((p) => (p + 3) % 4)}
-            className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">◀</button>
-          <span className="px-1 text-[12px] text-ink tabular-nums select-none w-4 text-center">{(downbeatPhase % 4) + 1}</span>
-          <button onClick={() => setDownbeatPhase((p) => (p + 1) % 4)}
-            className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">▶</button>
+          <span className="text-[12px] text-accent uppercase tracking-[0.12em] mr-1">the 1</span>
+          <button onClick={() => nudgeDownbeat(-1)} title="move downbeat one beat earlier"
+            className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">◀ beat</button>
+          <button onClick={() => nudgeDownbeat(1)} title="move downbeat one beat later"
+            className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">beat ▶</button>
         </div>
 
         {/* Zoom */}
@@ -507,15 +656,6 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
             className="px-2 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">+</button>
         </div>
 
-        <div className="flex items-center gap-2 ml-auto shrink-0">
-          <button onClick={onClose}
-            className="px-3 py-1.5 text-[12px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
-            cancel
-          </button>
-          <button onClick={handleSave}
-            className="px-3 py-1.5 text-[12px] uppercase tracking-[0.1em] bg-accent hover:bg-accent/90 text-paper rounded transition-colors">
-            save beatgrid
-          </button>
         </div>
       </div>
 
@@ -542,7 +682,7 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
         {!loading && !error && (
           <div className="absolute bottom-6 right-3 pointer-events-none">
             <span className="text-[11px] text-muted/40 uppercase tracking-[0.15em]">
-              click / drag to align · scroll to pan · ctrl+scroll to zoom
+              click a kick to set the 1 · space to play · ctrl+scroll to zoom
             </span>
           </div>
         )}
