@@ -6,7 +6,7 @@
  */
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
-import { analyzeAudio, generateCuesForFile, computeRmsGainDb } from '../../lib/analyzer'
+import { analyzeAudio, generateCuesForFile, computeRmsGainDb, downbeatsForTrack } from '../../lib/analyzer'
 import { generateBeatgrid } from '../../lib/compatibility'
 import { getQuantiser, initQuantiser } from '../../lib/quantiser'
 import { batchInferGenres } from '../../lib/genreInference'
@@ -151,7 +151,7 @@ function BpmKeySection(): JSX.Element {
       try {
         const ab = await window.api.audio.readFile(track.filePath)
         const buf = await ctx.decodeAudioData(ab)
-        const r   = await analyzeAudio(buf)
+        const r   = await analyzeAudio(buf, downbeatsForTrack(track))
         const newBpm  = (!track.bpm && r.bpm) ? r.bpm : track.bpm
         const newKey  = (!track.key && r.key) ? r.key : track.key
         const newNrg  = (track.energy == null && r.energy != null) ? r.energy : track.energy
@@ -455,7 +455,7 @@ function AutoCueSection(): JSX.Element {
       setProgress({ current: i + 1, total: needingCues.length })
       setCurrentTitle(track.title || track.filePath.split('/').pop() || '')
       try {
-        const cues = await generateCuesForFile(track.filePath)
+        const cues = await generateCuesForFile(track.filePath, downbeatsForTrack(track))
         if (cues.length > 0) { await updateTrack({ id: track.id, cuePoints: cues }); generated++ }
       } catch { failed.push(track) }
     }

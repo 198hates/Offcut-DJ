@@ -4,7 +4,7 @@ import { useToastStore } from '../store/toastStore'
 import { CamelotWheel } from './CamelotWheel'
 import { BeatgridEditor } from './BeatgridEditor'
 import { compatibilityScore, harmonicScore } from '../lib/compatibility'
-import { generateCuesForFile, analyzeAudio } from '../lib/analyzer'
+import { generateCuesForFile, analyzeAudio, downbeatsForTrack } from '../lib/analyzer'
 import { generateBeatgrid } from '../lib/compatibility'
 import { useDeckAStore, useDeckBStore } from '../store/playerStore'
 import type { Track, CuePoint, BeatgridMarker, CutHistory, EditLineage } from '@shared/types'
@@ -742,7 +742,7 @@ function EditTab({ draft, set }: { draft: Track; set: <K extends keyof Track>(ke
     setGeneratingCues(true)
     setCueError(null)
     try {
-      const cues = await generateCuesForFile(draft.filePath)
+      const cues = await generateCuesForFile(draft.filePath, downbeatsForTrack(draft))
       if (cues.length === 0) {
         setCueError('No structural cues detected — track may be too short or have uniform energy')
       } else {

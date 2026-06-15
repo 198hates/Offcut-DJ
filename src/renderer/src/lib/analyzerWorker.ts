@@ -3,6 +3,9 @@
 export interface AnalyzerInput {
   samples: Float32Array   // mono, original sample rate
   sampleRate: number
+  /** Real downbeat positions (ms) from the analysed beatgrid, if available —
+   *  used to anchor structural cues to true bars instead of a re-derived grid. */
+  bars?: number[]
 }
 
 export interface SuggestedCue {
@@ -22,15 +25,17 @@ export interface AnalyzerResult {
 }
 
 self.onmessage = (e: MessageEvent<AnalyzerInput>) => {
-  const { samples, sampleRate } = e.data
+  const { samples, sampleRate, bars } = e.data
   const bpm          = detectBPM(samples, sampleRate)
   const key          = detectKey(samples, sampleRate)
   const energy       = detectEnergy(samples, sampleRate)
   const danceability = detectDanceability(samples, sampleRate, bpm)
   const mood         = detectMood(samples, sampleRate, key)
   const offsetMs     = bpm != null ? detectBeatPhase(samples, sampleRate, bpm) : null
-  const suggestedCues = (bpm != null && offsetMs != null)
-    ? detectStructuralCues(samples, sampleRate, bpm, offsetMs)
+  // Cues need a bar grid: real downbeats if supplied, else the crude BPM/phase one.
+  const haveGrid = (bars != null && bars.length >= 8) || (bpm != null && offsetMs != null)
+  const suggestedCues = haveGrid
+    ? detectStructuralCues(samples, sampleRate, bpm ?? 0, offsetMs ?? 0, bars)
     : []
   self.postMessage({ bpm, key, energy, danceability, mood, offsetMs, suggestedCues } satisfies AnalyzerResult)
 }
@@ -412,20 +417,28 @@ function detectStructuralCues(
   sampleRate: number,
   bpm: number,
   offsetMs: number,
+  providedBars?: number[],
 ): SuggestedCue[] {
-  if (bpm <= 0) return []
+  const durMs = (samples.length / sampleRate) * 1000
 
-  const beatMs   = 60000 / bpm
-  const barMs    = beatMs * 4
-  const durMs    = (samples.length / sampleRate) * 1000
-
-  // Build bar grid (first bar starts at offset normalised to [0, barMs))
-  let t0 = offsetMs % barMs
-  if (t0 < 0) t0 += barMs
-  const bars: number[] = []
-  for (let t = t0; t < durMs; t += barMs) bars.push(t)
-
+  // Prefer the real analysed downbeats (sample-accurate, true bar 1); fall back
+  // to a grid derived from the crude BPM + beat phase only when none are given.
+  let bars: number[]
+  if (providedBars != null && providedBars.length >= 8) {
+    bars = providedBars.filter((b) => b >= 0 && b < durMs).sort((a, b) => a - b)
+  } else if (bpm > 0) {
+    const barMs0 = (60000 / bpm) * 4
+    let t0 = offsetMs % barMs0
+    if (t0 < 0) t0 += barMs0
+    bars = []
+    for (let t = t0; t < durMs; t += barMs0) bars.push(t)
+  } else {
+    return []
+  }
   if (bars.length < 8) return []
+
+  // Mean bar length — real grids can vary slightly; used for energy windows.
+  const barMs = (bars[bars.length - 1] - bars[0]) / (bars.length - 1)
 
   // Downsample to ~4 kHz for fast energy computation — over the FULL track.
   // A 6-minute cap here put Break/Outro auto-cues in the wrong place on any
@@ -442,10 +455,11 @@ function detectStructuralCues(
     down[i] = s / factor
   }
 
-  // RMS per bar
-  const barRms = bars.map((barStart) => {
+  // RMS per bar (window = this downbeat → the next one)
+  const barRms = bars.map((barStart, idx) => {
+    const barEnd = idx + 1 < bars.length ? bars[idx + 1] : barStart + barMs
     const s0 = Math.floor((barStart / 1000) * actual)
-    const s1 = Math.min(len, Math.floor(((barStart + barMs) / 1000) * actual))
+    const s1 = Math.min(len, Math.floor((barEnd / 1000) * actual))
     if (s1 <= s0) return 0
     let sum = 0
     for (let i = s0; i < s1; i++) sum += down[i] * down[i]

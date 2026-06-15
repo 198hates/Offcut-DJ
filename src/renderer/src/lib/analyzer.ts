@@ -6,7 +6,7 @@ import AnalyzerWorker from './analyzerWorker?worker'
 
 export type { SuggestedCue }
 
-export async function analyzeAudio(buffer: AudioBuffer): Promise<AnalyzerResult> {
+export async function analyzeAudio(buffer: AudioBuffer, bars?: number[]): Promise<AnalyzerResult> {
   return new Promise((resolve, reject) => {
     const worker = new AnalyzerWorker()
 
@@ -19,9 +19,10 @@ export async function analyzeAudio(buffer: AudioBuffer): Promise<AnalyzerResult>
       reject(new Error(err.message))
     }
 
-    // Mix down to mono Float32Array and transfer to the worker
+    // Mix down to mono Float32Array and transfer to the worker. `bars` (real
+    // downbeats, ms) anchors the structural cues to true bars when available.
     const mono = toMono(buffer)
-    worker.postMessage({ samples: mono, sampleRate: buffer.sampleRate }, [mono.buffer])
+    worker.postMessage({ samples: mono, sampleRate: buffer.sampleRate, bars }, [mono.buffer])
   })
 }
 
@@ -33,7 +34,7 @@ export async function analyzeAudio(buffer: AudioBuffer): Promise<AnalyzerResult>
  * @param filePath – native file path (used only to read via Electron API)
  * @param existingBpm – if provided, used only as a hint; analysis always runs in full
  */
-export async function generateCuesForFile(filePath: string): Promise<CuePoint[]> {
+export async function generateCuesForFile(filePath: string, bars?: number[]): Promise<CuePoint[]> {
   const ab  = await window.api.audio.readFile(filePath)
   const ctx = new AudioContext()
   let audioBuffer: AudioBuffer
@@ -44,8 +45,20 @@ export async function generateCuesForFile(filePath: string): Promise<CuePoint[]>
     // `new AudioContext()` fail renderer-wide.
     void ctx.close()
   }
-  const result = await analyzeAudio(audioBuffer)
+  const result = await analyzeAudio(audioBuffer, bars)
   return suggestedCuesToCuePoints(result.suggestedCues)
+}
+
+/** The real downbeat positions (ms) for a track — analysed grid first, then any
+ *  downbeat markers, else none (cue generation falls back to a derived grid). */
+export function downbeatsForTrack(t: {
+  analysedBeatgrid?: { downbeats?: number[] } | null
+  beatgrid?: { positionMs: number; isDownbeat?: boolean }[]
+}): number[] | undefined {
+  const fromAnalysed = t.analysedBeatgrid?.downbeats
+  if (fromAnalysed && fromAnalysed.length >= 8) return fromAnalysed
+  const fromMarkers = (t.beatgrid ?? []).filter((m) => m.isDownbeat).map((m) => m.positionMs)
+  return fromMarkers.length >= 8 ? fromMarkers : undefined
 }
 
 /** Map SuggestedCue[] → CuePoint[] (hotcues, indices 0-N) */

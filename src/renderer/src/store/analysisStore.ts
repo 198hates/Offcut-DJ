@@ -14,7 +14,7 @@ import { create } from 'zustand'
 import type { Track } from '@shared/types'
 import { useLibraryStore } from './libraryStore'
 import { useToastStore } from './toastStore'
-import { analyzeAudio } from '../lib/analyzer'
+import { analyzeAudio, downbeatsForTrack } from '../lib/analyzer'
 import { generateBeatgrid } from '../lib/compatibility'
 
 export interface AnalysisProgress {
@@ -77,7 +77,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
         try {
           const ab = await window.api.audio.readFile(t.filePath)
           const buf = await ctx.decodeAudioData(ab)
-          const result = await analyzeAudio(buf)
+          const result = await analyzeAudio(buf, downbeatsForTrack(current))
           const newBpm = result.bpm ?? current.bpm
           // Never clobber an existing beatgrid: phase 2 also runs for tracks
           // that only miss key/energy, and a regenerated uniform grid would
@@ -154,7 +154,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       try {
         const ab = await window.api.audio.readFile(t.filePath)
         const buf = await actx.decodeAudioData(ab)
-        const result = await analyzeAudio(buf)
+        const result = await analyzeAudio(buf, downbeatsForTrack(t))
         if (result.suggestedCues.length > 0) {
           const cuePoints = result.suggestedCues.map((c, idx) => ({
             index: idx, type: 'hotcue' as const,
