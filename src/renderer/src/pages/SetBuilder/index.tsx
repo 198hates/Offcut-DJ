@@ -153,6 +153,9 @@ interface ViewProps {
   onAddTracks:       (chapterId: string, trackIds: string[]) => Promise<void>
   onRemoveTrack:     (chapterId: string, trackId: string) => Promise<void>
   onMagicSort:       (chapterId: string) => Promise<void>
+  onAiSequence:      (chapterId: string) => Promise<void>
+  aiEnabled:         boolean
+  aiSeqBusyId:       string | null
   onLoadA:           (t: Track) => void
   onSetSeed:         (track: Track | null) => void
   onRenameChapter:   (id: string, name: string) => Promise<void>
@@ -271,6 +274,36 @@ export function SetBuilderPage(): JSX.Element {
     showToast(msg, flagged.size > 0 ? 'info' : 'success')
   }, [chapterTracks, reorderPlaylistTracks, showToast])
 
+  // ── AI sequencing ─────────────────────────────────────────────────────────
+  const [aiEnabled,    setAiEnabled]    = useState(false)
+  const [aiSeqBusyId,  setAiSeqBusyId]  = useState<string | null>(null)
+  const [aiSeq,        setAiSeq]        = useState<{ chapterId: string; arc: string } | null>(null)
+
+  useEffect(() => {
+    window.api.ai.status().then((s) => setAiEnabled(s.enabled && s.hasKey)).catch(() => setAiEnabled(false))
+  }, [])
+
+  const handleAiSequence = useCallback(async (chapterId: string) => {
+    const trs = chapterTracks.get(chapterId) ?? []
+    if (trs.length < 2) { showToast('Need at least 2 tracks to sequence', 'info'); return }
+    setAiSeqBusyId(chapterId)
+    try {
+      const payload = trs.map((t) => ({
+        id: t.id, title: t.title || '', artist: t.artist || '', genre: t.genre || '',
+        bpm: t.bpm, key: t.key, energy: t.energy, mood: t.mood, durationSecs: t.durationSeconds
+      }))
+      const { result, error } = await window.api.ai.sequenceSet(payload)
+      if (error || !result) { showToast(error ?? 'AI sequencing failed', 'error'); return }
+      await reorderPlaylistTracks(chapterId, result.order.map((s) => s.trackId))
+      setAiSeq({ chapterId, arc: result.arc })
+      showToast('Chapter sequenced by AI', 'success')
+    } catch (err) {
+      showToast((err as Error).message, 'error')
+    } finally {
+      setAiSeqBusyId(null)
+    }
+  }, [chapterTracks, reorderPlaylistTracks, showToast])
+
   const handleExport = useCallback(async () => {
     if (!chapters.length) { showToast('No chapters to export', 'info'); return }
     for (const ch of chapters) await window.api.library.exportPlaylistM3U(ch.id)
@@ -345,6 +378,9 @@ export function SetBuilderPage(): JSX.Element {
     onAddTracks:      handleAddTracks,
     onRemoveTrack:    handleRemoveTrack,
     onMagicSort:      handleMagicSort,
+    onAiSequence:     handleAiSequence,
+    aiEnabled,
+    aiSeqBusyId,
     onLoadA:          loadTrackA,
     onSetSeed:        setSeedTrack,
     onRenameChapter:  (id, name) => renamePlaylist(id, name),
@@ -511,6 +547,16 @@ export function SetBuilderPage(): JSX.Element {
         </div>
       </div>
 
+      {/* ── AI arc note ──────────────────────────────────────────────────── */}
+      {aiSeq && aiSeq.chapterId === activeChapterId && (
+        <div className="shrink-0 flex items-start gap-2 px-4 py-2 border-b border-accent/20 bg-accent/[0.05]">
+          <span className="shrink-0 text-accent font-mono text-[12px] mt-0.5">✦</span>
+          <p className="flex-1 font-mono text-[12px] text-ink/80 leading-relaxed">{aiSeq.arc}</p>
+          <button onClick={() => setAiSeq(null)}
+            className="shrink-0 text-muted/50 hover:text-ink transition-colors font-mono text-xs leading-none">×</button>
+        </div>
+      )}
+
       {/* ── Content ──────────────────────────────────────────────────────── */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 overflow-hidden">
@@ -561,9 +607,11 @@ export function SetBuilderPage(): JSX.Element {
 // Shows profile stats + magic sort button + rename inline
 // ═════════════════════════════════════════════════════════════════════════════
 
-function ChapterHeader({ chapter, profile, onMagicSort, onRename, onDelete, compact = false }: {
+function ChapterHeader({ chapter, profile, onMagicSort, onAiSequence, aiEnabled, aiBusy, onRename, onDelete, compact = false }: {
   chapter: Playlist; profile: ChapterProfile
-  onMagicSort: () => void; onRename: (name: string) => void; onDelete: () => void
+  onMagicSort: () => void
+  onAiSequence?: () => void; aiEnabled?: boolean; aiBusy?: boolean
+  onRename: (name: string) => void; onDelete: () => void
   compact?: boolean
 }): JSX.Element {
   const [renaming,  setRenaming]  = useState(false)
@@ -622,6 +670,16 @@ function ChapterHeader({ chapter, profile, onMagicSort, onRename, onDelete, comp
         className="shrink-0 px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-[0.08em] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded transition-colors">
         sort
       </button>
+
+      {/* AI sequence */}
+      {aiEnabled && onAiSequence && (
+        <button onClick={(e) => { e.stopPropagation(); if (!aiBusy) onAiSequence() }}
+          disabled={aiBusy}
+          title="AI Sequence — reason about energy arc, harmonic flow & narrative"
+          className="shrink-0 px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-[0.08em] text-accent hover:text-ink border border-accent/30 hover:border-accent/60 rounded transition-colors disabled:opacity-40">
+          {aiBusy ? '…' : '✦ ai'}
+        </button>
+      )}
 
       <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete "${chapter.name}"?`)) onDelete() }}
         className="shrink-0 text-muted/40 hover:text-red-500 transition-colors font-mono text-xs leading-none">×</button>
@@ -854,6 +912,8 @@ function SplitView(p: ViewProps): JSX.Element {
             <ChapterHeader
               chapter={activeChapter} profile={activeProfile}
               onMagicSort={() => p.onMagicSort(activeChapter.id)}
+              onAiSequence={() => p.onAiSequence(activeChapter.id)}
+              aiEnabled={p.aiEnabled} aiBusy={p.aiSeqBusyId === activeChapter.id}
               onRename={(name) => p.onRenameChapter(activeChapter.id, name)}
               onDelete={() => p.onDeleteChapter(activeChapter.id)}
             />
@@ -987,6 +1047,8 @@ function SwimlaneView(p: ViewProps): JSX.Element {
               onAddTracks={(ids) => p.onAddTracks(ch.id, ids)}
               onRemoveTrack={(tid) => p.onRemoveTrack(ch.id, tid)}
               onMagicSort={() => p.onMagicSort(ch.id)}
+              onAiSequence={() => p.onAiSequence(ch.id)}
+              aiEnabled={p.aiEnabled} aiBusy={p.aiSeqBusyId === ch.id}
               onLoad={p.onLoadA}
               onSetSeed={p.onSetSeed}
               onRename={(name) => p.onRenameChapter(ch.id, name)}
@@ -999,12 +1061,13 @@ function SwimlaneView(p: ViewProps): JSX.Element {
   )
 }
 
-function SwimlaneColumn({ chapter, tracks, profile, isActive, isDraggingTracks, draggingTrackIds, seedTrack, suggestions, onSelect, onAddTracks, onRemoveTrack, onMagicSort, onLoad, onSetSeed, onRename, onDelete }: {
+function SwimlaneColumn({ chapter, tracks, profile, isActive, isDraggingTracks, draggingTrackIds, seedTrack, suggestions, onSelect, onAddTracks, onRemoveTrack, onMagicSort, onAiSequence, aiEnabled, aiBusy, onLoad, onSetSeed, onRename, onDelete }: {
   chapter: Playlist; tracks: Track[]; profile: ChapterProfile | null; isActive: boolean
   isDraggingTracks: boolean; draggingTrackIds: string[]
   seedTrack: Track | null; suggestions: Suggestion[]
   onSelect: () => void; onAddTracks: (ids: string[]) => void
   onRemoveTrack: (id: string) => void; onMagicSort: () => void; onLoad: (t: Track) => void
+  onAiSequence?: () => void; aiEnabled?: boolean; aiBusy?: boolean
   onSetSeed: (t: Track | null) => void; onRename: (name: string) => void; onDelete: () => void
 }): JSX.Element {
   const [isDragOver, setIsDragOver] = useState(false)
@@ -1032,7 +1095,9 @@ function SwimlaneColumn({ chapter, tracks, profile, isActive, isDraggingTracks, 
     >
       {profile && (
         <ChapterHeader chapter={chapter} profile={profile} compact
-          onMagicSort={onMagicSort} onRename={onRename} onDelete={onDelete} />
+          onMagicSort={onMagicSort} onAiSequence={onAiSequence}
+          aiEnabled={aiEnabled} aiBusy={aiBusy}
+          onRename={onRename} onDelete={onDelete} />
       )}
 
       <div className="flex-1 overflow-y-auto py-0.5">
@@ -1184,6 +1249,8 @@ function TimelineView(p: ViewProps): JSX.Element {
             <ChapterHeader
               chapter={activeChapter} profile={activeProfile}
               onMagicSort={() => p.onMagicSort(activeChapter.id)}
+              onAiSequence={() => p.onAiSequence(activeChapter.id)}
+              aiEnabled={p.aiEnabled} aiBusy={p.aiSeqBusyId === activeChapter.id}
               onRename={(name) => p.onRenameChapter(activeChapter.id, name)}
               onDelete={() => p.onDeleteChapter(activeChapter.id)}
             />

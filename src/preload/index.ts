@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, Playlist, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter } from '../shared/types'
+import type { Track, Playlist, IntegrationId, AppSettings, SmartRule, PlayerStatus, CapturedTrack, ProLinkNetworkIface, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult } from '../shared/types'
 
 const api = {
   library: {
@@ -339,7 +339,12 @@ const api = {
       query: string,
       facets: { genres: string[]; keys: string[] }
     ): Promise<{ filter?: AiSearchFilter; error?: string }> =>
-      ipcRenderer.invoke('ai:nlSearch', query, facets)
+      ipcRenderer.invoke('ai:nlSearch', query, facets),
+    sequenceSet: (
+      tracks: AiSeqTrack[],
+      intent?: string
+    ): Promise<{ result?: AiSequenceResult; error?: string }> =>
+      ipcRenderer.invoke('ai:sequenceSet', tracks, intent)
   }
 }
 

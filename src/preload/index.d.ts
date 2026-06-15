@@ -6,7 +6,7 @@ import type {
   EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed,
   StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef,
   StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, BeatgridMarker, CuePoint,
-  AiSearchFilter,
+  AiSearchFilter, AiSeqTrack, AiSequenceResult,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -171,6 +171,10 @@ declare global {
           query: string,
           facets: { genres: string[]; keys: string[] }
         ) => Promise<{ filter?: AiSearchFilter; error?: string }>
+        sequenceSet: (
+          tracks: AiSeqTrack[],
+          intent?: string
+        ) => Promise<{ result?: AiSequenceResult; error?: string }>
       }
       /** Native Rust audio engine IPC bridge (id·2026·009). */
       engine: {

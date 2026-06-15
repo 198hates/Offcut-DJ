@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema'
 import { getAnthropic, AI_MODEL } from '../integrations/ai/client'
 import { getSettings } from '../settings'
-import type { AiSearchFilter } from '../../shared/types'
+import type { AiSearchFilter, AiSeqTrack, AiSequenceResult } from '../../shared/types'
 
 // JSON-schema for structured output. Every field is required (strict mode);
 // numeric dimensions are nullable so "unconstrained" is explicit.
@@ -48,6 +48,42 @@ Use null for any dimension the query does not constrain:
 
 Interpret intent: "peak time" → high energy (~8–10); "warm-up" → lower energy (~2–5); "uplifting/euphoric" → high mood; "dark/moody" → low mood. Only set a field when the query implies it.`
 
+// ── Set sequencing ────────────────────────────────────────────────────────────
+
+const SEQ_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    order: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          trackId: { type: 'string' },
+          reason: { type: 'string' }
+        },
+        required: ['trackId', 'reason']
+      }
+    },
+    arc: { type: 'string' }
+  },
+  required: ['order', 'arc']
+} as const
+
+const SEQ_SYSTEM = `You are a veteran DJ sequencing a set from a fixed pool of tracks.
+
+You will get a JSON list of tracks (id, title, artist, genre, bpm, key in Camelot, energy 1–10, mood −1…+1, duration). Order EVERY track into a set that tells a coherent story.
+
+Principles:
+- Energy arc: open lower, build, hold a peak, and resolve — unless the intent says otherwise. Avoid yo-yoing energy.
+- Harmonic mixing: prefer adjacent Camelot moves (same number, ±1 number, or relative major/minor). A bold key jump is fine occasionally for effect — call it out in the reason.
+- Tempo: keep BPM changes gradual; large jumps belong at deliberate reset points.
+- Mood: let valence drift smoothly rather than lurching.
+- Use every track exactly once. Do not invent track ids — use only the ids given.
+
+Return the full ordering. Each step's "reason" is one short clause on why that track follows the previous one (harmonic move, energy step, mood shift). The "arc" is one paragraph describing the set's overall shape.`
+
 export function registerAiHandlers(): void {
   ipcMain.handle('ai:status', () => {
     const s = getSettings()
@@ -83,6 +119,51 @@ export function registerAiHandlers(): void {
         const filter = msg.parsed_output as AiSearchFilter | null
         if (!filter) return { error: "Couldn't interpret that search." }
         return { filter }
+      } catch (err) {
+        return { error: (err as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'ai:sequenceSet',
+    async (
+      _e,
+      tracks: AiSeqTrack[],
+      intent?: string
+    ): Promise<{ result?: AiSequenceResult; error?: string }> => {
+      const client = getAnthropic()
+      if (!client) return { error: 'AI is off or no API key is set (Settings → AI).' }
+      if (!tracks?.length) return { error: 'No tracks to sequence.' }
+      if (tracks.length < 2) return { error: 'Need at least 2 tracks to sequence.' }
+      try {
+        const intentLine = intent?.trim() ? `Intent: ${intent.trim()}\n\n` : ''
+        const msg = await client.messages.parse({
+          model: AI_MODEL,
+          max_tokens: 8192,
+          thinking: { type: 'adaptive' },
+          output_config: { format: jsonSchemaOutputFormat(SEQ_SCHEMA) },
+          system: SEQ_SYSTEM,
+          messages: [
+            { role: 'user', content: intentLine + `Tracks:\n${JSON.stringify(tracks)}` }
+          ]
+        })
+        const raw = msg.parsed_output as AiSequenceResult | null
+        if (!raw) return { error: "Couldn't sequence that set." }
+
+        // Reconcile against the input: keep only known ids, drop dupes, and
+        // append any tracks the model omitted so the chapter never loses a track.
+        const known = new Map(tracks.map((t) => [t.id, t]))
+        const seen = new Set<string>()
+        const order = raw.order.filter((s) => {
+          if (!known.has(s.trackId) || seen.has(s.trackId)) return false
+          seen.add(s.trackId)
+          return true
+        })
+        for (const t of tracks) {
+          if (!seen.has(t.id)) order.push({ trackId: t.id, reason: '(appended — not placed by AI)' })
+        }
+        return { result: { order, arc: raw.arc } }
       } catch (err) {
         return { error: (err as Error).message }
       }

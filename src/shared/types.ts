@@ -414,6 +414,31 @@ export interface AiSearchFilter {
   explanation: string
 }
 
+/** Compact track metadata sent to the AI set-sequencer (no audio). */
+export interface AiSeqTrack {
+  id: string
+  title: string
+  artist: string
+  genre: string
+  bpm: number | null
+  key: string | null        // Camelot
+  energy: number | null     // 1–10
+  mood: number | null       // −1…+1
+  durationSecs: number | null
+}
+
+/** One placed track in an AI-sequenced set, with the reason it sits here. */
+export interface AiSeqStep {
+  trackId: string
+  reason: string            // why this track follows the previous one
+}
+
+/** Result of ai:sequenceSet — a reasoned ordering of the given tracks. */
+export interface AiSequenceResult {
+  order: AiSeqStep[]        // full ordering, one step per input track
+  arc: string               // one-paragraph narrative of the set's shape
+}
+
 // ── ProLink B2B Capture ───────────────────────────────────────────────────────
 
 /** Play state of a CDJ on the network */
