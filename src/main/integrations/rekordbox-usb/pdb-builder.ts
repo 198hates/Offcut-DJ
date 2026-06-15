@@ -555,6 +555,15 @@ export function buildExportPdb(
       const pages = [L.data]
       for (let i = 0; i < extra; i++) pages.push(nextOverflow++)
       overflow.set(L.type, { pages, last: pages[pages.length - 1], ec: nextOverflow++ })
+    } else if (nonEmpty && L.last === L.header) {
+      // genres (0x01) and keys (0x05) were captured from an empty template, so
+      // their static layout marks the table empty (last_page = header page,
+      // data page = empty candidate). With rows present that left the data page
+      // unlinked: importers read zero genre/key rows while every track still
+      // carries a genre_id / key_id, leaving those foreign keys dangling — which
+      // crashes Rekordbox on import (CDJs ignore it). Link the single data page
+      // and hand the table a fresh empty candidate so the rows are actually read.
+      overflow.set(L.type, { pages: [L.data], last: L.data, ec: nextOverflow++ })
     }
   }
 

@@ -94,6 +94,33 @@ describe('buildExportPdb — CDJ-format export', () => {
     expect(buf.toString('ascii', nameOff + 1, nameOff + 1 + len)).toBe('My Album')
   })
 
+  // Regression: genres (table 1) and keys (table 5) were captured from an empty
+  // template, so their static layout marked the data page as a free "empty
+  // candidate" and last_page pointed at the empty header page. With rows present
+  // the data page was never linked, so importers read zero genre/key rows while
+  // every track still carried a genre_id / key_id — a dangling foreign key that
+  // crashes Rekordbox on import (CDJs ignore it).
+  it('links the Genres and Keys data pages so track FKs resolve (Rekordbox-import regression)', () => {
+    const buf = buildExportPdb(
+      [track(1, { genre: 'House', key: '8B' })],
+      [{ id: 1, name: 'P', trackIds: [1] }],
+      history,
+      '2026-06-13'
+    )
+    const P = 4096
+    const numRows = (page: number): number => (buf.readUIntLE(page * P + 24, 3) >> 13) & 0x7ff
+    const tbl = (idx: number): { header: number; last: number } => ({
+      header: buf.readUInt32LE(0x1c + idx * 16 + 8),
+      last: buf.readUInt32LE(0x1c + idx * 16 + 12)
+    })
+    const g = tbl(1) // Genres
+    expect(g.last).not.toBe(g.header)        // data page linked, not the empty header
+    expect(numRows(g.last)).toBeGreaterThanOrEqual(1)
+    const k = tbl(5) // Keys
+    expect(k.last).not.toBe(k.header)
+    expect(numRows(k.last)).toBeGreaterThan(0) // the 24 Camelot keys are written
+  })
+
   it('writes artwork rows and links tracks via artwork_id', () => {
     const path = '/PIONEER/Artwork/00001/a1.jpg'
     const buf = buildExportPdb(
