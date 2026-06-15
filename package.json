@@ -30,7 +30,6 @@
     "kaitai-struct": "^0.9.0",
     "music-metadata": "^7.14.0",
     "onnxruntime-node": "^1.26.0",
-    "prolink-connect": "^0.11.0",
     "zod": "^4.4.3",
     "zustand": "^4.5.4"
   },
@@ -57,11 +56,6 @@
     "typescript": "^5.5.4",
     "vite": "^5.4.2",
     "vitest": "^4.1.8"
-  },
-  "overrides": {
-    "prolink-connect": {
-      "better-sqlite3": "$better-sqlite3"
-    }
   },
   "build": {
     "appId": "co.betweenthebridges.offcut",

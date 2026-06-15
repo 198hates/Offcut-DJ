@@ -1,4 +1,4 @@
-export type IntegrationId = 'rekordbox' | 'serato' | 'traktor' | 'apple-music' | 'engine-dj' | 'm3u' | 'virtualdj' | 'prolink'
+export type IntegrationId = 'rekordbox' | 'serato' | 'traktor' | 'apple-music' | 'engine-dj' | 'm3u' | 'virtualdj'
 
 // ── Running Order ─────────────────────────────────────────────────────────────
 
@@ -488,60 +488,6 @@ export type AiAgentEvent =
   | { type: 'library_changed'; runId: number }
   | { type: 'done'; runId: number }
   | { type: 'error'; runId: number; message: string }
-
-// ── ProLink B2B Capture ───────────────────────────────────────────────────────
-
-/** Play state of a CDJ on the network */
-export type ProLinkPlayState = 'empty' | 'loading' | 'playing' | 'paused' | 'cued' | 'looping' | 'ended' | 'unknown'
-
-/** Live status of a single CDJ/XDJ player on the network */
-export interface PlayerStatus {
-  deviceId: number
-  playState: ProLinkPlayState
-  isOnAir: boolean
-  isMaster: boolean
-  isSync: boolean
-  trackBPM: number | null
-  beat: number         // beat within measure, 1–4 (0 when no track)
-  trackId: number      // 0 = empty
-  title: string | null
-  artist: string | null
-  album: string | null
-  label: string | null
-  genre: string | null
-  key: string | null
-  year: number | null
-  lastUpdated: string  // ISO timestamp
-}
-
-/** A track that was captured as "played" during a ProLink session */
-export interface CapturedTrack {
-  id: string
-  player: number
-  capturedAt: string   // ISO timestamp
-  title: string
-  artist: string
-  album: string
-  label: string
-  genre: string
-  key: string | null
-  bpm: number | null
-  year: number | null
-  durationSeconds: number | null
-  inLibrary: boolean       // true = matched to a track already in OD-01 library
-  localTrackId: string | null
-  sourcedFrom: 'prolink'
-}
-
-/** State of the ProLink capture session */
-export type ProLinkSessionState = 'idle' | 'connecting' | 'active' | 'error' | 'stopping'
-
-export interface ProLinkNetworkIface {
-  name: string
-  address: string
-  netmask: string
-  mac: string
-}
 
 // ── Lineage (library expansion / crate-digging) ────────────────────────────
 // Shared DTOs crossing the IPC bridge between the main-process engine and the

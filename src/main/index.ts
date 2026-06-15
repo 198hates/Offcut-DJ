@@ -5,7 +5,6 @@ import { autoUpdater } from 'electron-updater'
 import { registerLibraryHandlers } from './ipc/library'
 import { registerSettingsHandlers } from './ipc/settings'
 import { registerAudioHandlers } from './ipc/audio'
-import { registerProLinkHandlers } from './ipc/prolink'
 import { registerLineageHandlers } from './ipc/lineage'
 import { registerStemHandlers } from './ipc/stems'
 import { registerAiHandlers } from './ipc/ai'
@@ -91,7 +90,6 @@ app.whenReady().then(() => {
   registerLibraryHandlers()
   registerSettingsHandlers()
   registerAudioHandlers()
-  registerProLinkHandlers()
   registerLineageHandlers()
   registerStemHandlers()
   registerAiHandlers()
