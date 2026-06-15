@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
+import { PageHeader } from '../../components/PageHeader'
 import { RekordboxSync } from '../../components/RekordboxSync'
 import type { IntegrationId } from '@shared/types'
 
@@ -64,14 +65,7 @@ export function SyncPage(): JSX.Element {
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
-      <div className="px-5 pt-4 pb-2.5 border-b border-border/20 shrink-0 flex items-baseline gap-4">
-        <p className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted">
-          <span className="text-accent mr-1">02</span>sync
-        </p>
-        {fmtLastImport && (
-          <span className="font-mono text-[11px] text-muted/40">last import: {fmtLastImport}</span>
-        )}
-      </div>
+      <PageHeader marker="02" title="sync" subtitle={fmtLastImport ? `last import: ${fmtLastImport}` : undefined} />
 
       <div className="px-5 py-5 space-y-8 max-w-lg">
         {/* Import */}

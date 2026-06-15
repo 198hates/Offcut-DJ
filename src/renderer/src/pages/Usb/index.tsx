@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { PageHeader } from '../../components/PageHeader'
 import { RekordboxUsbPanel } from '../../components/RekordboxUsbPanel'
 import { useLibraryStore } from '../../store/libraryStore'
 import { useToastStore } from '../../store/toastStore'
@@ -91,14 +92,7 @@ function ImportBackupCard(): JSX.Element {
 export function UsbPage(): JSX.Element {
   return (
     <div className="flex flex-col h-full overflow-y-auto">
-      <div className="px-5 pt-4 pb-2.5 border-b border-border/20 shrink-0 flex items-baseline gap-4">
-        <p className="font-mono text-[12px] font-bold uppercase tracking-[0.2em] text-muted">
-          <span className="text-accent mr-1">⏏</span>usb export
-        </p>
-        <span className="font-mono text-[11px] text-muted/40">
-          read &amp; write Rekordbox USBs directly — no Rekordbox needed
-        </span>
-      </div>
+      <PageHeader marker="⏏" title="usb export" subtitle="read & write Rekordbox USBs directly — no Rekordbox needed" />
 
       <div className="px-5 py-5 max-w-3xl space-y-6">
         <RekordboxUsbPanel />

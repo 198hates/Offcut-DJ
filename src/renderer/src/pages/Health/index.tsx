@@ -10,6 +10,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { dbscan, clusterName, clusterKeyLabel } from '../../lib/clustering'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
+import { PageHeader } from '../../components/PageHeader'
 import type { Track, Playlist } from '@shared/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -82,8 +83,7 @@ function StatsSection({ tracks }: { tracks: Track[] }): JSX.Element {
 
   return (
     <section className="space-y-4">
-      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
-        <span className="text-accent mr-1.5">01</span>library stats
+      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">library stats
       </h2>
       <div className="grid grid-cols-3 gap-3">
         <StatCard label="total tracks" value={n.toLocaleString()} />
@@ -217,8 +217,7 @@ function DuplicatesSection({ tracks, playlists, deleteTracks }: {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
-            <span className="text-accent mr-1.5">02</span>duplicate tracks
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">duplicate tracks
           </h2>
           <p className="font-mono text-[13px] text-muted mt-0.5">matches by artist + title, and by duration + bpm</p>
         </div>
@@ -322,8 +321,7 @@ function MissingFilesSection({ deleteTracks, updateTrack }: {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
-            <span className="text-accent mr-1.5">03</span>missing files
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">missing files
           </h2>
           <p className="font-mono text-[13px] text-muted mt-0.5">checks which tracks can no longer be found on disk</p>
         </div>
@@ -546,8 +544,7 @@ function PlayHistorySection({ tracks }: { tracks: Track[] }): JSX.Element {
 
   return (
     <section className="space-y-4">
-      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
-        <span className="text-accent mr-1.5">04</span>play history
+      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">play history
       </h2>
 
       {/* Calendar heatmap */}
@@ -641,8 +638,7 @@ function AutoGroupSection({ tracks }: { tracks: Track[] }): JSX.Element {
 
   return (
     <section className="space-y-4">
-      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
-        <span className="text-accent mr-1.5">05</span>auto group
+      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">auto group
       </h2>
       <p className="font-mono text-[12px] text-muted/80 leading-relaxed">
         Clusters the library by BPM, key, and energy using DBSCAN. Creates non-destructive playlists
@@ -739,8 +735,7 @@ function GenrePlaylistsSection({ tracks, playlists }: { tracks: Track[]; playlis
 
   return (
     <section className="space-y-4">
-      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
-        <span className="text-accent mr-1.5">06</span>genre playlists
+      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">genre playlists
       </h2>
       <p className="font-mono text-[13px] text-muted/70">
         creates one playlist per genre from the tracks in your library — updates existing playlists if they already exist
@@ -778,68 +773,92 @@ function GenrePlaylistsSection({ tracks, playlists }: { tracks: Track[]; playlis
   )
 }
 
+// ── Backup ─────────────────────────────────────────────────────────────────────
+
+function BackupSection({ tracks, playlists }: { tracks: Track[]; playlists: Playlist[] }): JSX.Element {
+  return (
+    <section className="space-y-4">
+      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">backup</h2>
+      <p className="font-mono text-[13px] text-muted/70">
+        export all track metadata + playlists as JSON — keeps a local snapshot of your library data
+      </p>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => {
+            const date = new Date().toISOString().slice(0, 10)
+            const backup = {
+              exportedAt: new Date().toISOString(),
+              trackCount: tracks.length,
+              playlistCount: playlists.length,
+              tracks,
+              playlists,
+            }
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `offcut-backup-${date}.json`
+            a.click()
+            URL.revokeObjectURL(url)
+          }}
+          className="font-mono text-[12px] uppercase tracking-[0.1em] px-4 py-1.5 rounded border transition-colors border-border/40 text-muted hover:text-ink hover:border-border/70"
+        >
+          export {tracks.length} tracks as JSON
+        </button>
+        <span className="font-mono text-[12px] text-muted/40 tabular-nums">
+          ~{Math.round(JSON.stringify(tracks).length / 1024)} KB
+        </span>
+      </div>
+    </section>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
+
+const HEALTH_TOOLS = [
+  { id: 'duplicates', label: 'Duplicates' },
+  { id: 'missing', label: 'Missing files' },
+  { id: 'history', label: 'Play history' },
+  { id: 'groups', label: 'Auto group' },
+  { id: 'genres', label: 'Genre playlists' },
+  { id: 'backup', label: 'Backup' }
+] as const
+type HealthTool = (typeof HEALTH_TOOLS)[number]['id']
 
 export function HealthPage(): JSX.Element {
   const { tracks, playlists, deleteTracks, updateTrack } = useLibraryStore()
+  const [tool, setTool] = useState<HealthTool>('duplicates')
 
   return (
-    <div className="h-full overflow-y-auto p-6 space-y-8 max-w-3xl">
-      <div>
-        <h1 className="text-base font-mono font-bold uppercase tracking-[0.12em] text-ink mb-0.5">
-          <span className="text-accent mr-2">⟳</span>library health
-        </h1>
-        <p className="font-mono text-xs text-muted">scan for issues, find duplicates, track missing files</p>
-      </div>
+    <div className="flex flex-col h-full overflow-hidden">
+      <PageHeader marker="⟳" title="library health" subtitle="scan for issues, find duplicates, track missing files" />
 
-      <StatsSection tracks={tracks} />
-      <div className="border-t border-border/20" />
-      <DuplicatesSection tracks={tracks} playlists={playlists} deleteTracks={deleteTracks} />
-      <div className="border-t border-border/20" />
-      <MissingFilesSection deleteTracks={deleteTracks} updateTrack={updateTrack} />
-      <div className="border-t border-border/20" />
-      <PlayHistorySection tracks={tracks} />
-      <div className="border-t border-border/20" />
-      <AutoGroupSection tracks={tracks} />
-      <div className="border-t border-border/20" />
-      <GenrePlaylistsSection tracks={tracks} playlists={playlists} />
-      <div className="border-t border-border/20" />
-      {/* Library backup */}
-      <section className="space-y-4">
-        <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">
-          <span className="text-accent mr-1.5">07</span>backup
-        </h2>
-        <p className="font-mono text-[13px] text-muted/70">
-          export all track metadata + playlists as JSON — keeps a local snapshot of your library data
-        </p>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={async () => {
-              const date = new Date().toISOString().slice(0, 10)
-              const backup = {
-                exportedAt: new Date().toISOString(),
-                trackCount: tracks.length,
-                playlistCount: playlists.length,
-                tracks,
-                playlists,
-              }
-              const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
-              const url = URL.createObjectURL(blob)
-              const a = document.createElement('a')
-              a.href = url
-              a.download = `offcut-backup-${date}.json`
-              a.click()
-              URL.revokeObjectURL(url)
-            }}
-            className="font-mono text-[12px] uppercase tracking-[0.1em] px-4 py-1.5 rounded border transition-colors border-border/40 text-muted hover:text-ink hover:border-border/70"
-          >
-            export {tracks.length} tracks as JSON
-          </button>
-          <span className="font-mono text-[12px] text-muted/40 tabular-nums">
-            ~{Math.round(JSON.stringify(tracks).length / 1024)} KB
-          </span>
+      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6 max-w-3xl">
+        {/* Pinned at-a-glance overview */}
+        <StatsSection tracks={tracks} />
+
+        {/* Tools — one at a time instead of a long stacked scroll */}
+        <div className="flex flex-wrap gap-1 border-y border-border/20 py-2">
+          {HEALTH_TOOLS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTool(t.id)}
+              className={`font-mono text-[12px] uppercase tracking-[0.08em] px-3 py-1 rounded transition-colors ${
+                tool === t.id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink hover:bg-ink/[0.05]'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
-      </section>
+
+        {tool === 'duplicates' && <DuplicatesSection tracks={tracks} playlists={playlists} deleteTracks={deleteTracks} />}
+        {tool === 'missing' && <MissingFilesSection deleteTracks={deleteTracks} updateTrack={updateTrack} />}
+        {tool === 'history' && <PlayHistorySection tracks={tracks} />}
+        {tool === 'groups' && <AutoGroupSection tracks={tracks} />}
+        {tool === 'genres' && <GenrePlaylistsSection tracks={tracks} playlists={playlists} />}
+        {tool === 'backup' && <BackupSection tracks={tracks} playlists={playlists} />}
+      </div>
     </div>
   )
 }
