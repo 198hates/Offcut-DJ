@@ -338,6 +338,14 @@ export interface UsbDeviceSettings {
   timeMode: 'elapsed' | 'remain'
 }
 
+/** Custom colours for the exported RGB waveform (PWV5) — one per frequency band,
+ *  as #rrggbb hex. Shown when the player is in RGB waveform mode. */
+export interface UsbWaveformColors {
+  low: string
+  mid: string
+  high: string
+}
+
 export interface AppSettings {
   rekordboxXmlPath: string
   rekordboxDbPath: string
@@ -369,6 +377,8 @@ export interface AppSettings {
   windowBounds: { x: number; y: number; width: number; height: number } | null
   /** Device settings written to the USB on export (waveform colour, key display…). */
   usbDeviceSettings: UsbDeviceSettings
+  /** Per-band colours for the exported RGB waveform. */
+  usbWaveformColors: UsbWaveformColors
 }
 
 // ── ProLink B2B Capture ───────────────────────────────────────────────────────

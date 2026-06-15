@@ -1114,9 +1114,16 @@ ${rows}
           p40: readFileSync(join(tdir, 'history-p40.bin'))
         }
         const today = new Date().toISOString().slice(0, 10)
+        const settings = getSettings()
+        const hexToRgb = (h: string): [number, number, number] => {
+          const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(h.trim())
+          return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [255, 255, 255]
+        }
+        const wc = settings.usbWaveformColors
         return await exportPlaylistsToUsb(usbRoot, playlists, {
           settingsDir: tdir, history, today, backupPath,
-          deviceSettings: getSettings().usbDeviceSettings,
+          deviceSettings: settings.usbDeviceSettings,
+          bandColors: wc ? { low: hexToRgb(wc.low), mid: hexToRgb(wc.mid), high: hexToRgb(wc.high) } : undefined,
           onProgress: (p) => { if (!e.sender.isDestroyed()) e.sender.send('rekordboxUsb:syncProgress', p) }
         })
       } catch (err) {

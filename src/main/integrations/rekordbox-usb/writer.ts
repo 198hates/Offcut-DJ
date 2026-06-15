@@ -13,7 +13,7 @@
 import { readFileSync, writeFileSync, copyFileSync, mkdirSync, statSync, existsSync } from 'fs'
 import { join, basename, dirname } from 'path'
 import { resolveExportPdb, parseExportPdb } from './reader'
-import { buildDatAnlz, buildExtAnlz, build2exAnlz, anlzDirForPath, beatsFromMarkers, beatsFromBpm, type AnlzBeat, type AnlzCue } from './anlz'
+import { buildDatAnlz, buildExtAnlz, build2exAnlz, anlzDirForPath, beatsFromMarkers, beatsFromBpm, type AnlzBeat, type AnlzCue, type AnlzBandColors } from './anlz'
 import { analyzeWaveform } from './waveform'
 import { buildExportPdb, type PdbTrack, type PdbPlaylist, type PdbArtwork, type HistoryBlobs } from './pdb-builder'
 import { readEmbeddedArt, toStickJpeg } from './artwork'
@@ -703,7 +703,7 @@ export interface ExportToUsbResult {
 export async function exportPlaylistsToUsb(
   usbRoot: string,
   playlists: { name: string; tracks: SyncTrackInput[] }[],
-  opts: { settingsDir: string; history: HistoryBlobs; today: string; backupPath?: string; deviceSettings?: UsbDeviceSettings; onProgress?: (p: SyncProgress) => void }
+  opts: { settingsDir: string; history: HistoryBlobs; today: string; backupPath?: string; deviceSettings?: UsbDeviceSettings; bandColors?: AnlzBandColors; onProgress?: (p: SyncProgress) => void }
 ): Promise<ExportToUsbResult> {
   const rbDir = join(usbRoot, 'PIONEER', 'rekordbox')
   mkdirSync(rbDir, { recursive: true })
@@ -777,7 +777,7 @@ export async function exportPlaylistsToUsb(
     // waveform sections in the .EXT, and our cue layout (though it parses in
     // rekordcrate) stops the CDJ reading the waveforms after them. Re-enable once
     // verified against a real export that actually contains cues.
-    const anlzOpts = { audioPath: deviceFilePath, beats, durationSecs: t.durationSec, bands, cues: [] as AnlzCue[] }
+    const anlzOpts = { audioPath: deviceFilePath, beats, durationSecs: t.durationSec, bands, bandColors: opts.bandColors, cues: [] as AnlzCue[] }
     void toAnlzCues
     writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.DAT'), buildDatAnlz(anlzOpts))
     writeFileSync(join(usbRoot, anlzDir, 'ANLZ0000.EXT'), buildExtAnlz(anlzOpts))

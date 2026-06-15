@@ -114,20 +114,30 @@ describe('ANLZ .EXT', () => {
     high: new Float32Array(n).fill(hi)
   })
 
-  it('packs PWV5 with mid→red/treble→green/bass→blue and a real height', () => {
-    // Real rekordbox convention (verified by decoding a rekordbox stick).
+  it('packs PWV5 with a real height (the flat-line fix) and the default colours', () => {
     const dec = (lo: number, md: number, hi: number) => {
       const v = sectionData(buildExtAnlz({ ...opts, bands: bandsOf(200, lo, md, hi) }), 'PWV5', 24).readUInt16BE(0)
       return { r: (v >> 13) & 7, g: (v >> 10) & 7, b: (v >> 7) & 7, h: (v >> 2) & 0x1f }
     }
+    // Default colours: bass=blue, mid=orange, treble=white.
     const mids = dec(0.1, 1, 0.1)
-    expect(mids.r).toBe(7) // mid → red
-    expect(mids.h).toBe(31) // height non-zero — the flat-line fix
-    expect(mids.r).toBeGreaterThan(mids.g)
-    expect(mids.r).toBeGreaterThan(mids.b)
+    expect(mids.h).toBe(31) // height non-zero — the flat-line regression
+    expect(mids.r).toBeGreaterThan(mids.b) // orange mid → red-forward, not blue
+    const bass = dec(1, 0.1, 0.1)
+    expect(bass.b).toBeGreaterThan(bass.r) // bass → blue-forward (default low colour)
+  })
 
-    expect(dec(0.1, 0.1, 1).g).toBe(7) // treble → green
-    expect(dec(1, 0.1, 0.1).b).toBe(7) // bass → blue
+  it('PWV5 honours custom per-band colours', () => {
+    // Assign bass→red, mid→green, treble→blue; each dominant band should drive
+    // its assigned channel.
+    const colors = { low: [255, 0, 0] as [number, number, number], mid: [0, 255, 0] as [number, number, number], high: [0, 0, 255] as [number, number, number] }
+    const dec = (lo: number, md: number, hi: number) => {
+      const v = sectionData(buildExtAnlz({ ...opts, bands: bandsOf(200, lo, md, hi), bandColors: colors }), 'PWV5', 24).readUInt16BE(0)
+      return { r: (v >> 13) & 7, g: (v >> 10) & 7, b: (v >> 7) & 7 }
+    }
+    expect(dec(1, 0, 0).r).toBe(7) // bass → red
+    expect(dec(0, 1, 0).g).toBe(7) // mid → green
+    expect(dec(0, 0, 1).b).toBe(7) // treble → blue
   })
 })
 

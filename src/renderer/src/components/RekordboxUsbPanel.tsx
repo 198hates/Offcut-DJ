@@ -6,11 +6,49 @@
  * playlists back to USB is a later milestone.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { useToastStore } from '../store/toastStore'
 import { formatDuration, formatBpm } from '../lib/format'
-import type { UsbExport, UsbPlaylistNode, UsbTrack, UsbDeviceSettings } from '@shared/types'
+import type { UsbExport, UsbPlaylistNode, UsbTrack, UsbDeviceSettings, UsbWaveformColors } from '@shared/types'
+
+const hexToRgb = (h: string): [number, number, number] => {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(h.trim())
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [255, 255, 255]
+}
+
+/** Live preview of the exported RGB waveform: a synthetic 3-band waveform drawn
+ *  with the magnitude-weighted blend of the chosen band colours — the same blend
+ *  the export encodes into PWV5. */
+function WaveformColorPreview({ colors }: { colors: UsbWaveformColors }): JSX.Element {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const cv = ref.current
+    const ctx = cv?.getContext('2d')
+    if (!cv || !ctx) return
+    const W = cv.width
+    const H = cv.height
+    const N = 160
+    const cl = hexToRgb(colors.low)
+    const cm = hexToRgb(colors.mid)
+    const ch = hexToRgb(colors.high)
+    ctx.clearRect(0, 0, W, H)
+    for (let i = 0; i < N; i++) {
+      const t = i / N
+      const lo = Math.max(0, 0.45 + 0.5 * Math.sin(t * 21) * Math.sin(t * 3.1))
+      const md = Math.max(0, 0.4 + 0.45 * Math.sin(t * 8.5 + 1))
+      const hi = Math.max(0, 0.28 + 0.34 * Math.abs(Math.sin(t * 47)) * (0.5 + 0.5 * Math.sin(t * 5)))
+      const total = lo + md + hi || 1
+      const r = (lo * cl[0] + md * cm[0] + hi * ch[0]) / total
+      const g = (lo * cl[1] + md * cm[1] + hi * ch[1]) / total
+      const b = (lo * cl[2] + md * cm[2] + hi * ch[2]) / total
+      const h = Math.max(lo, md, hi) * H * 0.46
+      ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`
+      ctx.fillRect((i / N) * W, H / 2 - h, W / N + 0.6, h * 2)
+    }
+  }, [colors])
+  return <canvas ref={ref} width={320} height={48} className="w-full rounded bg-black/60" />
+}
 
 const DEVICE_SETTING_FIELDS: {
   key: keyof UsbDeviceSettings
@@ -119,16 +157,28 @@ export function RekordboxUsbPanel(): JSX.Element {
   const [initVolumes, setInitVolumes] = useState<{ root: string; name: string; hasRekordbox: boolean }[] | null>(null)
   const [initializing, setInitializing] = useState(false)
 
-  // Device settings written to DEVSETTING.DAT on export (persisted in app settings).
+  // Device settings + RGB-waveform colours written on export (persisted in app settings).
   const [devSettings, setDevSettings] = useState<UsbDeviceSettings | null>(null)
+  const [waveColors, setWaveColors] = useState<UsbWaveformColors | null>(null)
   useEffect(() => {
-    window.api.settings.get().then((s) => setDevSettings(s.usbDeviceSettings))
+    window.api.settings.get().then((s) => {
+      setDevSettings(s.usbDeviceSettings)
+      setWaveColors(s.usbWaveformColors)
+    })
   }, [])
   const updateDevSetting = useCallback((key: keyof UsbDeviceSettings, value: string) => {
     setDevSettings((prev) => {
       if (!prev) return prev
       const next = { ...prev, [key]: value } as UsbDeviceSettings
       void window.api.settings.save({ usbDeviceSettings: next })
+      return next
+    })
+  }, [])
+  const updateWaveColor = useCallback((band: keyof UsbWaveformColors, value: string) => {
+    setWaveColors((prev) => {
+      if (!prev) return prev
+      const next = { ...prev, [band]: value }
+      void window.api.settings.save({ usbWaveformColors: next })
       return next
     })
   }, [])
@@ -562,6 +612,41 @@ export function RekordboxUsbPanel(): JSX.Element {
                     </select>
                   </label>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {waveColors && (
+            <div className="rounded border border-border/30 p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="font-mono text-[10px] uppercase tracking-wide text-muted/60">Waveform colours · RGB mode</div>
+                <button
+                  onClick={() => {
+                    const d: UsbWaveformColors = { low: '#1e64ff', mid: '#ff8c1a', high: '#ffffff' }
+                    setWaveColors(d)
+                    void window.api.settings.save({ usbWaveformColors: d })
+                  }}
+                  className="font-mono text-[10px] text-muted/60 hover:text-ink"
+                >
+                  reset
+                </button>
+              </div>
+              <WaveformColorPreview colors={waveColors} />
+              <div className="grid grid-cols-3 gap-2">
+                {([['low', 'Bass'], ['mid', 'Mid'], ['high', 'Treble']] as const).map(([band, label]) => (
+                  <label key={band} className="flex items-center gap-2 font-mono text-[11px] text-muted/70">
+                    <input
+                      type="color"
+                      value={waveColors[band]}
+                      onChange={(e) => updateWaveColor(band, e.target.value)}
+                      className="h-6 w-8 rounded border border-border/50 bg-transparent cursor-pointer"
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="font-mono text-[10px] text-muted/40 leading-relaxed">
+                Applied to the exported RGB waveform. Set <span className="text-muted/70">Waveform colour → RGB</span> above for players to show these.
               </div>
             </div>
           )}

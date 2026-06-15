@@ -150,6 +150,19 @@ export interface AnlzBands {
   high: ArrayLike<number>
 }
 
+/** RGB colour (0..255 each) assigned to each frequency band in the RGB waveform. */
+export interface AnlzBandColors {
+  low: [number, number, number]
+  mid: [number, number, number]
+  high: [number, number, number]
+}
+
+const DEFAULT_BAND_COLORS: AnlzBandColors = {
+  low: [0x1e, 0x64, 0xff], // bass — blue
+  mid: [0xff, 0x8c, 0x1a], // mid — orange
+  high: [0xff, 0xff, 0xff] // treble — white
+}
+
 function monoAt(mono: Uint8Array, i: number, count: number): number {
   return mono[Math.min(mono.length - 1, Math.floor((i * mono.length) / Math.max(1, count)))]
 }
@@ -190,9 +203,10 @@ function pwv3(mono: Uint8Array, count: number, bands?: AnlzBands): Buffer {
 }
 
 // PWV5 — colour detail scroll (2 bytes/entry; duration_secs * 150 entries).
-// 16-bit BE: [red:3][green:3][blue:3][height:5][unused:2]. Real exports map
-// mid→red, treble→green, bass→blue (verified by decoding a rekordbox stick).
-function pwv5(mono: Uint8Array, count: number, bands?: AnlzBands): Buffer {
+// 16-bit BE: [red:3][green:3][blue:3][height:5][unused:2]. The CDJ renders these
+// RGB bits literally in "RGB" waveform mode, so the colour per column is a blend
+// of the user's per-band colours, weighted by that column's band magnitudes.
+function pwv5(mono: Uint8Array, count: number, bands?: AnlzBands, colors: AnlzBandColors = DEFAULT_BAND_COLORS): Buffer {
   const head = Buffer.alloc(24)
   head.write('PWV5', 0, 'ascii')
   head.writeUInt32BE(24, 4)
@@ -207,9 +221,12 @@ function pwv5(mono: Uint8Array, count: number, bands?: AnlzBands): Buffer {
       const lo = samp(bands.low, i, count)
       const md = samp(bands.mid, i, count)
       const hi = samp(bands.high, i, count)
-      r = clamp(md * 7, 7) // mid → red
-      g = clamp(hi * 7, 7) // treble → green
-      b = clamp(lo * 7, 7) // bass → blue
+      // Magnitude-weighted blend of the band colours → the displayed hue; height
+      // is the loudest band. (3-bit channels: 0..7.)
+      const total = lo + md + hi || 1
+      r = clamp(((lo * colors.low[0] + md * colors.mid[0] + hi * colors.high[0]) / total / 255) * 7, 7)
+      g = clamp(((lo * colors.low[1] + md * colors.mid[1] + hi * colors.high[1]) / total / 255) * 7, 7)
+      b = clamp(((lo * colors.low[2] + md * colors.mid[2] + hi * colors.high[2]) / total / 255) * 7, 7)
       h = clamp(Math.max(lo, md, hi) * 31, 31)
     } else {
       h = monoAt(mono, i, count) & 0x1f
@@ -478,6 +495,8 @@ export interface BuildAnlzOptions {
   peaks?: number[]
   /** Optional 3-band spectral envelopes for true-colour waveforms (see waveform.ts). */
   bands?: AnlzBands
+  /** Per-band RGB colours for the PWV5 RGB waveform (defaults to blue/orange/white). */
+  bandColors?: AnlzBandColors
   /** Hot cues + memory cues; defaults to none. */
   cues?: AnlzCue[]
 }
@@ -518,7 +537,7 @@ export function buildExtAnlz(opts: BuildAnlzOptions): Buffer {
     pco2(1, hot),
     pco2(0, memory),
     pqt2(opts.beats, duration),
-    pwv5(mono, count, bands),
+    pwv5(mono, count, bands, opts.bandColors),
     pwv4(mono, bands),
     pvb2()
   ])
