@@ -87,7 +87,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
           const cuePoints = (current.cuePoints.length === 0 && result.suggestedCues.length > 0)
             ? result.suggestedCues.map((c, idx) => ({
                 index: idx, type: 'hotcue' as const,
-                positionMs: c.positionMs, color: c.color, label: c.label,
+                positionMs: c.positionMs, color: c.color, label: c.label, confidence: c.confidence,
               }))
             : current.cuePoints
           await updateTrack({ id, bpm: newBpm, key: result.key ?? current.key, energy: result.energy ?? current.energy, beatgrid, cuePoints })

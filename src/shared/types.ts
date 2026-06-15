@@ -69,6 +69,8 @@ export interface CuePoint {
   endMs?: number
   color: string
   label: string
+  /** 0–1 auto-cue detector confidence, when the cue was machine-generated. */
+  confidence?: number
 }
 
 export interface BeatgridMarker {
@@ -379,6 +381,8 @@ export interface AppSettings {
   usbDeviceSettings: UsbDeviceSettings
   /** Per-band colours for the exported RGB waveform. */
   usbWaveformColors: UsbWaveformColors
+  /** Beta: write Offcut hot cues / memory cues into the exported ANLZ files. */
+  usbExportCues?: boolean
 }
 
 // ── ProLink B2B Capture ───────────────────────────────────────────────────────

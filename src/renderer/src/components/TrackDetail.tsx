@@ -999,6 +999,15 @@ function CuePointList({ cuePoints, onChange }: { cuePoints: CuePoint[]; onChange
             placeholder="label…"
             className="flex-1 bg-transparent border-b border-border/30 focus:border-accent outline-none font-mono text-[13px] text-ink py-0.5"
           />
+          {cue.confidence != null && (
+            <span
+              title={`auto-cue confidence ${Math.round(cue.confidence * 100)}%`}
+              className="font-mono text-[10px] tabular-nums shrink-0 w-9 text-right"
+              style={{ color: `rgb(var(--ink-rgb) / ${0.3 + 0.6 * Math.min(1, cue.confidence)})` }}
+            >
+              {Math.round(cue.confidence * 100)}%
+            </span>
+          )}
         </div>
       ))}
     </div>

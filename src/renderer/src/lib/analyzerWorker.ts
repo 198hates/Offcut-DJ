@@ -12,6 +12,8 @@ export interface SuggestedCue {
   positionMs: number
   label: string
   color: string
+  /** 0–1 detector confidence (Phase D) — how strongly the audio supports this cue. */
+  confidence?: number
 }
 
 export interface AnalyzerResult {
@@ -501,91 +503,112 @@ function detectStructuralCues(
     return Math.min(nBars - 1, Math.max(0, phrasePhi + k * step))
   }
 
+  // Confidence helpers (Phase D): cues are only emitted when the audio supports
+  // them, so an ambiguous track yields a few trustworthy cues, not guesses.
+  const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v)
+  const mean = (a: Float32Array, lo: number, hi: number): number => {
+    lo = Math.max(0, lo); hi = Math.min(a.length, hi)
+    if (hi <= lo) return 0
+    let s = 0
+    for (let i = lo; i < hi; i++) s += a[i]
+    return s / (hi - lo)
+  }
+
   // ── Cue 1: mix-in (intro end) ─────────────────────────────────────────────
-  // First bar where the KICK enters and sustains for 4+ bars (low band crosses
-  // ~half the track's typical level), snapped to the phrase grid.
-  let mixInBar = -1
+  // First bar where the KICK enters and sustains for 4+ bars, snapped to the
+  // phrase grid. Confidence = how cleanly the low band steps up (after − before);
+  // a track that already has kick from bar 1 has no real mix-in and scores ~0.
+  let mixInBar = -1, mixInConf = 0
   for (let i = 1; i < nBars - 4; i++) {
     if (lowN[i] > 0.5 && lowN[i + 1] > 0.45 && lowN[i + 2] > 0.45 && lowN[i + 3] > 0.45) {
+      mixInConf = clamp01(mean(lowN, i, i + 4) - mean(lowN, i - 4, i))
       mixInBar = snapPhrase(i, 2)
       break
     }
   }
-  if (mixInBar < 0) mixInBar = Math.min(phraseLen, nBars - 1)
+  // Anchor downstream searches even when the mix-in itself isn't emitted.
+  const searchAnchor = mixInBar >= 0 ? mixInBar : Math.min(phraseLen, nBars - 1)
 
   // ── Cue 2: first drop ─────────────────────────────────────────────────────
-  // The first strong full-energy re-entry after mix-in: a bar near peak level
-  // (≥0.88) with a loud kick (≥0.7) that JUMPED up from the preceding 4 bars
-  // (≥0.15 rise) — the beat dropping back in, not just the loudest bar. Falls
-  // back to the global peak for flat, kick-throughout tracks.
-  const dropSearchStart = mixInBar + 8
-  let dropBar = -1
+  // First strong full-energy re-entry after the intro: near peak (≥0.88), loud
+  // kick (≥0.7), jumped up from the preceding 4 bars (≥0.15). Confidence scales
+  // with the jump. Falls back to the global peak, scored by how far it stands
+  // above the typical playing level — a flat track scores low and is dropped.
+  const dropSearchStart = searchAnchor + 8
+  let dropBar = -1, dropConf = 0
   for (let i = dropSearchStart; i < nBars - 2; i++) {
     let prevMin = Infinity
     for (let j = Math.max(0, i - 4); j < i; j++) if (fullN[j] < prevMin) prevMin = fullN[j]
-    if (fullN[i] >= 0.88 && lowN[i] >= 0.7 && fullN[i] - prevMin >= 0.15) { dropBar = i; break }
+    if (fullN[i] >= 0.88 && lowN[i] >= 0.7 && fullN[i] - prevMin >= 0.15) {
+      dropConf = clamp01((fullN[i] - prevMin) * 1.5)
+      dropBar = i
+      break
+    }
   }
   if (dropBar < 0) {
+    const med = median(fullN)
     let v = -1
     for (let i = dropSearchStart; i < nBars - 2; i++) if (fullN[i] > v) { v = fullN[i]; dropBar = i }
+    dropConf = clamp01((v - med) * 1.2)
   }
   if (dropBar >= 0) dropBar = snapPhrase(dropBar, 2)
 
   // ── Cue 3: build / riser (Phase C) ────────────────────────────────────────
   // The run-up into the drop: kick suppressed but mid/high climbing (snare
-  // rolls, white-noise risers). Only added when a clear ramp into the drop
-  // exists. Placed at the phrase boundary where the riser begins.
-  let buildBar = -1
+  // rolls, white-noise risers). Confidence scales with the size of the ramp.
+  let buildBar = -1, buildConf = 0
   if (dropBar >= 0) {
     const intoDrop = midN[dropBar - 1] + highN[dropBar - 1]
-    const from = Math.max(mixInBar + 1, dropBar - 12)
+    const from = Math.max(searchAnchor + 1, dropBar - 12)
     for (let i = from; i < dropBar - 1; i++) {
-      if (lowN[i] < 0.6 && intoDrop - (midN[i] + highN[i]) > 0.4) {
-        buildBar = snapPhrase(i, 2)
-        break
-      }
+      const ramp = intoDrop - (midN[i] + highN[i])
+      if (lowN[i] < 0.6 && ramp > 0.4) { buildConf = clamp01(ramp - 0.2); buildBar = snapPhrase(i, 2); break }
     }
-    if (buildBar >= dropBar || buildBar <= mixInBar) buildBar = -1
+    if (buildBar >= dropBar || buildBar <= searchAnchor) { buildBar = -1; buildConf = 0 }
   }
 
   // ── Cue 4: breakdown ──────────────────────────────────────────────────────
   // Deepest sustained KICK dip after the drop — 3 consecutive bars whose mean
-  // low-band level falls below half. Using the low band (not total) is what
-  // makes this land on the actual beat-drop, even when pads/vocals carry on.
-  let bdBar = -1
+  // low-band level falls below half. Confidence scales with how deep the dip is,
+  // so a shallow lull doesn't masquerade as a breakdown.
+  let bdBar = -1, bdConf = 0
   if (dropBar >= 0) {
     let bdVal = 2
     for (let i = dropBar + 4; i < nBars - 4; i++) {
       const seg = (lowN[i] + lowN[i + 1] + lowN[i + 2]) / 3
       if (seg < 0.5 && seg < bdVal) { bdVal = seg; bdBar = i }
     }
-    if (bdBar >= 0) bdBar = snapPhrase(bdBar, 2)
+    if (bdBar >= 0) { bdConf = clamp01((0.6 - bdVal) * 1.5); bdBar = snapPhrase(bdBar, 2) }
   }
 
   // ── Cue 5: outro ──────────────────────────────────────────────────────────
   // Last point in the second half where the kick is still going; the outro
-  // starts the bar after. Must leave at least 8 bars of outro.
+  // starts the bar after. Confidence = the low-band contrast across that edge.
   const halfBar = Math.floor(nBars / 2)
-  let outroBar  = -1
+  let outroBar = -1, outroConf = 0
   for (let i = nBars - 2; i > halfBar; i--) {
     if (lowN[i] > 0.5) { outroBar = i + 1; break }
   }
   if (outroBar >= 0 && (nBars - outroBar < 8 || outroBar === dropBar)) outroBar = -1
-  if (outroBar >= 0) outroBar = snapPhrase(outroBar, 1)
-
-  // ── Assemble — one cue per bar, time-ordered ──────────────────────────────
-  // Insert in priority order so that when two cues snap to the same phrase bar,
-  // the more important one wins; then emit sorted by position.
-  const byBar = new Map<number, SuggestedCue>()
-  const place = (bar: number, label: string, color: string): void => {
-    if (bar < 0 || bar >= nBars || byBar.has(bar)) return
-    byBar.set(bar, { positionMs: bars[bar], label, color })
+  if (outroBar >= 0) {
+    outroConf = clamp01(mean(lowN, outroBar - 4, outroBar) - mean(lowN, outroBar, outroBar + 4))
+    outroBar = snapPhrase(outroBar, 1)
   }
-  place(dropBar,  'Drop',   '#D86A4A')
-  place(bdBar,    'Break',  '#3CA8C0')
-  place(mixInBar, 'Mix In', '#3CA86A')
-  place(buildBar, 'Build',  '#E0B43C')
-  place(outroBar, 'Outro',  '#A855C8')
+
+  // ── Assemble — confidence-gated, one cue per bar, time-ordered ────────────
+  // Insert in priority order so that when two cues snap to the same phrase bar,
+  // the more important one wins; each must clear its per-type confidence
+  // threshold; then emit sorted by position.
+  const byBar = new Map<number, SuggestedCue>()
+  const place = (bar: number, conf: number, thr: number, label: string, color: string): void => {
+    if (bar < 0 || bar >= nBars || conf < thr || byBar.has(bar)) return
+    byBar.set(bar, { positionMs: bars[bar], label, color, confidence: Math.round(conf * 100) / 100 })
+  }
+  place(dropBar,  dropConf,  0.20, 'Drop',   '#D86A4A')
+  place(bdBar,    bdConf,    0.18, 'Break',  '#3CA8C0')
+  place(mixInBar, mixInConf, 0.22, 'Mix In', '#3CA86A')
+  place(buildBar, buildConf, 0.20, 'Build',  '#E0B43C')
+  place(outroBar, outroConf, 0.20, 'Outro',  '#A855C8')
 
   return Array.from(byBar.values()).sort((a, b) => a.positionMs - b.positionMs)
 }
@@ -678,6 +701,13 @@ function robustNorm(arr: Float32Array): Float32Array {
   const p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))]
   if (p90 > 0) for (let i = 0; i < arr.length; i++) out[i] = arr[i] / p90
   return out
+}
+
+// Median over the "active" bars (level > 0.05) — the typical playing level,
+// used to score how far a fallback drop stands above the body of the track.
+function median(arr: Float32Array): number {
+  const s = Array.from(arr).filter((v) => v > 0.05).sort((a, b) => a - b)
+  return s.length === 0 ? 0 : s[s.length >> 1]
 }
 
 // ── Mood / Valence (−1 dark → +1 euphoric) ───────────────────────────────────

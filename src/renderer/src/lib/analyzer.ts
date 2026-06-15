@@ -88,6 +88,7 @@ export function suggestedCuesToCuePoints(suggested: SuggestedCue[]): CuePoint[] 
     positionMs: c.positionMs,
     color: c.color,
     label: c.label,
+    confidence: c.confidence,
   }))
 }
 

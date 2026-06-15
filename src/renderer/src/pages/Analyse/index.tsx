@@ -160,7 +160,7 @@ function BpmKeySection(): JSX.Element {
         const newGrid = (track.beatgrid.length === 0 && newBpm && r.offsetMs != null)
           ? generateBeatgrid(newBpm, r.offsetMs, buf.duration * 1000) : track.beatgrid
         const newCues = (track.cuePoints.length === 0 && r.suggestedCues.length > 0)
-          ? r.suggestedCues.map((c, idx) => ({ index: idx, type: 'hotcue' as const, positionMs: c.positionMs, color: c.color, label: c.label }))
+          ? r.suggestedCues.map((c, idx) => ({ index: idx, type: 'hotcue' as const, positionMs: c.positionMs, color: c.color, label: c.label, confidence: c.confidence }))
           : track.cuePoints
         if (newBpm !== track.bpm || newKey !== track.key || newNrg !== track.energy || newDnce !== track.danceability || newMood !== track.mood || newGrid !== track.beatgrid || newCues !== track.cuePoints) {
           await updateTrack({ id: track.id, bpm: newBpm, key: newKey, energy: newNrg, danceability: newDnce, mood: newMood, beatgrid: newGrid, cuePoints: newCues })
