@@ -16,6 +16,13 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { generateBeatgrid } from '../lib/compatibility'
 import type { Track, BeatgridMarker } from '@shared/types'
 
+// Re-flag downbeats so bar 1 falls on beat `phase` (0–3) of every 4, letting the
+// user place the musical "1" without moving the beats themselves.
+function withDownbeatPhase(markers: BeatgridMarker[], phase: number): BeatgridMarker[] {
+  const p = ((phase % 4) + 4) % 4
+  return markers.map((m, i) => ({ ...m, isDownbeat: i % 4 === p }))
+}
+
 // ── Audio helpers ─────────────────────────────────────────────────────────────
 
 function mixToMono(buf: AudioBuffer, limitSamples?: number): Float32Array {
@@ -29,20 +36,37 @@ function mixToMono(buf: AudioBuffer, limitSamples?: number): Float32Array {
   return mono
 }
 
-function computePeaks(buf: AudioBuffer, buckets: number): Float32Array {
-  const peaks = new Float32Array(buckets)
-  const spb = buf.length / buckets
-  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-    const data = buf.getChannelData(ch)
-    for (let i = 0; i < buckets; i++) {
-      const s = Math.floor(i * spb), e = Math.floor((i + 1) * spb)
-      for (let j = s; j < e; j++) {
-        const a = Math.abs(data[j])
-        if (a > peaks[i]) peaks[i] = a
-      }
-    }
+interface EditorPeaks {
+  full: Float32Array
+  low: Float32Array // low-pass (kick/bass) envelope — what you align beats to
+}
+
+// Per-bucket peaks for the full signal AND a low-passed (kick) envelope, both
+// normalised to the full-signal max so kicks show as tall spikes against a
+// faint full waveform. A one-pole low-pass (~150 Hz) isolates the kick.
+function computeBandPeaks(buf: AudioBuffer, buckets: number): EditorPeaks {
+  const full = new Float32Array(buckets)
+  const low = new Float32Array(buckets)
+  const n = buf.length
+  if (n === 0) return { full, low }
+  const spb = n / buckets
+  const ch0 = buf.getChannelData(0)
+  const ch1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : ch0
+  const a = 1 - Math.exp((-2 * Math.PI * 150) / buf.sampleRate)
+  let lp = 0
+  for (let i = 0; i < n; i++) {
+    const x = (ch0[i] + ch1[i]) * 0.5
+    lp += a * (x - lp)
+    const b = Math.min(buckets - 1, Math.floor(i / spb))
+    const af = x < 0 ? -x : x
+    const al = lp < 0 ? -lp : lp
+    if (af > full[b]) full[b] = af
+    if (al > low[b]) low[b] = al
   }
-  return peaks
+  let max = 0
+  for (let i = 0; i < buckets; i++) if (full[i] > max) max = full[i]
+  if (max > 0) for (let i = 0; i < buckets; i++) { full[i] /= max; low[i] /= max }
+  return { full, low }
 }
 
 function detectFirstBeatMs(buf: AudioBuffer, bpmHint: number): number {
@@ -84,7 +108,7 @@ interface ViewState {
 
 function drawEditor(
   canvas: HTMLCanvasElement,
-  peaks: Float32Array,
+  peaks: EditorPeaks,
   duration: number,
   markers: BeatgridMarker[],
   view: ViewState,
@@ -109,60 +133,69 @@ function drawEditor(
 
   const visMs = (W / view.pps) * 1000
   const endMs = view.startMs + visMs
-  const mid = H / 2
+  const mid = (H - 18) / 2 // leave room for the ruler
 
-  // ── Waveform bars ─────────────────────────────────────────────────────────
+  // ── Waveform: faint full signal + bright kick envelope ─────────────────────
+  // The kick overlay is the thing you align beats to — making it stand out
+  // (and dimming the rest) is what makes the grid legible.
   const BAR = Math.max(1, Math.floor(dpr))
-  ctx.fillStyle = 'rgba(255,255,255,0.55)'
+  const nP = peaks.full.length
   for (let x = 0; x < W; x += BAR) {
     const tMs = view.startMs + (x / W) * visMs
     if (tMs < 0 || tMs > duration * 1000) continue
-    const idx = Math.min(peaks.length - 1, Math.floor((tMs / 1000 / duration) * peaks.length))
-    const bh = peaks[idx] * mid * 0.88
-    if (bh < 0.5) continue
-    ctx.fillRect(x, mid - bh, BAR, bh * 2)
-  }
-
-  // ── Beat marker lines ─────────────────────────────────────────────────────
-  for (const m of markers) {
-    if (m.positionMs < view.startMs - 200 || m.positionMs > endMs + 200) continue
-    const x = Math.round(((m.positionMs - view.startMs) / visMs) * W)
-
-    // Skip the anchor beat — drawn separately below
-    if (Math.abs(m.positionMs - offsetMs) < 2) continue
-
-    if (m.isDownbeat) {
-      ctx.fillStyle = 'rgba(255,255,255,0.80)'
-      ctx.fillRect(x, 0, 1, H * 0.55)
-      ctx.fillStyle = 'rgba(255,255,255,0.35)'
-      ctx.fillRect(x, H * 0.55, 1, H * 0.45)
-    } else {
-      ctx.fillStyle = 'rgba(255,255,255,0.45)'
-      ctx.fillRect(x, 0, 1, H * 0.30)
+    const idx = Math.min(nP - 1, Math.floor((tMs / 1000 / duration) * nP))
+    const fh = peaks.full[idx] * mid * 0.92
+    if (fh > 0.5) {
+      ctx.fillStyle = 'rgba(181,172,151,0.22)' // full signal — faint cream
+      ctx.fillRect(x, mid - fh, BAR, fh * 2)
+    }
+    const lh = peaks.low[idx] * mid * 0.92
+    if (lh > 0.5) {
+      ctx.fillStyle = 'rgba(235,229,211,0.6)' // kick/bass — bright cream
+      ctx.fillRect(x, mid - lh, BAR, lh * 2)
     }
   }
 
-  // ── Anchor handle (the normalised first-beat position) ────────────────────
-  // offsetMs is always in [0, beatMs), so it's always visible near the start
+  // ── Beat marker lines ─────────────────────────────────────────────────────
+  // White beats, bold terracotta downbeats with bar numbers — high contrast
+  // against the cream waveform so the grid reads at a glance.
+  ctx.font = `700 9px 'JetBrains Mono', monospace`
+  ctx.textAlign = 'left'
+  let barNo = 0
+  for (const m of markers) {
+    const onScreen = m.positionMs >= view.startMs - 200 && m.positionMs <= endMs + 200
+    if (m.isDownbeat) barNo++
+    if (!onScreen) continue
+    const x = Math.round(((m.positionMs - view.startMs) / visMs) * W)
+    if (m.isDownbeat) {
+      ctx.fillStyle = 'rgba(216,106,74,0.95)' // downbeat — accent, full height
+      ctx.fillRect(x, 0, 2, H - 18)
+      ctx.fillStyle = 'rgba(216,106,74,0.85)'
+      ctx.fillText(String(barNo), x + 4, 10)
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.42)' // beat — thin white
+      ctx.fillRect(x, 12, 1, H - 30)
+    }
+  }
+
+  // ── Anchor handle (the normalised first-beat / phase-0 position) ──────────
   const anchorX = Math.round(((offsetMs - view.startMs) / visMs) * W)
-  if (anchorX >= -4 && anchorX <= W + 4) {
-    ctx.fillStyle = 'rgba(216,106,74,0.9)'
-    ctx.fillRect(anchorX, 0, 2, H)
-    // Triangle cap
+  if (anchorX >= -8 && anchorX <= W + 8) {
+    ctx.fillStyle = 'rgba(96,200,230,0.95)' // cyan — distinct from accent downbeats
+    ctx.fillRect(anchorX - 1, 0, 2, H - 18)
     ctx.beginPath()
     ctx.moveTo(anchorX - 6, 0)
-    ctx.lineTo(anchorX + 7, 0)
-    ctx.lineTo(anchorX + 1, 10)
+    ctx.lineTo(anchorX + 6, 0)
+    ctx.lineTo(anchorX, 9)
     ctx.closePath()
-    ctx.fillStyle = 'rgba(216,106,74,0.95)'
     ctx.fill()
   }
 
   // ── Hover ghost ───────────────────────────────────────────────────────────
   if (hoveredMs !== null) {
     const hx = Math.round(((hoveredMs - view.startMs) / visMs) * W)
-    ctx.fillStyle = 'rgba(216,106,74,0.25)'
-    ctx.fillRect(hx, 0, 1, H)
+    ctx.fillStyle = 'rgba(96,200,230,0.35)'
+    ctx.fillRect(hx, 0, 1, H - 18)
   }
 
   // ── Time ruler ────────────────────────────────────────────────────────────
@@ -200,7 +233,7 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef    = useRef(0)
 
-  const [peaks,    setPeaks]    = useState<Float32Array | null>(null)
+  const [peaks,    setPeaks]    = useState<EditorPeaks | null>(null)
   const [duration, setDuration] = useState(track.durationSeconds ?? 0)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
@@ -220,13 +253,15 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
 
   const [bpm,      setBpm]      = useState(initBpm)
   const [offsetMs, setOffsetMs] = useState(initOffset)
+  // Which of the 4 beats is the downbeat (bar 1) — lets the user place the "1".
+  const [downbeatPhase, setDownbeatPhase] = useState(0)
   const [view,     setView]     = useState<ViewState>({ startMs: 0, pps: DEFAULT_PPS })
   const [hovered,  setHovered]  = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
 
   const markers = useMemo(
-    () => generateBeatgrid(bpm, offsetMs, duration * 1000),
-    [bpm, offsetMs, duration]
+    () => withDownbeatPhase(generateBeatgrid(bpm, offsetMs, duration * 1000), downbeatPhase),
+    [bpm, offsetMs, duration, downbeatPhase]
   )
 
   // ── Load audio ────────────────────────────────────────────────────────────
@@ -239,7 +274,7 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
       .then((ab) => actx.decodeAudioData(ab))
       .then((buf) => {
         if (cancelled) return
-        setPeaks(computePeaks(buf, 4000))
+        setPeaks(computeBandPeaks(buf, 4000))
         setDuration(buf.duration)
         setLoading(false)
 
@@ -384,7 +419,7 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
   // ── Save ──────────────────────────────────────────────────────────────────
 
   const handleSave = (): void =>
-    onSave(generateBeatgrid(bpm, offsetMs, duration * 1000), bpm)
+    onSave(withDownbeatPhase(generateBeatgrid(bpm, offsetMs, duration * 1000), downbeatPhase), bpm)
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -451,6 +486,16 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
             className="ml-1 px-2 py-1 text-[12px] text-muted hover:text-accent border border-border/35 hover:border-accent/40 rounded transition-colors disabled:opacity-40">
             auto
           </button>
+        </div>
+
+        {/* Downbeat (which beat is bar 1) */}
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-[12px] text-accent uppercase tracking-[0.12em] mr-1">downbeat</span>
+          <button onClick={() => setDownbeatPhase((p) => (p + 3) % 4)}
+            className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">◀</button>
+          <span className="px-1 text-[12px] text-ink tabular-nums select-none w-4 text-center">{(downbeatPhase % 4) + 1}</span>
+          <button onClick={() => setDownbeatPhase((p) => (p + 1) % 4)}
+            className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">▶</button>
         </div>
 
         {/* Zoom */}
@@ -525,10 +570,10 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
             : '—'}
         </span>
         <span className="text-[11px] text-muted/40 ml-auto">
-          <span className="inline-block w-2 h-2 mr-1 rounded-sm" style={{ background: 'rgba(216,106,74,0.8)' }} />
-          anchor (phase 0) ·{' '}
-          <span style={{ color: 'rgba(255,255,255,0.5)' }}>▏</span> downbeat ·{' '}
-          <span style={{ color: 'rgba(255,255,255,0.25)' }}>▏</span> beat
+          <span style={{ color: 'rgba(96,200,230,0.95)' }}>▏</span> anchor ·{' '}
+          <span style={{ color: 'rgba(216,106,74,0.95)' }}>▏</span> downbeat ·{' '}
+          <span style={{ color: 'rgba(255,255,255,0.5)' }}>▏</span> beat ·{' '}
+          <span style={{ color: 'rgba(235,229,211,0.7)' }}>▮</span> kick
         </span>
       </div>
       </div>
