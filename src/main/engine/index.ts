@@ -109,9 +109,6 @@ export function loadNativeEngine(): boolean {
   }
 }
 
-/** True once the .node addon is loaded and initialised. */
-export function isNativeAvailable(): boolean { return _nativeAvailable }
-
 // ── Deck helpers ──────────────────────────────────────────────────────────────
 
 function getDeck(deckId: string): DeckHandle {
