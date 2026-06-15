@@ -286,7 +286,10 @@ function createDeckStore(deckId: 'A' | 'B') {
         _fluxStartPos = 0; _fluxStartClock = Date.now()
         // A new track invalidates any active beat-sync (BPM/phase change).
         if (get().synced) engine.clearSync()
-        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, eqHigh: 0, eqMid: 0, eqLow: 0, analysisState: 'idle', keylockEnabled: false, synced: false, fluxEnabled: false, stems: { ...DEFAULT_STEMS }, stemsLoaded: false, stemsSeparating: false, stemsProgress: 0 })
+        // A track that already has BPM + key needs no analysis — start in 'done'
+        // so the "analyse" button doesn't show for fully-analysed tracks.
+        const initialAnalysis: AnalysisState = track.bpm && track.key ? 'done' : 'idle'
+        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, eqHigh: 0, eqMid: 0, eqLow: 0, analysisState: initialAnalysis, keylockEnabled: false, synced: false, fluxEnabled: false, stems: { ...DEFAULT_STEMS }, stemsLoaded: false, stemsSeparating: false, stemsProgress: 0 })
 
         // Per-track auto-gain → trim stage (applied by lib/mixBus.ts as
         // trim × fader × crossfader, so it never compounds across loads and

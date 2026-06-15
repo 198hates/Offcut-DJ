@@ -238,13 +238,17 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
             </p>
             <AnalysisIndicator state={analysisState} onAnalyze={analyzeCurrentTrack} hasTrack={!!currentTrack} />
             {liveBeatgrid.length > 0 && (
-              <span
-                title={`Beat grid · ${liveBeatgrid.length} beats`}
-                className="text-[11px] font-mono shrink-0"
+              <button
+                onClick={() => setGridEditMode(true)}
+                disabled={!currentTrack}
+                title={`Beat grid · ${liveBeatgrid.length} beats — click to edit`}
+                className="text-[11px] font-mono shrink-0 transition-colors disabled:opacity-40"
                 style={{ color: 'rgba(216,106,74,0.5)' }}
+                onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--deck-spot)')}
+                onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = 'rgba(216,106,74,0.5)')}
               >
                 grid
-              </span>
+              </button>
             )}
           </div>
         </div>
