@@ -389,8 +389,13 @@ function playlistTreeRows(playlists: PdbPlaylist[]): Rows {
 function playlistEntryRows(playlists: PdbPlaylist[]): Rows {
   const parts: number[] = []
   const offsets: number[] = []
-  let entryIdx = 1
   for (const pl of playlists) {
+    // entry_index is the track's position WITHIN this playlist (1-based) — it
+    // must restart per playlist. A single global counter across all playlists
+    // left every playlist after the first with indices that don't start at 1,
+    // which Rekordbox imports as an empty playlist (tracks still land in the
+    // collection, but the playlist membership is dropped).
+    let entryIdx = 1
     for (const tid of pl.trackIds) {
       offsets.push(parts.length)
       const row = Buffer.alloc(12)

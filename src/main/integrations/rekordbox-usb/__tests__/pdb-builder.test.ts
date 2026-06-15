@@ -121,6 +121,33 @@ describe('buildExportPdb — CDJ-format export', () => {
     expect(numRows(k.last)).toBeGreaterThan(0) // the 24 Camelot keys are written
   })
 
+  // Regression: entry_index is the track's position WITHIN a playlist and must
+  // restart at 1 per playlist. A single global counter left every playlist after
+  // the first starting at a non-1 index, which Rekordbox imported as empty.
+  it('playlist entry_index restarts per playlist (Rekordbox empty-playlist regression)', () => {
+    const buf = buildExportPdb(
+      [track(1), track(2), track(3), track(4)],
+      [
+        { id: 1, name: 'A', trackIds: [1, 2, 3] },
+        { id: 2, name: 'B', trackIds: [3, 4] }
+      ],
+      history,
+      '2026-06-13'
+    )
+    const P = 4096
+    const base = 18 * P + 0x28 // playlist_entries data page = 18; rows 12 bytes from 0x28
+    const byPlaylist = new Map<number, number[]>()
+    for (let i = 0; i < 5; i++) {
+      const o = base + i * 12
+      const entryIndex = buf.readUInt32LE(o)
+      const playlistId = buf.readUInt32LE(o + 8)
+      if (!byPlaylist.has(playlistId)) byPlaylist.set(playlistId, [])
+      byPlaylist.get(playlistId)!.push(entryIndex)
+    }
+    expect(byPlaylist.get(1)).toEqual([1, 2, 3])
+    expect(byPlaylist.get(2)).toEqual([1, 2])
+  })
+
   it('writes artwork rows and links tracks via artwork_id', () => {
     const path = '/PIONEER/Artwork/00001/a1.jpg'
     const buf = buildExportPdb(
