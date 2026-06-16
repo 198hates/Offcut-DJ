@@ -286,6 +286,25 @@ function BeatGridSection(): JSX.Element {
   const needingGrid    = tracks.filter((t) => !t.beatgrid || t.beatgrid.length === 0)
   const needingUpgrade = tracks.filter((t) => t.beatgrid?.length > 0 && !t.analysedBeatgrid)
 
+  // Full re-grid with the model: every track whose v2 grid was NOT produced by
+  // the Beat This! model. Hand-edited ('manual') grids are preserved by default
+  // so a bulk run never clobbers a careful re-anchor — opt in to include them.
+  const [includeManual, setIncludeManual] = useState(false)
+  const analysisRunning = useAnalysisStore((s) => s.running)
+  const regridTargets = tracks.filter((t) => {
+    const src = t.analysedBeatgrid?.source
+    if (src === 'beat-this') return false
+    if (src === 'manual' && !includeManual) return false
+    return true
+  })
+
+  const regrid = useCallback(async () => {
+    if (!regridTargets.length || !modelStatus?.available) return
+    const msg = `Re-grid ${regridTargets.length.toLocaleString()} track${regridTargets.length !== 1 ? 's' : ''} with the Beat This! model? This runs in the background, overwrites existing grids${includeManual ? ' (including manual edits)' : ''}, and can take a while on a large library.`
+    if (!window.confirm(msg)) return
+    await useAnalysisStore.getState().analyseBeats(regridTargets.map((t) => t.id))
+  }, [regridTargets, modelStatus, includeManual])
+
   const start = useCallback(async () => {
     const targets = needingGrid
     if (!targets.length || !modelStatus?.available) return
@@ -404,6 +423,28 @@ function BeatGridSection(): JSX.Element {
           <button onClick={upgrade}
             className="shrink-0 ml-4 px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] text-accent border border-accent/40 hover:bg-accent/10 rounded transition-colors">
             upgrade
+          </button>
+        </div>
+      )}
+
+      {/* Full library re-grid with the model (overwrites imported / uniform grids) */}
+      {modelStatus?.available && phase === 'idle' && regridTargets.length > 0 && (
+        <div className="flex items-center justify-between bg-ink/[0.03] border border-border/25 rounded px-4 py-2.5">
+          <div className="min-w-0">
+            <p className="font-mono text-[13px] text-ink font-bold">
+              re-grid {regridTargets.length.toLocaleString()} track{regridTargets.length !== 1 ? 's' : ''} with the model
+            </p>
+            <p className="font-mono text-[12px] text-muted mt-0.5">
+              re-analyses every grid the Beat This! model didn’t produce (imported / uniform / placeholder) so sync &amp; automix follow the real beats · runs in the background at your analysis concurrency
+            </p>
+            <label className="flex items-center gap-1.5 mt-1.5 font-mono text-[11px] text-muted/70 cursor-pointer select-none">
+              <input type="checkbox" checked={includeManual} onChange={(e) => setIncludeManual(e.target.checked)} className="accent-accent" />
+              also overwrite hand-edited (manual) grids
+            </label>
+          </div>
+          <button onClick={regrid} disabled={analysisRunning}
+            className="shrink-0 ml-4 px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] text-paper bg-accent hover:bg-accent/90 disabled:opacity-40 rounded transition-colors">
+            {analysisRunning ? 'running…' : 're-grid'}
           </button>
         </div>
       )}
