@@ -231,6 +231,19 @@ function createDeckStore(deckId: 'A' | 'B') {
     return _slipStartPos + elapsedSecs * playbackRate
   }
 
+  /**
+   * Resolve where a slip/flux move should drop the playhead. The continuous
+   * "shadow" position is derived from wall-clock elapsed × rate, which lands
+   * wherever real time says — almost never exactly on a beat. When the deck is
+   * quantized we snap that landing to the grid so the track returns on-beat and
+   * stays phase-locked to the mix (this mirrors how loop *entry* already snaps).
+   * With quantize off we honour the raw continuous position.
+   */
+  function _resolveSlipReturn(rawPos: number, isQuantized: boolean, track: Track | null): number {
+    const snapped = isQuantized ? snapToBeat(rawPos, track) : rawPos
+    return Math.max(0, snapped)
+  }
+
   // Flux mode — shadow playhead that advances at tempo while audible is manipulated
   let _fluxStartPos   = 0
   let _fluxStartClock = 0
@@ -493,12 +506,12 @@ function createDeckStore(deckId: 'A' | 'B') {
       },
 
       toggleLoop: () => {
-        const { loopStart, loopEnd, isLooping, slipMode, playbackRate } = get()
+        const { loopStart, loopEnd, isLooping, slipMode, playbackRate, isQuantized, currentTrack } = get()
         if (isLooping) {
           engine.clearLoop()
           if (slipMode && loopStart !== null) {
-            const slipPos = _getSlipPosition(playbackRate)
-            engine.seek(Math.max(0, slipPos))
+            const slipPos = _resolveSlipReturn(_getSlipPosition(playbackRate), isQuantized, currentTrack)
+            engine.seek(slipPos)
           }
           set({ isLooping: false })
         } else if (loopStart !== null && loopEnd !== null && loopEnd > loopStart) {
@@ -509,11 +522,11 @@ function createDeckStore(deckId: 'A' | 'B') {
       },
 
       clearLoop: () => {
-        const { isLooping, slipMode, playbackRate } = get()
+        const { isLooping, slipMode, playbackRate, isQuantized, currentTrack } = get()
         engine.clearLoop()
         if (isLooping && slipMode) {
-          const slipPos = _getSlipPosition(playbackRate)
-          engine.seek(Math.max(0, slipPos))
+          const slipPos = _resolveSlipReturn(_getSlipPosition(playbackRate), isQuantized, currentTrack)
+          engine.seek(slipPos)
         }
         set({ loopStart: null, loopEnd: null, isLooping: false })
       },
@@ -703,16 +716,18 @@ function createDeckStore(deckId: 'A' | 'B') {
 
       // ── Flux mode ─────────────────────────────────────────────────────────
       toggleFlux: () => {
-        const { fluxEnabled, currentTime, playbackRate } = get()
+        const { fluxEnabled, currentTime, playbackRate, isQuantized, currentTrack } = get()
         if (!fluxEnabled) {
           // Engaging flux: anchor shadow at current audible position
           _fluxStartPos   = currentTime
           _fluxStartClock = Date.now()
           set({ fluxEnabled: true })
         } else {
-          // Disengaging: snap audible to where we would have been
+          // Disengaging: snap audible to where we would have been. The shadow
+          // advances on wall-clock, so its raw landing is rarely on a beat —
+          // when quantized we grid-snap it so flux returns on-beat (matches slip).
           const elapsed = (Date.now() - _fluxStartClock) / 1000
-          const shadowPos = Math.max(0, _fluxStartPos + elapsed * playbackRate)
+          const shadowPos = _resolveSlipReturn(_fluxStartPos + elapsed * playbackRate, isQuantized, currentTrack)
           engine.seek(shadowPos)
           set({ fluxEnabled: false, currentTime: shadowPos })
         }
