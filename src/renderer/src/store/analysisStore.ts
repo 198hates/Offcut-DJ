@@ -15,6 +15,7 @@ import type { Track } from '@shared/types'
 import { useLibraryStore } from './libraryStore'
 import { useToastStore } from './toastStore'
 import { analyzeAudio, decodeTrackToBuffer, downbeatsForTrack } from '../lib/analyzer'
+import { withPhraseCues } from '../lib/phraseDetect'
 import { generateBeatgrid } from '../lib/compatibility'
 
 export interface AnalysisProgress {
@@ -155,10 +156,13 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
         const buf = await decodeTrackToBuffer(t.filePath, actx)
         const result = await analyzeAudio(buf, downbeatsForTrack(t))
         if (result.suggestedCues.length > 0) {
-          const cuePoints = result.suggestedCues.map((c, idx) => ({
-            index: idx, type: 'hotcue' as const,
-            positionMs: c.positionMs, color: c.color, label: c.label,
-          }))
+          const cuePoints = withPhraseCues(
+            result.suggestedCues.map((c, idx) => ({
+              index: idx, type: 'hotcue' as const,
+              positionMs: c.positionMs, color: c.color, label: c.label,
+            })),
+            t.phrases
+          )
           await updateTrack({ id, cuePoints })
         }
       } catch { /* unreadable */ }

@@ -16,6 +16,7 @@
 
 import type { Track } from '@shared/types'
 import { harmonicScore } from './compatibility'
+import { audioSimilarity } from './similarity'
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -24,6 +25,8 @@ export interface MomentContext {
   bpm:       number | null
   key:       string | null
   energy:    number | null
+  /** Reference audio embedding for content similarity (optional). */
+  embedding?: number[] | null
   /** All track IDs already in the running order — these are excluded */
   playedIds: Set<string>
 }
@@ -33,6 +36,7 @@ export interface RntScores {
   tempo:     number   // 0–1
   energy:    number   // 0–1
   freshness: number   // 0–1
+  audio?:    number   // 0–1, present only when embeddings exist
 }
 
 export interface RntCandidate {
@@ -143,6 +147,7 @@ export function scoreLibrary(
   limit = 8
 ): RntCandidate[] {
   const results: RntCandidate[] = []
+  const libEmb = tracks.map((t) => t.embedding).filter((e): e is number[] => !!e)
 
   for (const track of tracks) {
     if (context.playedIds.has(track.id)) continue
@@ -154,11 +159,16 @@ export function scoreLibrary(
       freshness: freshnessScore(track),
     }
 
-    const totalScore =
+    const base =
       W.harmonic  * scores.harmonic  +
       W.tempo     * scores.tempo     +
       W.energy    * scores.energy    +
       W.freshness * scores.freshness
+
+    // Nudge by audio-content similarity when embeddings are present.
+    const aSim = audioSimilarity(context.embedding, track.embedding, libEmb)
+    if (aSim != null) scores.audio = aSim
+    const totalScore = aSim == null ? base : 0.8 * base + 0.2 * aSim
 
     results.push({ track, totalScore, scores, reason: buildReason(track, context, scores) })
   }
@@ -187,8 +197,9 @@ export function transitionContext(
 
   return {
     bpm,
-    key:       to?.key    ?? from?.key    ?? null,
-    energy:    to?.energy ?? from?.energy ?? null,
+    key:       to?.key       ?? from?.key       ?? null,
+    energy:    to?.energy    ?? from?.energy    ?? null,
+    embedding: to?.embedding ?? from?.embedding ?? null,
     playedIds,
   }
 }

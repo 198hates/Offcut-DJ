@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { detectPhrasesFromMono } from '../phraseDetect'
+import { detectPhrasesFromMono, withPhraseCues } from '../phraseDetect'
+import type { CuePoint, PhraseSegment } from '@shared/types'
 
 const FS = 44100
 
@@ -52,5 +53,36 @@ describe('detectPhrasesFromMono', () => {
     const flat = build([{ secs: 40, bass: 0.2, high: 0.2 }])
     const segs = detectPhrasesFromMono(flat, FS)
     expect(Array.isArray(segs)).toBe(true)
+  })
+})
+
+describe('withPhraseCues', () => {
+  const phrases: PhraseSegment[] = [
+    { label: 'intro', startMs: 0, endMs: 16000, confidence: 0.6 },
+    { label: 'buildup', startMs: 16000, endMs: 24000, confidence: 0.6 },
+    { label: 'drop', startMs: 24000, endMs: 48000, confidence: 0.6 },
+    { label: 'breakdown', startMs: 48000, endMs: 64000, confidence: 0.6 },
+  ]
+  const cue = (ms: number): CuePoint => ({ index: 0, type: 'hotcue', positionMs: ms, color: '#fff', label: 'x' })
+
+  it('adds Mix-In / Drop / Breakdown cues and re-indexes', () => {
+    const out = withPhraseCues([cue(90000)], phrases)
+    const labels = out.map((c) => c.label)
+    expect(labels).toContain('Mix In')
+    expect(labels).toContain('Drop')
+    expect(labels).toContain('Breakdown')
+    out.forEach((c, i) => expect(c.index).toBe(i))
+    expect(out.every((c, i) => i === 0 || c.positionMs >= out[i - 1].positionMs)).toBe(true)
+  })
+
+  it('drops analysed cues that collide with a phrase mark, caps at 8', () => {
+    const out = withPhraseCues([cue(24050)], phrases) // within 1.5s of the drop
+    expect(out.filter((c) => Math.abs(c.positionMs - 24000) < 1500).length).toBe(1) // only the Drop
+    expect(out.length).toBeLessThanOrEqual(8)
+  })
+
+  it('is a no-op without phrases', () => {
+    const cues = [cue(1000)]
+    expect(withPhraseCues(cues, null)).toBe(cues)
   })
 })

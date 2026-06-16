@@ -11,7 +11,7 @@
  * the app already consumes, so the overlay / persistence are unchanged.
  */
 
-import type { PhraseLabel, PhraseSegment } from '@shared/types'
+import type { CuePoint, PhraseLabel, PhraseSegment } from '@shared/types'
 
 const FRAME_SEC = 0.5
 const HI = 0.55   // broadband energy → "loud"
@@ -149,4 +149,36 @@ function bufToMono(buf: AudioBuffer): Float32Array {
 /** Renderer wrapper — detect phrases from a decoded buffer. */
 export function detectPhrases(buffer: AudioBuffer, bpm?: number | null, firstBeatMs = 0): PhraseSegment[] {
   return detectPhrasesFromMono(bufToMono(buffer), buffer.sampleRate, bpm, firstBeatMs)
+}
+
+/**
+ * Merge phrase-derived hot cues (mix-in at the intro end, each drop, each
+ * breakdown) into a set of analysed cues. Phrase cues take priority: analysed
+ * cues within ~1.5 s of a phrase mark are dropped to avoid duplicates. Result
+ * is sorted by position, capped at 8 hot cues, and re-indexed. No-op when there
+ * are no phrases.
+ */
+export function withPhraseCues(cues: CuePoint[], phrases: PhraseSegment[] | null | undefined): CuePoint[] {
+  if (!phrases?.length) return cues
+  const PROX = 1500
+  const marks: { ms: number; label: string; color: string }[] = []
+  const firstNonIntro = phrases.find((p) => p.label !== 'intro')
+  if (firstNonIntro && firstNonIntro.startMs > 0) marks.push({ ms: firstNonIntro.startMs, label: 'Mix In', color: '#3CA8A1' })
+  for (const p of phrases) if (p.label === 'drop') marks.push({ ms: p.startMs, label: 'Drop', color: '#E05E3B' })
+  for (const p of phrases) if (p.label === 'breakdown') marks.push({ ms: p.startMs, label: 'Breakdown', color: '#7B61A8' })
+
+  // De-dupe phrase marks that fall close together (keep the first).
+  const uniq: typeof marks = []
+  for (const m of marks.sort((a, b) => a.ms - b.ms)) {
+    if (!uniq.some((u) => Math.abs(u.ms - m.ms) < PROX)) uniq.push(m)
+  }
+
+  const phraseCues: CuePoint[] = uniq.map((m) => ({
+    index: 0, type: 'hotcue', positionMs: Math.round(m.ms), color: m.color, label: m.label, confidence: 0.9
+  }))
+  const kept = cues.filter((c) => !uniq.some((m) => Math.abs(m.ms - c.positionMs) < PROX))
+  return [...phraseCues, ...kept]
+    .sort((a, b) => a.positionMs - b.positionMs)
+    .slice(0, 8)
+    .map((c, i) => ({ ...c, index: i }))
 }

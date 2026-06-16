@@ -1,5 +1,6 @@
 import type { AnalyzerResult, SuggestedCue } from './analyzerWorker'
-import type { CuePoint } from '@shared/types'
+import type { CuePoint, PhraseSegment } from '@shared/types'
+import { withPhraseCues } from './phraseDetect'
 
 // Vite worker import — bundled separately, runs off-thread
 import AnalyzerWorker from './analyzerWorker?worker'
@@ -54,7 +55,11 @@ export async function analyzeAudio(buffer: AudioBuffer, bars?: number[]): Promis
  * @param filePath – native file path (used only to read via Electron API)
  * @param existingBpm – if provided, used only as a hint; analysis always runs in full
  */
-export async function generateCuesForFile(filePath: string, bars?: number[]): Promise<CuePoint[]> {
+export async function generateCuesForFile(
+  filePath: string,
+  bars?: number[],
+  phrases?: PhraseSegment[] | null
+): Promise<CuePoint[]> {
   const ctx = new AudioContext()
   let audioBuffer: AudioBuffer
   try {
@@ -65,7 +70,7 @@ export async function generateCuesForFile(filePath: string, bars?: number[]): Pr
     void ctx.close()
   }
   const result = await analyzeAudio(audioBuffer, bars)
-  return suggestedCuesToCuePoints(result.suggestedCues)
+  return withPhraseCues(suggestedCuesToCuePoints(result.suggestedCues), phrases)
 }
 
 /** The real downbeat positions (ms) for a track — analysed grid first, then any

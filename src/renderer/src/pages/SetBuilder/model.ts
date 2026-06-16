@@ -1,5 +1,6 @@
 import type { Track, Playlist } from '@shared/types'
 import { compatibilityScore } from '../../lib/compatibility'
+import { audioSimilarity } from '../../lib/similarity'
 import { formatDuration } from '../../lib/format'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -77,12 +78,19 @@ export function buildSuggestions(
     key: profile.keyCluster, mood: profile.moodAvg,
   } as Track
 
+  // When audio embeddings exist, blend content similarity so suggestions
+  // reflect how tracks actually *sound*, not just metadata. No-op otherwise.
+  const libEmb = allTracks.map((t) => t.embedding).filter((e): e is number[] => !!e)
+
   return allTracks
     .filter((t) => !excludeIds.has(t.id))
     .map((t) => {
       const sScore = compatibilityScore(seed, t)
       const fScore = compatibilityScore(centroid, t)
-      return { track: t, seedScore: sScore, fitScore: fScore, score: 0.6 * sScore + 0.4 * fScore }
+      const base = 0.6 * sScore + 0.4 * fScore
+      const aSim = audioSimilarity(seed.embedding, t.embedding, libEmb)
+      const score = aSim == null ? base : 0.7 * base + 0.3 * aSim
+      return { track: t, seedScore: sScore, fitScore: fScore, score }
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, 30)

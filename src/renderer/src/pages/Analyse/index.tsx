@@ -459,7 +459,7 @@ function AutoCueSection(): JSX.Element {
       setProgress({ current: i + 1, total: needingCues.length })
       setCurrentTitle(track.title || track.filePath.split('/').pop() || '')
       try {
-        const cues = await generateCuesForFile(track.filePath, downbeatsForTrack(track))
+        const cues = await generateCuesForFile(track.filePath, downbeatsForTrack(track), track.phrases)
         if (cues.length > 0) { await updateTrack({ id: track.id, cuePoints: cues }); generated++ }
       } catch { failed.push(track) }
     }
