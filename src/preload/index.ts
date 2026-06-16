@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, IntegrationId, AppSettings, SmartRule, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent, PhraseSegment } from '../shared/types'
+import type { Track, IntegrationId, AppSettings, SmartRule, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent } from '../shared/types'
 
 const api = {
   library: {
@@ -296,22 +296,6 @@ const api = {
       const handler = (_e: unknown, p: StemProgress): void => cb(p)
       ipcRenderer.on('stems:progress', handler)
       return () => ipcRenderer.removeListener('stems:progress', handler)
-    }
-  },
-  phrase: {
-    status: (): Promise<{ available: boolean; pythonPath: string }> =>
-      ipcRenderer.invoke('phrase:status'),
-    detect: (
-      trackId: string,
-      filePath: string
-    ): Promise<{ ok: true; phrases: PhraseSegment[] } | { ok: false; error: string }> =>
-      ipcRenderer.invoke('phrase:detect', trackId, filePath),
-    onProgress: (
-      cb: (p: { trackId: string; percent: number; label: string }) => void
-    ): (() => void) => {
-      const handler = (_e: unknown, p: { trackId: string; percent: number; label: string }): void => cb(p)
-      ipcRenderer.on('phrase:progress', handler)
-      return () => ipcRenderer.removeListener('phrase:progress', handler)
     }
   },
   ai: {

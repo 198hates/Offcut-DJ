@@ -10,6 +10,7 @@ import { useAnalysisStore } from '../../store/analysisStore'
 import { analyzeAudio, generateCuesForFile, downbeatsForTrack } from '../../lib/analyzer'
 import { computeLufsGainDb } from '../../lib/loudness'
 import { audioFeatureVector } from '../../lib/audioFeatures'
+import { detectPhrases } from '../../lib/phraseDetect'
 import { generateBeatgrid } from '../../lib/compatibility'
 import { getQuantiser, initQuantiser } from '../../lib/quantiser'
 import { batchInferGenres } from '../../lib/genreInference'
@@ -867,13 +868,9 @@ function SimilaritySection(): JSX.Element {
 function PhraseSection(): JSX.Element {
   const { tracks, updateTrack } = useLibraryStore()
   const [running, setRunning]   = useState(false)
-  const [progress, setProgress] = useState({ current: 0, total: 0, label: '', pct: 0 })
-  const [avail, setAvail]       = useState<{ available: boolean; pythonPath: string } | null>(null)
-  const [error, setError]       = useState<string | null>(null)
+  const [progress, setProgress] = useState({ current: 0, total: 0, label: '' })
+  const [done, setDone]         = useState(false)
   const cancelRef = useRef(false)
-
-  useEffect(() => { window.api.phrase.status().then(setAvail).catch(() => setAvail({ available: false, pythonPath: 'python3' })) }, [])
-  useEffect(() => window.api.phrase.onProgress((p) => setProgress((s) => ({ ...s, pct: p.percent, label: p.label }))), [])
 
   const unanalysed = tracks.filter((t) => t.phrases == null)
   const analysedCount = tracks.length - unanalysed.length
@@ -881,18 +878,26 @@ function PhraseSection(): JSX.Element {
   const run = useCallback(async () => {
     cancelRef.current = false
     setRunning(true)
-    setError(null)
+    setDone(false)
+    const ctx = new AudioContext()
     const toProcess = tracks.filter((t) => t.phrases == null)
+    setProgress({ current: 0, total: toProcess.length, label: '' })
     for (let i = 0; i < toProcess.length; i++) {
       if (cancelRef.current) break
       const t = toProcess[i]
-      setProgress({ current: i + 1, total: toProcess.length, label: t.title || t.id, pct: 0 })
-      const res = await window.api.phrase.detect(t.id, t.filePath)
-      if (res.ok) await updateTrack({ id: t.id, phrases: res.phrases })
-      else { setError(res.error); break }
+      setProgress({ current: i + 1, total: toProcess.length, label: t.title || t.id })
+      try {
+        const ab  = await window.api.audio.readFile(t.filePath)
+        const buf = await ctx.decodeAudioData(ab)
+        const firstBeatMs = t.beatgrid[0]?.positionMs ?? t.analysedBeatgrid?.firstBeatMs ?? 0
+        const phrases = detectPhrases(buf, t.bpm, firstBeatMs)
+        await updateTrack({ id: t.id, phrases })
+      } catch { /* skip unreadable */ }
     }
+    await ctx.close()
     setRunning(false)
-    setProgress({ current: 0, total: 0, label: '', pct: 0 })
+    setDone(true)
+    setProgress({ current: 0, total: 0, label: '' })
   }, [tracks, updateTrack])
 
   return (
@@ -901,7 +906,7 @@ function PhraseSection(): JSX.Element {
         <div>
           <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">phrase / structure</h2>
           <p className="font-mono text-[13px] text-muted mt-0.5">
-            detects intro / build / drop / breakdown / outro from audio (all-in-one) — shown on the beatgrid editor
+            detects intro / build / drop / breakdown / outro from the energy envelope — shown on the beatgrid editor. Runs offline, no setup.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -912,23 +917,12 @@ function PhraseSection(): JSX.Element {
             </button>
           )}
           {!running && (
-            <button onClick={run} disabled={!avail?.available || unanalysed.length === 0} className={btnPrimary}>
-              {`analyse ${unanalysed.length} track${unanalysed.length !== 1 ? 's' : ''}`}
+            <button onClick={run} disabled={unanalysed.length === 0} className={btnPrimary}>
+              {done ? 're-analyse' : `analyse ${unanalysed.length} track${unanalysed.length !== 1 ? 's' : ''}`}
             </button>
           )}
         </div>
       </div>
-
-      {avail && !avail.available && (
-        <div className="flex items-start gap-2 font-mono text-[12px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
-          <span className="shrink-0 text-accent">ℹ</span>
-          <span>
-            Phrase detection needs the <span className="text-accent">all-in-one</span> package. Install it in your
-            configured Python (<span className="text-accent">{avail.pythonPath}</span>): <span className="text-accent">pip install allin1</span>.
-            It runs offline and is slow on first use (downloads the model). Set the Python path in Settings → Stems.
-          </span>
-        </div>
-      )}
 
       <div className="grid grid-cols-3 gap-3">
         <StatCard label="analysed" value={analysedCount.toLocaleString()} sub={`of ${tracks.length.toLocaleString()} tracks`} accent={analysedCount > 0} />
@@ -936,9 +930,13 @@ function PhraseSection(): JSX.Element {
       </div>
 
       {running && progress.total > 0 && (
-        <ProgressBar current={progress.current} total={progress.total} label={`structure · ${progress.pct}%`} title={progress.label} />
+        <ProgressBar current={progress.current} total={progress.total} label="phrase analysis" title={progress.label} />
       )}
-      {error && !running && <p className="font-mono text-[12px] text-red-400/90">{error}</p>}
+      {unanalysed.length === 0 && !running && tracks.length > 0 && (
+        <p className="font-mono text-[13px] text-green-600 dark:text-green-400 flex items-center gap-2">
+          <span>✓</span> every track has phrase data — open a track’s beatgrid editor to see it
+        </p>
+      )}
     </section>
   )
 }
