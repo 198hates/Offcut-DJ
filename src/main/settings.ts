@@ -43,7 +43,10 @@ const DEFAULTS: AppSettings = {
   usbExportCues: false,
   aiEnabled: false,
   anthropicApiKey: '',
-  analysisConcurrency: 0
+  analysisConcurrency: 0,
+  cueTemplates: [],
+  // Matches BUILTIN_CUE_TEMPLATES[0].id in the renderer's cueTemplates.ts.
+  activeCueTemplateId: 'builtin:standard'
 }
 
 // Simple JSON-file settings store (no external dependency)

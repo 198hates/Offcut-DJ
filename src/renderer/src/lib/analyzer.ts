@@ -1,6 +1,7 @@
 import type { AnalyzerResult, SuggestedCue } from './analyzerWorker'
-import type { CuePoint, PhraseSegment } from '@shared/types'
+import type { CuePoint, CueTemplate, PhraseSegment } from '@shared/types'
 import { withPhraseCues } from './phraseDetect'
+import { applyCueTemplate, templateThresholdScale } from './cueTemplates'
 
 // Vite worker import — bundled separately, runs off-thread
 import AnalyzerWorker from './analyzerWorker?worker'
@@ -27,7 +28,11 @@ export async function decodeTrackToBuffer(filePath: string, ctx: AudioContext): 
   }
 }
 
-export async function analyzeAudio(buffer: AudioBuffer, bars?: number[]): Promise<AnalyzerResult> {
+export async function analyzeAudio(
+  buffer: AudioBuffer,
+  bars?: number[],
+  cueThresholdScale?: number
+): Promise<AnalyzerResult> {
   return new Promise((resolve, reject) => {
     const worker = new AnalyzerWorker()
 
@@ -41,9 +46,13 @@ export async function analyzeAudio(buffer: AudioBuffer, bars?: number[]): Promis
     }
 
     // Mix down to mono Float32Array and transfer to the worker. `bars` (real
-    // downbeats, ms) anchors the structural cues to true bars when available.
+    // downbeats, ms) anchors the structural cues to true bars when available;
+    // `cueThresholdScale` is the active auto-cue template's sensitivity.
     const mono = toMono(buffer)
-    worker.postMessage({ samples: mono, sampleRate: buffer.sampleRate, bars }, [mono.buffer])
+    worker.postMessage(
+      { samples: mono, sampleRate: buffer.sampleRate, bars, cueThresholdScale },
+      [mono.buffer]
+    )
   })
 }
 
@@ -58,7 +67,8 @@ export async function analyzeAudio(buffer: AudioBuffer, bars?: number[]): Promis
 export async function generateCuesForFile(
   filePath: string,
   bars?: number[],
-  phrases?: PhraseSegment[] | null
+  phrases?: PhraseSegment[] | null,
+  template?: CueTemplate | null
 ): Promise<CuePoint[]> {
   const ctx = new AudioContext()
   let audioBuffer: AudioBuffer
@@ -69,8 +79,10 @@ export async function generateCuesForFile(
     // `new AudioContext()` fail renderer-wide.
     void ctx.close()
   }
-  const result = await analyzeAudio(audioBuffer, bars)
-  return withPhraseCues(suggestedCuesToCuePoints(result.suggestedCues), phrases)
+  const scale = template ? templateThresholdScale(template) : undefined
+  const result = await analyzeAudio(audioBuffer, bars, scale)
+  const cues = template ? applyCueTemplate(result.suggestedCues, template) : result.suggestedCues
+  return withPhraseCues(suggestedCuesToCuePoints(cues), phrases)
 }
 
 /** The real downbeat positions (ms) for a track — analysed grid first, then any

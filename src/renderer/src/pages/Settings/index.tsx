@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, createContext, useContext } from 'react'
 import type { AppSettings, SystemInfo } from '@shared/types'
 import { suggestConcurrency } from '../../lib/concurrency'
+import { CueTemplateEditor } from '../../components/CueTemplateEditor'
 import { useWaveformStore, type WaveformStyle, type KeyNotation } from '../../store/waveformStore'
 import { useThemeStore } from '../../store/themeStore'
 import { MidiSettings } from '../../components/MidiSettings'
@@ -553,6 +554,11 @@ export function SettingsPage(): JSX.Element {
             </div>
           )
         })()}
+      </Section>
+
+      {/* Auto-cue templates */}
+      <Section title="Auto-cue templates" icon="⚑" category="general">
+        <CueTemplateEditor settings={settings} patch={patch} />
       </Section>
 
       {/* Pre-listen / Headphone cue */}

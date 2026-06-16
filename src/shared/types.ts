@@ -392,6 +392,36 @@ export interface AppSettings {
   anthropicApiKey?: string
   /** How many tracks to analyse at once. 0 = auto (derived from CPU cores). */
   analysisConcurrency?: number
+  /** User-created/edited auto-cue templates (built-ins live in code). */
+  cueTemplates?: CueTemplate[]
+  /** Which auto-cue template is active (built-in id or a user template id). */
+  activeCueTemplateId?: string
+}
+
+/** The five structural cue roles the auto-cue detector can emit. */
+export type CueRole = 'mixIn' | 'build' | 'drop' | 'break' | 'outro'
+
+/** How a single cue role is rendered when a template emits it. */
+export interface CueRoleRule {
+  /** Emit this cue role at all. */
+  enabled: boolean
+  color: string
+  label: string
+}
+
+/**
+ * A named, reusable auto-cue configuration: which roles to emit, their colours
+ * and labels, and an overall sensitivity. Applied as a post-process over the
+ * detector's output (sensitivity scales the detector's confidence thresholds).
+ */
+export interface CueTemplate {
+  id: string
+  name: string
+  /** True for the shipped presets — read-only in the editor. */
+  builtin?: boolean
+  /** 0–1; 0.5 = default. Higher emits more cues (lower thresholds). */
+  sensitivity: number
+  roles: Record<CueRole, CueRoleRule>
 }
 
 /** Hardware summary for tuning analysis concurrency. */

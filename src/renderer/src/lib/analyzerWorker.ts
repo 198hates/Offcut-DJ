@@ -6,6 +6,9 @@ export interface AnalyzerInput {
   /** Real downbeat positions (ms) from the analysed beatgrid, if available —
    *  used to anchor structural cues to true bars instead of a re-derived grid. */
   bars?: number[]
+  /** Multiplier on the structural-cue confidence thresholds (auto-cue template
+   *  sensitivity). <1 emits more cues, >1 fewer. Defaults to 1. */
+  cueThresholdScale?: number
 }
 
 export interface SuggestedCue {
@@ -27,7 +30,7 @@ export interface AnalyzerResult {
 }
 
 self.onmessage = (e: MessageEvent<AnalyzerInput>) => {
-  const { samples, sampleRate, bars } = e.data
+  const { samples, sampleRate, bars, cueThresholdScale } = e.data
   const bpm          = detectBPM(samples, sampleRate)
   const key          = detectKey(samples, sampleRate)
   const energy       = detectEnergy(samples, sampleRate)
@@ -37,7 +40,7 @@ self.onmessage = (e: MessageEvent<AnalyzerInput>) => {
   // Cues need a bar grid: real downbeats if supplied, else the crude BPM/phase one.
   const haveGrid = (bars != null && bars.length >= 8) || (bpm != null && offsetMs != null)
   const suggestedCues = haveGrid
-    ? detectStructuralCues(samples, sampleRate, bpm ?? 0, offsetMs ?? 0, bars)
+    ? detectStructuralCues(samples, sampleRate, bpm ?? 0, offsetMs ?? 0, bars, cueThresholdScale)
     : []
   self.postMessage({ bpm, key, energy, danceability, mood, offsetMs, suggestedCues } satisfies AnalyzerResult)
 }
@@ -420,6 +423,7 @@ function detectStructuralCues(
   bpm: number,
   offsetMs: number,
   providedBars?: number[],
+  thresholdScale = 1,
 ): SuggestedCue[] {
   const durMs = (samples.length / sampleRate) * 1000
 
@@ -601,7 +605,7 @@ function detectStructuralCues(
   // threshold; then emit sorted by position.
   const byBar = new Map<number, SuggestedCue>()
   const place = (bar: number, conf: number, thr: number, label: string, color: string): void => {
-    if (bar < 0 || bar >= nBars || conf < thr || byBar.has(bar)) return
+    if (bar < 0 || bar >= nBars || conf < thr * thresholdScale || byBar.has(bar)) return
     byBar.set(bar, { positionMs: bars[bar], label, color, confidence: Math.round(conf * 100) / 100 })
   }
   place(dropBar,  dropConf,  0.20, 'Drop',   '#D86A4A')

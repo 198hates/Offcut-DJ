@@ -14,14 +14,22 @@ import { create } from 'zustand'
 import type { Track } from '@shared/types'
 import { useLibraryStore } from './libraryStore'
 import { useToastStore } from './toastStore'
-import { analyzeAudio, decodeTrackToBuffer, downbeatsForTrack } from '../lib/analyzer'
+import { analyzeAudio, decodeTrackToBuffer, downbeatsForTrack, suggestedCuesToCuePoints } from '../lib/analyzer'
 import { withPhraseCues } from '../lib/phraseDetect'
 import { mapPool, resolveConcurrency } from '../lib/concurrency'
+import { resolveCueTemplate, applyCueTemplate, templateThresholdScale } from '../lib/cueTemplates'
+import type { CueTemplate } from '@shared/types'
 
 /** Resolve the user's analysis-concurrency setting (0 = auto) for this run. */
 async function concurrency(): Promise<number> {
   try { return resolveConcurrency((await window.api.settings.get()).analysisConcurrency) }
   catch { return resolveConcurrency(undefined) }
+}
+
+/** The active auto-cue template (falls back to the Standard preset). */
+async function activeCueTemplate(): Promise<CueTemplate> {
+  try { return resolveCueTemplate(await window.api.settings.get()) }
+  catch { return resolveCueTemplate(null) }
 }
 import { generateBeatgrid } from '../lib/compatibility'
 
@@ -142,20 +150,17 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     set({ running: true })
     const updateTrack = useLibraryStore.getState().updateTrack
     const actx = new AudioContext()
+    const template = await activeCueTemplate()
+    const scale = templateThresholdScale(template)
     set({ progress: { label: 'auto-cue', current: 0, total: ids.length, track: '' } })
     await mapPool(ids, await concurrency(), async (id) => {
       const t = findTrack(id)
       if (!t) return
       const buf = await decodeTrackToBuffer(t.filePath, actx)
-      const result = await analyzeAudio(buf, downbeatsForTrack(t))
-      if (result.suggestedCues.length > 0) {
-        const cuePoints = withPhraseCues(
-          result.suggestedCues.map((c, idx) => ({
-            index: idx, type: 'hotcue' as const,
-            positionMs: c.positionMs, color: c.color, label: c.label,
-          })),
-          t.phrases
-        )
+      const result = await analyzeAudio(buf, downbeatsForTrack(t), scale)
+      const shaped = applyCueTemplate(result.suggestedCues, template)
+      if (shaped.length > 0) {
+        const cuePoints = withPhraseCues(suggestedCuesToCuePoints(shaped), t.phrases)
         await updateTrack({ id, cuePoints })
       }
     }, { onProgress: (done) => set({ progress: { label: 'auto-cue', current: done, total: ids.length, track: '' } }) })

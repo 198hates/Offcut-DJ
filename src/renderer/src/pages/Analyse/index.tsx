@@ -12,6 +12,8 @@ import { integratedLufs, lufsGainDb } from '../../lib/loudness'
 import { audioFeatureVector } from '../../lib/audioFeatures'
 import { detectPhrasesFromMono } from '../../lib/phraseDetect'
 import { mapPool, resolveConcurrency } from '../../lib/concurrency'
+import { allCueTemplates, resolveCueTemplate, CUE_ROLE_ORDER, CUE_ROLE_DESC } from '../../lib/cueTemplates'
+import type { AppSettings } from '@shared/types'
 
 /** Resolve the user's analysis-concurrency setting (0 = auto) for this run. */
 async function runConcurrency(): Promise<number> {
@@ -448,7 +450,18 @@ function AutoCueSection(): JSX.Element {
   const [progress, setProgress] = useState({ current: 0, total: 0 })
   const [currentTitle, setCurrentTitle] = useState('')
   const [result, setResult]     = useState<{ generated: number; failed: Track[] } | null>(null)
+  const [settings, setSettings] = useState<AppSettings | null>(null)
   const cancelRef = useRef(false)
+
+  useEffect(() => { window.api.settings.get().then(setSettings) }, [])
+
+  const templates = allCueTemplates(settings)
+  const activeTemplate = resolveCueTemplate(settings)
+
+  const selectTemplate = useCallback(async (id: string) => {
+    const next = await window.api.settings.save({ activeCueTemplateId: id })
+    setSettings(next)
+  }, [])
 
   const needingCues = tracks.filter((t) => t.cuePoints.length === 0 && t.bpm != null)
 
@@ -458,6 +471,7 @@ function AutoCueSection(): JSX.Element {
     setResult(null)
     setPhase('running')
     setProgress({ current: 0, total: needingCues.length })
+    const template = resolveCueTemplate(settings)
     let generated = 0
     const failed: Track[] = []
     for (let i = 0; i < needingCues.length; i++) {
@@ -466,14 +480,14 @@ function AutoCueSection(): JSX.Element {
       setProgress({ current: i + 1, total: needingCues.length })
       setCurrentTitle(track.title || track.filePath.split('/').pop() || '')
       try {
-        const cues = await generateCuesForFile(track.filePath, downbeatsForTrack(track), track.phrases)
+        const cues = await generateCuesForFile(track.filePath, downbeatsForTrack(track), track.phrases, template)
         if (cues.length > 0) { await updateTrack({ id: track.id, cuePoints: cues }); generated++ }
       } catch { failed.push(track) }
     }
     setPhase('done')
     setResult({ generated, failed })
     if (generated > 0) await useLibraryStore.getState().loadLibrary()
-  }, [needingCues, updateTrack])
+  }, [needingCues, updateTrack, settings])
 
   return (
     <section className="space-y-4">
@@ -496,6 +510,24 @@ function AutoCueSection(): JSX.Element {
         </div>
       </div>
 
+      {/* Template picker */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted">template</label>
+        <select
+          value={activeTemplate.id}
+          onChange={(e) => selectTemplate(e.target.value)}
+          disabled={phase === 'running'}
+          className="font-mono text-[13px] bg-paper border border-border/40 rounded px-2 py-1.5 text-ink focus:border-accent/60 outline-none disabled:opacity-40"
+        >
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}{t.builtin ? '' : ' ·'}</option>
+          ))}
+        </select>
+        <span className="font-mono text-[11px] text-muted/60">
+          sensitivity {Math.round(activeTemplate.sensitivity * 100)}% · edit templates in Settings › General
+        </span>
+      </div>
+
       <div className="grid grid-cols-3 gap-3">
         <StatCard label="need cue points" value={needingCues.length.toLocaleString()} sub={`of ${tracks.length.toLocaleString()} tracks`} accent={needingCues.length > 0} />
         <StatCard label="have cue points" value={tracks.filter((t) => t.cuePoints.length > 0).length.toLocaleString()} />
@@ -507,22 +539,21 @@ function AutoCueSection(): JSX.Element {
           sub="tracks with cues" />
       </div>
 
-      {/* Cue type legend */}
+      {/* Cue type legend — reflects the active template's enabled roles */}
       <div className="bg-ink/[0.03] border border-border/20 rounded px-4 py-3 space-y-1">
         <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-muted">what gets placed</p>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
-          {[
-            { color: '#3CA86A', label: 'Mix In', desc: 'first energy rise above intro' },
-            { color: '#D86A4A', label: 'Drop',   desc: 'global energy peak'            },
-            { color: '#3CA8C0', label: 'Break',  desc: 'post-drop energy dip'          },
-            { color: '#A855C8', label: 'Outro',  desc: 'energy falls and stays low'    },
-          ].map(({ color, label, desc }) => (
-            <div key={label} className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-              <span className="font-mono text-[12px] font-bold text-ink w-12 shrink-0">{label}</span>
-              <span className="font-mono text-[12px] text-muted">{desc}</span>
-            </div>
-          ))}
+          {CUE_ROLE_ORDER.map((role) => {
+            const rule = activeTemplate.roles[role]
+            const desc = CUE_ROLE_DESC[role]
+            return (
+              <div key={role} className={`flex items-center gap-2 ${rule.enabled ? '' : 'opacity-30'}`}>
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: rule.color }} />
+                <span className="font-mono text-[12px] font-bold text-ink w-16 shrink-0 truncate">{rule.label}</span>
+                <span className="font-mono text-[12px] text-muted">{rule.enabled ? desc : 'off'}</span>
+              </div>
+            )
+          })}
         </div>
       </div>
 

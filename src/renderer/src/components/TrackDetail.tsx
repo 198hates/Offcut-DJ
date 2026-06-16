@@ -6,6 +6,7 @@ import { BeatgridEditor } from './BeatgridEditor'
 import { compatibilityScore, harmonicScore } from '../lib/compatibility'
 import { findSimilar } from '../lib/similarity'
 import { generateCuesForFile, analyzeAudio, downbeatsForTrack } from '../lib/analyzer'
+import { resolveCueTemplate } from '../lib/cueTemplates'
 import { generateBeatgrid } from '../lib/compatibility'
 import { useDeckAStore, useDeckBStore } from '../store/playerStore'
 import type { Track, CuePoint, BeatgridMarker, CutHistory, EditLineage } from '@shared/types'
@@ -743,7 +744,8 @@ function EditTab({ draft, set }: { draft: Track; set: <K extends keyof Track>(ke
     setGeneratingCues(true)
     setCueError(null)
     try {
-      const cues = await generateCuesForFile(draft.filePath, downbeatsForTrack(draft))
+      const template = resolveCueTemplate(await window.api.settings.get())
+      const cues = await generateCuesForFile(draft.filePath, downbeatsForTrack(draft), draft.phrases, template)
       if (cues.length === 0) {
         setCueError('No structural cues detected — track may be too short or have uniform energy')
       } else {
