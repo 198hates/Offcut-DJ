@@ -16,6 +16,10 @@ import { useLibraryStore } from './libraryStore'
 import { useToastStore } from './toastStore'
 import { analyzeAudio, decodeTrackToBuffer, downbeatsForTrack } from '../lib/analyzer'
 import { withPhraseCues } from '../lib/phraseDetect'
+import { mapPool } from '../lib/concurrency'
+
+/** Tracks processed concurrently in batch analysis. */
+const CONCURRENCY = 4
 import { generateBeatgrid } from '../lib/compatibility'
 
 export interface AnalysisProgress {
@@ -38,10 +42,6 @@ interface AnalysisState {
   writeTags: (ids: string[]) => Promise<void>
 }
 
-function trackLabel(t: Track): string {
-  return t.title || t.artist || t.filePath.split('/').pop() || t.id
-}
-
 const findTrack = (id: string): Track | undefined =>
   useLibraryStore.getState().tracks.find((x) => x.id === id)
 
@@ -59,11 +59,10 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     set({ running: true })
     const updateTrack = useLibraryStore.getState().updateTrack
     const ctx = new AudioContext()
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i]
+    set({ progress: { label: 'BPM + key', current: 0, total: ids.length, track: '' } })
+    await mapPool(ids, CONCURRENCY, async (id) => {
       const t = findTrack(id)
-      if (!t) continue
-      set({ progress: { label: 'BPM + key', current: i + 1, total: ids.length, track: trackLabel(t) } })
+      if (!t) return
       // Phase 1: embedded tags
       try {
         const tags = await window.api.audio.readTags(t.filePath)
@@ -77,26 +76,24 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       // Phase 2: audio decode (if bpm, key, OR energy still missing)
       const current = findTrack(id) ?? t
       if (!current.bpm || !current.key || current.energy == null || current.beatgrid.length === 0) {
-        try {
-          const buf = await decodeTrackToBuffer(t.filePath, ctx)
-          const result = await analyzeAudio(buf, downbeatsForTrack(current))
-          const newBpm = result.bpm ?? current.bpm
-          // Never clobber an existing beatgrid: phase 2 also runs for tracks
-          // that only miss key/energy, and a regenerated uniform grid would
-          // silently replace a model-analysed or hand-edited one.
-          const beatgrid = (current.beatgrid.length === 0 && newBpm && result.offsetMs != null)
-            ? generateBeatgrid(newBpm, result.offsetMs, buf.duration * 1000)
-            : current.beatgrid
-          const cuePoints = (current.cuePoints.length === 0 && result.suggestedCues.length > 0)
-            ? result.suggestedCues.map((c, idx) => ({
-                index: idx, type: 'hotcue' as const,
-                positionMs: c.positionMs, color: c.color, label: c.label, confidence: c.confidence,
-              }))
-            : current.cuePoints
-          await updateTrack({ id, bpm: newBpm, key: result.key ?? current.key, energy: result.energy ?? current.energy, beatgrid, cuePoints })
-        } catch { /* unreadable */ }
+        const buf = await decodeTrackToBuffer(t.filePath, ctx)
+        const result = await analyzeAudio(buf, downbeatsForTrack(current))
+        const newBpm = result.bpm ?? current.bpm
+        // Never clobber an existing beatgrid: phase 2 also runs for tracks
+        // that only miss key/energy, and a regenerated uniform grid would
+        // silently replace a model-analysed or hand-edited one.
+        const beatgrid = (current.beatgrid.length === 0 && newBpm && result.offsetMs != null)
+          ? generateBeatgrid(newBpm, result.offsetMs, buf.duration * 1000)
+          : current.beatgrid
+        const cuePoints = (current.cuePoints.length === 0 && result.suggestedCues.length > 0)
+          ? result.suggestedCues.map((c, idx) => ({
+              index: idx, type: 'hotcue' as const,
+              positionMs: c.positionMs, color: c.color, label: c.label, confidence: c.confidence,
+            }))
+          : current.cuePoints
+        await updateTrack({ id, bpm: newBpm, key: result.key ?? current.key, energy: result.energy ?? current.energy, beatgrid, cuePoints })
       }
-    }
+    }, { onProgress: (done) => set({ progress: { label: 'BPM + key', current: done, total: ids.length, track: '' } }) })
     await ctx.close()
     set({ progress: null, running: false })
     toast(`Analysed ${ids.length} track${plural(ids.length)}`, 'success')
@@ -107,22 +104,19 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     set({ running: true })
     const updateTrack = useLibraryStore.getState().updateTrack
     const ctx = new AudioContext()
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i]
+    set({ progress: { label: 'energy', current: 0, total: ids.length, track: '' } })
+    await mapPool(ids, CONCURRENCY, async (id) => {
       const t = findTrack(id)
-      if (!t) continue
-      set({ progress: { label: 'energy', current: i + 1, total: ids.length, track: trackLabel(t) } })
-      try {
-        const buf = await decodeTrackToBuffer(t.filePath, ctx)
-        const result = await analyzeAudio(buf)
-        const current = findTrack(id) ?? t
-        const newBpm = result.bpm ?? current.bpm
-        const beatgrid = (current.beatgrid.length === 0 && newBpm && result.offsetMs != null)
-          ? generateBeatgrid(newBpm, result.offsetMs, buf.duration * 1000)
-          : current.beatgrid
-        await updateTrack({ id, energy: result.energy ?? current.energy, bpm: newBpm, key: result.key ?? current.key, beatgrid })
-      } catch { /* unreadable */ }
-    }
+      if (!t) return
+      const buf = await decodeTrackToBuffer(t.filePath, ctx)
+      const result = await analyzeAudio(buf)
+      const current = findTrack(id) ?? t
+      const newBpm = result.bpm ?? current.bpm
+      const beatgrid = (current.beatgrid.length === 0 && newBpm && result.offsetMs != null)
+        ? generateBeatgrid(newBpm, result.offsetMs, buf.duration * 1000)
+        : current.beatgrid
+      await updateTrack({ id, energy: result.energy ?? current.energy, bpm: newBpm, key: result.key ?? current.key, beatgrid })
+    }, { onProgress: (done) => set({ progress: { label: 'energy', current: done, total: ids.length, track: '' } }) })
     await ctx.close()
     set({ progress: null, running: false })
     toast(`Energy scored for ${ids.length} track${plural(ids.length)}`, 'success')
@@ -131,12 +125,10 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   analyseBeats: async (ids) => {
     if (get().running || ids.length === 0) return
     set({ running: true })
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i]
-      const t = findTrack(id)
-      set({ progress: { label: 'beat grid', current: i + 1, total: ids.length, track: t ? trackLabel(t) : '' } })
-      try { await window.api.library.analyzeBeats(id) } catch { /* model missing */ }
-    }
+    set({ progress: { label: 'beat grid', current: 0, total: ids.length, track: '' } })
+    await mapPool(ids, CONCURRENCY, async (id) => {
+      await window.api.library.analyzeBeats(id)
+    }, { onProgress: (done) => set({ progress: { label: 'beat grid', current: done, total: ids.length, track: '' } }) })
     await useLibraryStore.getState().loadLibrary()
     set({ progress: null, running: false })
     toast(`Beat grid analysed for ${ids.length} track${plural(ids.length)}`, 'success')
@@ -147,26 +139,23 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     set({ running: true })
     const updateTrack = useLibraryStore.getState().updateTrack
     const actx = new AudioContext()
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i]
+    set({ progress: { label: 'auto-cue', current: 0, total: ids.length, track: '' } })
+    await mapPool(ids, CONCURRENCY, async (id) => {
       const t = findTrack(id)
-      if (!t) continue
-      set({ progress: { label: 'auto-cue', current: i + 1, total: ids.length, track: trackLabel(t) } })
-      try {
-        const buf = await decodeTrackToBuffer(t.filePath, actx)
-        const result = await analyzeAudio(buf, downbeatsForTrack(t))
-        if (result.suggestedCues.length > 0) {
-          const cuePoints = withPhraseCues(
-            result.suggestedCues.map((c, idx) => ({
-              index: idx, type: 'hotcue' as const,
-              positionMs: c.positionMs, color: c.color, label: c.label,
-            })),
-            t.phrases
-          )
-          await updateTrack({ id, cuePoints })
-        }
-      } catch { /* unreadable */ }
-    }
+      if (!t) return
+      const buf = await decodeTrackToBuffer(t.filePath, actx)
+      const result = await analyzeAudio(buf, downbeatsForTrack(t))
+      if (result.suggestedCues.length > 0) {
+        const cuePoints = withPhraseCues(
+          result.suggestedCues.map((c, idx) => ({
+            index: idx, type: 'hotcue' as const,
+            positionMs: c.positionMs, color: c.color, label: c.label,
+          })),
+          t.phrases
+        )
+        await updateTrack({ id, cuePoints })
+      }
+    }, { onProgress: (done) => set({ progress: { label: 'auto-cue', current: done, total: ids.length, track: '' } }) })
     await actx.close()
     set({ progress: null, running: false })
     toast(`Auto-cued ${ids.length} track${plural(ids.length)}`, 'success')

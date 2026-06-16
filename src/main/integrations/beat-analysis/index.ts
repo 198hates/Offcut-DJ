@@ -1,4 +1,5 @@
 import { fork, type ChildProcess } from 'child_process'
+import { cpus } from 'os'
 import { join } from 'path'
 import { isModelAvailable, getDefaultModelPath } from './beat-model'
 import type { BeatgridMarker } from '../../../shared/types'
@@ -36,85 +37,89 @@ type PendingRequest = {
 const TIMEOUT_MS  = 5 * 60_000   // 5 min hard cap per track
 const WORKER_PATH = join(__dirname, 'beat-analysis-worker.js')
 
-let _child:   ChildProcess | null = null
-let _pending: PendingRequest | null = null
+// Pool of independent model processes so several tracks analyse in parallel.
+// Each child loads its own copy of the ONNX model, so keep the pool small.
+const POOL_SIZE = Math.max(1, Math.min(3, (cpus().length || 4) - 1))
 
-function spawnChild(): ChildProcess {
+interface Slot { child: ChildProcess | null; pending: PendingRequest | null }
+interface Job { filePath: string; resolve: (r: BeatAnalysisResult) => void; reject: (e: Error) => void }
+
+const _pool: Slot[] = []
+const _queue: Job[] = []
+
+function spawnInto(slot: Slot): void {
   const child = fork(WORKER_PATH, [], {
     env: { ...process.env, BEAT_MODEL_PATH: getDefaultModelPath() },
     silent: true,   // suppress child stdout/stderr from leaking into app logs
   })
+  slot.child = child
 
   child.on('message', (msg: ({ success: true } & BeatAnalysisResult) | { success: false; error: string }) => {
-    const p = _pending; _pending = null
-    if (!p) return
-    clearTimeout(p.timer)
-    if (msg.success) p.resolve(msg)
-    else p.reject(new Error(msg.error))
-  })
-
-  child.on('error', (err) => {
-    if (_child === child) _child = null
-    const p = _pending; _pending = null
-    if (!p) return
-    clearTimeout(p.timer)
-    p.reject(err)
-  })
-
-  // 'close' fires after stdio streams close — more reliable than 'exit' for fork
-  child.on('close', (code, signal) => {
-    if (_child === child) _child = null
-    const p = _pending; _pending = null
-    if (!p) return
-    clearTimeout(p.timer)
-    if (code !== 0 || signal) {
-      p.reject(new Error(
-        signal
-          ? `Beat process killed by signal ${signal} — track skipped`
-          : `Beat process exited with code ${code} — track skipped`
-      ))
+    const p = slot.pending; slot.pending = null
+    if (p) {
+      clearTimeout(p.timer)
+      if (msg.success) p.resolve(msg)
+      else p.reject(new Error(msg.error))
     }
-    // code 0 + no signal = already resolved via 'message'
+    pump()
   })
 
-  return child
+  // A child runs many tracks; a 'close'/'error' therefore means it crashed.
+  // Reject the in-flight job, drop the slot's child (lazily respawned by pump
+  // when there's more work) — so a single ONNX crash never takes the app down.
+  const die = (err: Error): void => {
+    if (slot.child !== child) return
+    slot.child = null
+    const p = slot.pending; slot.pending = null
+    if (p) { clearTimeout(p.timer); p.reject(err) }
+    pump()
+  }
+  child.on('error', die)
+  child.on('close', (code, signal) =>
+    die(new Error(signal
+      ? `Beat process killed by signal ${signal} — track skipped`
+      : `Beat process exited with code ${code} — track skipped`)))
 }
 
-function ensureChild(): ChildProcess {
-  if (!_child) _child = spawnChild()
-  return _child
+function ensurePool(): void {
+  if (_pool.length === 0) for (let i = 0; i < POOL_SIZE; i++) _pool.push({ child: null, pending: null })
+}
+
+/** Assign queued jobs to free slots (spawning a child on demand). */
+function pump(): void {
+  for (const slot of _pool) {
+    if (slot.pending || _queue.length === 0) continue
+    if (!slot.child) spawnInto(slot)
+    const job = _queue.shift()!
+    const timer = setTimeout(() => {
+      slot.pending = null
+      try { slot.child?.kill('SIGKILL') } catch { /* already gone */ }
+      slot.child = null
+      job.reject(new Error('Beat analysis timed out (>5 min) — track skipped'))
+    }, TIMEOUT_MS)
+    slot.pending = { resolve: job.resolve, reject: job.reject, timer }
+    slot.child!.send({ filePath: job.filePath })
+  }
 }
 
 /**
- * Warm: start the child process so the first real analysis call
- * doesn't pay the process-launch + model-load cost (~1–2 s).
+ * Warm: pre-start one pool process so the first analysis call doesn't pay the
+ * launch + model-load cost. The rest of the pool spawns lazily under load, so
+ * idle startup only carries one model in memory.
  */
 export function warmModel(): void {
   if (!isModelAvailable()) return
-  try { ensureChild() } catch { /* model not installed */ }
+  try { ensurePool(); if (_pool[0] && !_pool[0].child) spawnInto(_pool[0]) } catch { /* model not installed */ }
 }
 
-/**
- * Analyse beats for one track.
- * Requests are serialised: callers must await each call before making the next.
- */
+/** Analyse beats for one track. Concurrent calls run across the pool. */
 export function analyzeBeats(filePath: string): Promise<BeatAnalysisResult> {
   if (!isModelAvailable()) {
     throw new Error(`Beat model not found. Place beat_this.onnx in: ${getDefaultModelPath()}`)
   }
-
-  if (_pending) {
-    return Promise.reject(new Error('Beat analysis already in progress'))
-  }
-
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      _pending = null
-      _child?.kill('SIGKILL'); _child = null
-      reject(new Error('Beat analysis timed out (>5 min) — track skipped'))
-    }, TIMEOUT_MS)
-
-    _pending = { resolve, reject, timer }
-    ensureChild().send({ filePath })
+  return new Promise<BeatAnalysisResult>((resolve, reject) => {
+    _queue.push({ filePath, resolve, reject })
+    ensurePool()
+    pump()
   })
 }
