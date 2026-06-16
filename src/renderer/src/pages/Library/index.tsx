@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
+import { useAutomixStore } from '../../store/automixStore'
 import { FilterBar } from '../../components/FilterBar'
 import { BulkEditBar } from '../../components/BulkEditBar'
 import { SetTimeline } from '../../components/SetTimeline'
@@ -67,6 +68,7 @@ export function LibraryPage(): JSX.Element {
   const { toggle: previewToggle } = usePreview()
   const filteredTracks = useLibraryStore((s) => s.filteredTracks())
   const allTracks = useLibraryStore((s) => s.tracks)
+  const automix = useAutomixStore()
 
   const openTrackMenu = useTrackMenuContext()
   const [showSuggest, setShowSuggest] = useState(false)
@@ -303,6 +305,30 @@ export function LibraryPage(): JSX.Element {
             {sorted.length.toLocaleString()} trks
             {selectedTrackIds.size === 1 && ' · 1 selected'}
           </span>
+
+          {/* Auto-mix — play and let it pick compatible tracks from this view */}
+          {sorted.length >= 2 && (
+            automix.active ? (
+              <button
+                onClick={() => automix.stop()}
+                title={automix.nextTitle ? `Auto-mixing · next: ${automix.nextTitle}` : 'Stop auto-mix'}
+                className="ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[12px] bg-accent/10 text-accent transition-colors"
+              >
+                ■ auto{automix.phase === 'transition' ? ' ⇢' : ''}{automix.nextTitle ? ` · ${automix.nextTitle.slice(0, 14)}` : ''}
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  const seed = (selectedTrackIds.size ? sorted.find((t) => selectedTrackIds.has(t.id)) : null) ?? sorted[0]
+                  if (seed) automix.start([seed], 0, 16, { autoSelect: true, pool: sorted })
+                }}
+                title="Auto-mix — start from the selected (or first) track and auto-pick compatible tracks from this view"
+                className="ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[12px] text-muted hover:text-accent hover:bg-accent/10 transition-colors"
+              >
+                ▶ auto-mix
+              </button>
+            )
+          )}
           {activePlaylist && sorted.length >= 1 && (
             <button
               onClick={() => setShowSuggest((v) => !v)}

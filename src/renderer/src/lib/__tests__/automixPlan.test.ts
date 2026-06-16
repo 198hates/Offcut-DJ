@@ -5,9 +5,10 @@ import {
   smoothstep,
   crossfadeAt,
   xfadeForDeck,
-  entryCueMs
+  entryCueMs,
+  pickNextTrack
 } from '../automixPlan'
-import type { CuePoint } from '@shared/types'
+import type { CuePoint, Track } from '@shared/types'
 
 describe('transitionBarsForBand', () => {
   it('uses the full length for a clean auto blend', () => {
@@ -82,5 +83,37 @@ describe('entryCueMs', () => {
   it('finds a mix-in / intro cue', () => {
     expect(entryCueMs({ cuePoints: [cue('Drop', 30000), cue('Mix In', 8000)] })).toBe(8000)
     expect(entryCueMs({ cuePoints: [cue('Intro', 4000)] })).toBe(4000)
+  })
+})
+
+describe('pickNextTrack', () => {
+  // scoreTransition reads id/bpm/key/energy (+ optional grid); a partial is enough.
+  const t = (id: string, bpm: number | null, key: string, energy: number): Track =>
+    ({ id, bpm, key, energy } as unknown as Track)
+
+  const current = t('cur', 128, '8A', 5)
+
+  it('picks the most compatible candidate (same key + tempo)', () => {
+    const pool = [
+      t('far', 150, '3B', 9), // distant key + big tempo gap
+      t('match', 128, '8A', 5), // same key, same bpm, same energy → best
+      t('close', 129, '9A', 6) // adjacent key, near tempo
+    ]
+    expect(pickNextTrack(current, pool, new Set())?.id).toBe('match')
+  })
+
+  it('skips the current track, already-played tracks, and gridless (no-bpm) tracks', () => {
+    const pool = [
+      current, // self
+      t('played', 128, '8A', 5), // best on paper but already played
+      t('nobpm', null, '8A', 5), // no tempo → unusable
+      t('ok', 127, '8A', 5)
+    ]
+    expect(pickNextTrack(current, pool, new Set(['played']))?.id).toBe('ok')
+  })
+
+  it('returns null when the pool is exhausted', () => {
+    expect(pickNextTrack(current, [current], new Set())).toBeNull()
+    expect(pickNextTrack(current, [], new Set())).toBeNull()
   })
 })

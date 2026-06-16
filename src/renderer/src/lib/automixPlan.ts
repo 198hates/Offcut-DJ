@@ -3,6 +3,7 @@
 // side-effect-free and unit-tested so the timing/curve maths stay correct.
 
 import type { AutoMixBand, CuePoint, Track } from '@shared/types'
+import { scoreTransition } from './automix'
 
 /**
  * How many bars the blend should run for, by transition confidence. A clean
@@ -58,4 +59,25 @@ export function entryCueMs(track: Pick<Track, 'cuePoints'>): number {
   const mixIn = cues.find((c) => /mix|intro|\bin\b/i.test(c.label))
   if (mixIn) return Math.max(0, mixIn.positionMs)
   return 0
+}
+
+/**
+ * Pick the most compatible next track from a pool for an auto-selecting mix —
+ * highest transition confidence (grid · key · tempo · energy) from `current`,
+ * excluding the current track and anything already played. Tracks without a BPM
+ * are skipped (the scorer and beat-sync need one). Returns null when the pool is
+ * exhausted. Ties resolve to the earlier pool entry (deterministic).
+ */
+export function pickNextTrack(current: Track, pool: Track[], playedIds: Set<string>): Track | null {
+  let best: Track | null = null
+  let bestScore = -1
+  for (const t of pool) {
+    if (t.id === current.id || playedIds.has(t.id) || t.bpm == null) continue
+    const score = scoreTransition(current, t).confidence
+    if (score > bestScore) {
+      bestScore = score
+      best = t
+    }
+  }
+  return best
 }

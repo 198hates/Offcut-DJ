@@ -1,14 +1,19 @@
 /**
- * Automix execution — an auto-DJ that plays through a running order, blending
- * each track into the next via the native engine's beat-sync + the crossfader.
+ * Automix execution — an auto-DJ that blends each track into the next via the
+ * native engine's beat-sync + the crossfader.
+ *
+ * Two modes:
+ *   - ordered:     play a fixed queue (a running order) in sequence.
+ *   - auto-select: play one seed track, then pick each following track itself
+ *                  from a candidate pool by transition compatibility.
  *
  * This is pure renderer orchestration: the Rust engine already does beat-aligned
  * sync (deck.toggleSync → engine.syncTo with a JS-computed phase) and the mixer
  * runs outside React (lib/mixBus applies xfade). The controller just sequences
- * load → start → sync → crossfade-sweep → swap, deck A ↔ B, down the queue.
+ * load → start → sync → crossfade-sweep → swap, deck A ↔ B.
  *
- * Timing/curve maths live in lib/automixPlan.ts (pure, unit-tested); this file
- * holds the imperative loop and the small reactive state the UI shows.
+ * Timing/curve/selection maths live in lib/automixPlan.ts (pure, unit-tested);
+ * this file holds the imperative loop and the small reactive state the UI shows.
  */
 
 import { create } from 'zustand'
@@ -21,26 +26,38 @@ import {
   barsToMs,
   crossfadeAt,
   xfadeForDeck,
-  entryCueMs
+  entryCueMs,
+  pickNextTrack
 } from '../lib/automixPlan'
 
 type AutomixPhase = 'idle' | 'playing' | 'transition'
+
+interface AutomixStartOptions {
+  /** Pick each next track from `pool` by compatibility instead of stepping a queue. */
+  autoSelect?: boolean
+  /** Candidate library for auto-select mode. */
+  pool?: Track[]
+}
 
 interface AutomixState {
   active: boolean
   phase: AutomixPhase
   master: 'A' | 'B'
+  /** History of tracks played this session (the seed, then each pick/step). */
   queue: Track[]
   /** Index of the track currently playing on the master deck. */
   index: number
+  /** True when the controller chooses its own tracks from the pool. */
+  autoSelect: boolean
   /** Default blend length in bars for a clean ("auto") transition. */
   baseBars: number
   nextTitle: string | null
   /**
-   * Start auto-mixing a queue of tracks from `startIndex`. Loads the first track
-   * on deck A and blends forward. `baseBars` sets the clean-blend length.
+   * Start auto-mixing. In ordered mode `queue` is the full running order and
+   * `startIndex` the first track. In auto-select mode (`opts.autoSelect`),
+   * `queue[startIndex]` is the seed and `opts.pool` the candidate library.
    */
-  start: (queue: Track[], startIndex?: number, baseBars?: number) => Promise<void>
+  start: (queue: Track[], startIndex?: number, baseBars?: number, opts?: AutomixStartOptions) => Promise<void>
   stop: () => void
 }
 
@@ -48,6 +65,11 @@ interface AutomixState {
 let _unsub: (() => void) | null = null
 let _raf: number | null = null
 let _transitioning = false
+// Auto-select working set: candidate pool, what's already played, and the
+// pre-computed next pick (computed once per track, not per tick).
+let _pool: Track[] = []
+let _played: Set<string> = new Set()
+let _plannedNext: Track | null = null
 
 export const useAutomixStore = create<AutomixState>((set, get) => {
   const api = (d: 'A' | 'B'): DeckStore => (d === 'A' ? useDeckAStore : useDeckBStore).getState()
@@ -57,6 +79,19 @@ export const useAutomixStore = create<AutomixState>((set, get) => {
     if (_unsub) { _unsub(); _unsub = null }
     if (_raf != null) { cancelAnimationFrame(_raf); _raf = null }
     _transitioning = false
+    _plannedNext = null
+  }
+
+  // Compute the next track for `masterTrack` (once per track, not per tick) and
+  // reflect it in the UI. Auto-select picks from the pool; ordered reads the queue.
+  const planNext = (masterTrack: Track): void => {
+    if (get().autoSelect) {
+      _plannedNext = pickNextTrack(masterTrack, _pool, _played)
+    } else {
+      const { queue, index } = get()
+      _plannedNext = queue[index + 1] ?? null
+    }
+    set({ nextTitle: _plannedNext?.title ?? null })
   }
 
   // Re-point the per-tick watcher at whichever deck is currently master.
@@ -70,11 +105,11 @@ export const useAutomixStore = create<AutomixState>((set, get) => {
     if (!get().active || _transitioning || !duration || duration <= 0) return
     const { queue, index, baseBars } = get()
     const masterTrack = queue[index]
-    const next = queue[index + 1]
+    const next = _plannedNext
     const remainingSec = duration - currentTime
     if (!masterTrack) return
     if (!next) {
-      // Last track — end the session when it finishes.
+      // No next track (queue done, or pool exhausted) — end when this one finishes.
       if (remainingSec <= 0.3) get().stop()
       return
     }
@@ -92,7 +127,8 @@ export const useAutomixStore = create<AutomixState>((set, get) => {
     const slave = otherDeck(master)
     const { queue, index } = get()
     const masterTrack = queue[index]
-    const nextTrack = queue[index + 1]
+    const nextTrack = _plannedNext
+    if (!nextTrack) { _transitioning = false; set({ phase: 'playing' }); return }
     const durMs = barsToMs(bars, masterTrack.bpm)
     try {
       // Prep the incoming deck at its entry cue, paused; then start + beat-sync
@@ -126,14 +162,20 @@ export const useAutomixStore = create<AutomixState>((set, get) => {
     if (api(master).isPlaying) api(master).togglePlay()
     if (api(slave).synced) api(slave).toggleSync()
     useMixerStore.getState().setXfade(xfadeForDeck(slave))
+
+    const incoming = _plannedNext
+    // Auto-select grows the history with the track we just brought in; ordered
+    // mode already has it at index+1.
+    const queue = get().autoSelect && incoming ? [...get().queue, incoming] : get().queue
     const index = get().index + 1
     _transitioning = false
-    set({
-      master: slave,
-      index,
-      phase: 'playing',
-      nextTitle: get().queue[index + 1]?.title ?? null
-    })
+    set({ master: slave, index, queue, phase: 'playing' })
+
+    const newMaster = queue[index]
+    if (newMaster) {
+      _played.add(newMaster.id) // never pick a track that's already playing
+      planNext(newMaster)
+    }
     watchMaster()
   }
 
@@ -143,30 +185,40 @@ export const useAutomixStore = create<AutomixState>((set, get) => {
     master: 'A',
     queue: [],
     index: 0,
+    autoSelect: false,
     baseBars: 16,
     nextTitle: null,
 
-    start: async (queue, startIndex = 0, baseBars = 16) => {
-      if (!queue.length) return
+    start: async (queue, startIndex = 0, baseBars = 16, opts) => {
+      const seed = queue[startIndex]
+      if (!seed) return
       cleanup()
+      const autoSelect = !!opts?.autoSelect
+      _pool = autoSelect ? (opts?.pool ?? []) : []
+      _played = new Set([seed.id])
       const master: 'A' | 'B' = 'A'
-      const mx = useMixerStore.getState()
-      mx.setXfade(xfadeForDeck(master))
+      useMixerStore.getState().setXfade(xfadeForDeck(master))
+      // Auto-select tracks only history (starts with the seed); ordered uses the
+      // full queue with its own start index.
       set({
         active: true,
         phase: 'playing',
         master,
-        queue,
-        index: startIndex,
+        queue: autoSelect ? [seed] : queue,
+        index: autoSelect ? 0 : startIndex,
+        autoSelect,
         baseBars,
-        nextTitle: queue[startIndex + 1]?.title ?? null
+        nextTitle: null
       })
-      await api(master).loadTrack(queue[startIndex], { autoplay: true })
+      await api(master).loadTrack(seed, { autoplay: true })
+      planNext(get().queue[get().index])
       watchMaster()
     },
 
     stop: () => {
       cleanup()
+      _pool = []
+      _played = new Set()
       set({ active: false, phase: 'idle', nextTitle: null })
     }
   }
