@@ -34,6 +34,7 @@ import type { SyncTrackInput } from '../integrations/rekordbox-usb/writer'
 import { importFromUsbBackup } from '../integrations/rekordbox-usb/backup-import'
 import { startWatcher } from '../integrations/watch-folder'
 import { loadSettings, saveSettings, getSettings } from '../settings'
+import { autoBackup } from '../backup'
 import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule, UsbExport } from '../../shared/types'
 import type Database from 'better-sqlite3'
 
@@ -419,6 +420,8 @@ export function registerLibraryHandlers(): void {
       if (res.canceled) return { tracksImported: 0, playlistsImported: 0, errors: ['Import cancelled'] }
       resolvedPath = res.filePaths[0]
     }
+    // Imports mutate the library in bulk — snapshot first so it's reversible.
+    await autoBackup(`pre-import-${integrationId}`)
     return reader(db, resolvedPath)
   })
 

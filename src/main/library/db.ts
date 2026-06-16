@@ -18,6 +18,17 @@ export function getLibraryDb(): Database.Database {
   return _db
 }
 
+/** Absolute path to the library database file. */
+export function libraryDbPath(): string {
+  return join(app.getPath('userData'), 'library.db')
+}
+
+/** Close the DB handle (used before restoring a snapshot over the file). */
+export function closeLibraryDb(): void {
+  try { _db?.close() } catch { /* already closed */ }
+  _db = null
+}
+
 export function rowToTrack(row: Record<string, unknown>): Track {
   return {
     id: row.id as string,

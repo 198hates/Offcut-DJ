@@ -7,6 +7,7 @@ import { registerSettingsHandlers } from './ipc/settings'
 import { registerAudioHandlers } from './ipc/audio'
 import { registerLineageHandlers } from './ipc/lineage'
 import { registerStemHandlers } from './ipc/stems'
+import { registerBackupHandlers } from './ipc/backup'
 import { registerAiHandlers } from './ipc/ai'
 import { killAllSeparations } from './stems'
 import { loadNativeEngine, registerEngineHandlers } from './engine'
@@ -92,6 +93,7 @@ app.whenReady().then(() => {
   registerAudioHandlers()
   registerLineageHandlers()
   registerStemHandlers()
+  registerBackupHandlers()
   registerAiHandlers()
   registerEngineHandlers()
   loadNativeEngine()    // non-fatal: logs warning if .node not compiled yet

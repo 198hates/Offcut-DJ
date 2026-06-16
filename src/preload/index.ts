@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, IntegrationId, AppSettings, SmartRule, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent } from '../shared/types'
+import type { Track, IntegrationId, AppSettings, SmartRule, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent, BackupInfo } from '../shared/types'
 
 const api = {
   library: {
@@ -284,6 +284,12 @@ const api = {
     reloadLibrary: (): Promise<boolean> => ipcRenderer.invoke('lineage:reloadLibrary'),
     exportCrate: (opts?: LineageExportOptions): Promise<LineageExportResult> =>
       ipcRenderer.invoke('lineage:exportCrate', opts)
+  },
+  backup: {
+    list: (): Promise<BackupInfo[]> => ipcRenderer.invoke('backup:list'),
+    create: (label?: string): Promise<BackupInfo> => ipcRenderer.invoke('backup:create', label),
+    restore: (name: string): Promise<void> => ipcRenderer.invoke('backup:restore', name),
+    delete: (name: string): Promise<boolean> => ipcRenderer.invoke('backup:delete', name)
   },
   stems: {
     status: (): Promise<StemsStatus> => ipcRenderer.invoke('stems:status'),

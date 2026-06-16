@@ -7,7 +7,7 @@ import { useLibraryStore } from '../../store/libraryStore'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
 import { PageHeader } from '../../components/PageHeader'
 import { StatCard } from '../../components/StatCard'
-import { tabClass, btnGhost } from '../../lib/ui'
+import { tabClass, btnGhost, btnPrimary } from '../../lib/ui'
 import type { Track, Playlist } from '@shared/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -22,6 +22,45 @@ function normalize(s: string): string {
 }
 
 type DuplicateGroup = Track[]
+
+/** Raw cosine of two equal-length vectors. Identical audio → ~1.0. */
+function cosine(a: number[], b: number[]): number {
+  let dot = 0, na = 0, nb = 0
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
+  const den = Math.sqrt(na) * Math.sqrt(nb)
+  return den ? dot / den : 0
+}
+
+/**
+ * Group tracks by AUDIO content (Phase-2 embeddings) — catches re-tagged /
+ * re-encoded copies that metadata misses. Duration-bucketed to stay near-linear;
+ * a high cosine threshold (+ tight duration match) keeps false positives down.
+ */
+function scanAudioDuplicates(tracks: Track[], skip: Set<string>): DuplicateGroup[] {
+  const cands = tracks.filter((t) => !skip.has(t.id) && t.embedding && t.durationSeconds)
+  const buckets = new Map<number, Track[]>()
+  for (const t of cands) {
+    const k = Math.round(t.durationSeconds! / 3) // ~3s buckets
+    for (const kk of [k - 1, k, k + 1]) { if (!buckets.has(kk)) buckets.set(kk, []); buckets.get(kk)!.push(t) }
+  }
+  const groups: DuplicateGroup[] = []
+  const used = new Set<string>()
+  for (const bucket of buckets.values()) {
+    for (let i = 0; i < bucket.length; i++) {
+      const a = bucket[i]
+      if (used.has(a.id)) continue
+      const group = [a]
+      for (let j = i + 1; j < bucket.length; j++) {
+        const b = bucket[j]
+        if (used.has(b.id)) continue
+        const durRatio = Math.abs(a.durationSeconds! - b.durationSeconds!) / a.durationSeconds!
+        if (durRatio < 0.03 && cosine(a.embedding!, b.embedding!) >= 0.995) group.push(b)
+      }
+      if (group.length > 1) { for (const t of group) used.add(t.id); groups.push(group) }
+    }
+  }
+  return groups
+}
 
 function scanForDuplicates(tracks: Track[]): DuplicateGroup[] {
   const byMeta = new Map<string, Track[]>()
@@ -43,7 +82,12 @@ function scanForDuplicates(tracks: Track[]): DuplicateGroup[] {
     if (!byBpmDuration.has(dKey)) byBpmDuration.set(dKey, [])
     byBpmDuration.get(dKey)!.push(track)
   }
-  return [...primaryGroups, ...[...byBpmDuration.values()].filter((g) => g.length > 1)]
+  const bpmGroups = [...byBpmDuration.values()].filter((g) => g.length > 1)
+  for (const g of bpmGroups) for (const t of g) alreadyGrouped.add(t.id)
+
+  // Audio-content pass over anything not already grouped.
+  const audioGroups = scanAudioDuplicates(tracks, alreadyGrouped)
+  return [...primaryGroups, ...bpmGroups, ...audioGroups]
 }
 
 function trackScore(t: Track): number {
@@ -206,7 +250,7 @@ function DuplicatesSection({ tracks, playlists, deleteTracks }: {
         <div>
           <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">duplicate tracks
           </h2>
-          <p className="font-mono text-[13px] text-muted mt-0.5">matches by artist + title, and by duration + bpm</p>
+          <p className="font-mono text-[13px] text-muted mt-0.5">matches by artist + title, by duration + bpm, and by audio fingerprint (catches re-tags — needs Analyse → Audio similarity)</p>
         </div>
         <button onClick={scan} disabled={scanning || tracks.length === 0}
           className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[13px] uppercase tracking-[0.12em] rounded transition-colors">
@@ -668,39 +712,80 @@ function GenrePlaylistsSection({ tracks, playlists }: { tracks: Track[]; playlis
 
 // ── Backup ─────────────────────────────────────────────────────────────────────
 
+function fmtBytes(n: number): string {
+  return n >= 1024 * 1024 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`
+}
+
 function BackupSection({ tracks, playlists }: { tracks: Track[]; playlists: Playlist[] }): JSX.Element {
+  const [backups, setBackups] = useState<import('@shared/types').BackupInfo[]>([])
+  const [busy, setBusy] = useState(false)
+
+  const refresh = useCallback(() => { window.api.backup.list().then(setBackups).catch(() => setBackups([])) }, [])
+  useEffect(() => { refresh() }, [refresh])
+
+  const snapshot = useCallback(async () => {
+    setBusy(true)
+    try { await window.api.backup.create() } finally { setBusy(false); refresh() }
+  }, [refresh])
+
+  const restore = useCallback(async (name: string) => {
+    if (!window.confirm('Restore this snapshot? Your current library is snapshotted first, then the app relaunches.')) return
+    await window.api.backup.restore(name) // relaunches; never returns
+  }, [])
+
+  const remove = useCallback(async (name: string) => {
+    await window.api.backup.delete(name)
+    refresh()
+  }, [refresh])
+
+  const exportJson = useCallback(() => {
+    const date = new Date().toISOString().slice(0, 10)
+    const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), trackCount: tracks.length, playlistCount: playlists.length, tracks, playlists }, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `offcut-backup-${date}.json`; a.click()
+    URL.revokeObjectURL(url)
+  }, [tracks, playlists])
+
   return (
     <section className="space-y-4">
-      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">backup</h2>
-      <p className="font-mono text-[13px] text-muted/70">
-        export all track metadata + playlists as JSON — keeps a local snapshot of your library data
-      </p>
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => {
-            const date = new Date().toISOString().slice(0, 10)
-            const backup = {
-              exportedAt: new Date().toISOString(),
-              trackCount: tracks.length,
-              playlistCount: playlists.length,
-              tracks,
-              playlists,
-            }
-            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = `offcut-backup-${date}.json`
-            a.click()
-            URL.revokeObjectURL(url)
-          }}
-          className={btnGhost}
-        >
-          export {tracks.length} tracks as JSON
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">backups</h2>
+          <p className="font-mono text-[13px] text-muted/70 mt-0.5">
+            restorable snapshots of your library DB (tracks · playlists · cues · grids). One is taken
+            automatically before each import. Keeps the latest 20.
+          </p>
+        </div>
+        <button onClick={snapshot} disabled={busy} className={btnPrimary}>
+          {busy ? 'snapshotting…' : 'snapshot now'}
         </button>
-        <span className="font-mono text-[12px] text-muted/40 tabular-nums">
-          ~{Math.round(JSON.stringify(tracks).length / 1024)} KB
-        </span>
+      </div>
+
+      {backups.length === 0 ? (
+        <p className="font-mono text-[13px] text-muted/50 italic">no snapshots yet</p>
+      ) : (
+        <div className="border border-border/30 rounded divide-y divide-border/15 max-h-72 overflow-y-auto">
+          {backups.map((b) => (
+            <div key={b.name} className="flex items-center gap-3 px-3 py-2">
+              <div className="flex-1 min-w-0">
+                <p className="font-mono text-[12px] text-ink tabular-nums">
+                  {new Date(b.createdAt).toLocaleString()}
+                  {b.label && <span className="text-muted/60 ml-2">· {b.label}</span>}
+                </p>
+                <p className="font-mono text-[11px] text-muted/50">{fmtBytes(b.sizeBytes)}</p>
+              </div>
+              <button onClick={() => restore(b.name)} className="font-mono text-[11px] uppercase tracking-[0.1em] text-accent hover:text-ink border border-accent/30 hover:border-accent/60 rounded px-2 py-0.5 transition-colors">
+                restore
+              </button>
+              <button onClick={() => remove(b.name)} title="Delete snapshot" className="text-muted/40 hover:text-red-500 transition-colors font-mono text-xs leading-none">×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 pt-1">
+        <button onClick={exportJson} className={btnGhost}>export library as JSON</button>
+        <span className="font-mono text-[12px] text-muted/40">portable metadata export (read-only)</span>
       </div>
     </section>
   )

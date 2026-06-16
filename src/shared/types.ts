@@ -492,6 +492,14 @@ export type AiAgentEvent =
   | { type: 'done'; runId: number }
   | { type: 'error'; runId: number; message: string }
 
+/** A versioned library-database snapshot. */
+export interface BackupInfo {
+  name: string
+  label: string | null
+  sizeBytes: number
+  createdAt: string
+}
+
 // ── Lineage (library expansion / crate-digging) ────────────────────────────
 // Shared DTOs crossing the IPC bridge between the main-process engine and the
 // renderer's lineage-web viewer.

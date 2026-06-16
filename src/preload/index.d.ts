@@ -6,6 +6,7 @@ import type {
   StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef,
   StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, BeatgridMarker, CuePoint,
   AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent,
+  BackupInfo,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -121,6 +122,13 @@ declare global {
         getDetectedPaths: () => Promise<Record<string, string>>
         choosePath: (title: string, isDirectory: boolean) => Promise<string | null>
         openInFinder: (path: string) => Promise<void>
+      }
+      /** Library backups — versioned snapshots + restore. */
+      backup: {
+        list: () => Promise<BackupInfo[]>
+        create: (label?: string) => Promise<BackupInfo>
+        restore: (name: string) => Promise<void>
+        delete: (name: string) => Promise<boolean>
       }
       /** Lineage — library expansion / crate-digging engine bridge. */
       lineage: {
