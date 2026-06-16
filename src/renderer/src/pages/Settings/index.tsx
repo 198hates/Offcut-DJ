@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, createContext, useContext } from 'rea
 import type { AppSettings, SystemInfo } from '@shared/types'
 import { suggestConcurrency } from '../../lib/concurrency'
 import { CueTemplateEditor } from '../../components/CueTemplateEditor'
+import { CastPanel } from '../../components/CastPanel'
 import { useWaveformStore, type WaveformStyle, type KeyNotation } from '../../store/waveformStore'
 import { useThemeStore } from '../../store/themeStore'
 import { MidiSettings } from '../../components/MidiSettings'
@@ -559,6 +560,11 @@ export function SettingsPage(): JSX.Element {
       {/* Auto-cue templates */}
       <Section title="Auto-cue templates" icon="⚑" category="general">
         <CueTemplateEditor settings={settings} patch={patch} />
+      </Section>
+
+      {/* Google Cast (test) */}
+      <Section title="Cast (beta)" icon="📡" category="general">
+        <CastPanel />
       </Section>
 
       {/* Pre-listen / Headphone cue */}

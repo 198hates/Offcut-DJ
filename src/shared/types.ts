@@ -424,6 +424,22 @@ export interface CueTemplate {
   roles: Record<CueRole, CueRoleRule>
 }
 
+/** A discovered Google Cast / Chromecast device. */
+export interface CastDevice {
+  name: string
+  host: string
+  port: number
+  id: string
+}
+
+/** Current cast session state (audience-PA streaming). */
+export interface CastStatus {
+  casting: boolean
+  device: string | null
+  source: string | null
+  error: string | null
+}
+
 /** Hardware summary for tuning analysis concurrency. */
 export interface SystemInfo {
   cpuCount: number

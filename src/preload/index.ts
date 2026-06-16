@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, IntegrationId, AppSettings, SmartRule, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent, BackupInfo, SystemInfo } from '../shared/types'
+import type { Track, IntegrationId, AppSettings, SmartRule, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent, BackupInfo, SystemInfo, CastDevice, CastStatus } from '../shared/types'
 
 const api = {
   library: {
@@ -254,6 +254,13 @@ const api = {
       ipcRenderer.invoke('settings:choosePath', title, isDirectory),
     openInFinder: (path: string): Promise<void> =>
       ipcRenderer.invoke('settings:openInFinder', path)
+  },
+  cast: {
+    discover: (): Promise<CastDevice[]> => ipcRenderer.invoke('cast:discover'),
+    start: (device: CastDevice, sourceFile: string): Promise<void> =>
+      ipcRenderer.invoke('cast:start', device, sourceFile),
+    stop: (): Promise<void> => ipcRenderer.invoke('cast:stop'),
+    status: (): Promise<CastStatus> => ipcRenderer.invoke('cast:status')
   },
   lineage: {
     status: (): Promise<LineageStatus> => ipcRenderer.invoke('lineage:status'),

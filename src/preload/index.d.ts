@@ -6,7 +6,7 @@ import type {
   StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef,
   StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, BeatgridMarker, CuePoint,
   AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent,
-  BackupInfo, SystemInfo,
+  BackupInfo, SystemInfo, CastDevice, CastStatus,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -123,6 +123,13 @@ declare global {
         systemInfo: () => Promise<SystemInfo>
         choosePath: (title: string, isDirectory: boolean) => Promise<string | null>
         openInFinder: (path: string) => Promise<void>
+      }
+      /** Google Cast — discover devices + stream the master mix to one. */
+      cast: {
+        discover: () => Promise<CastDevice[]>
+        start: (device: CastDevice, sourceFile: string) => Promise<void>
+        stop: () => Promise<void>
+        status: () => Promise<CastStatus>
       }
       /** Library backups — versioned snapshots + restore. */
       backup: {

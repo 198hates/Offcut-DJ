@@ -11,6 +11,7 @@ import { registerBackupHandlers } from './ipc/backup'
 import { registerAiHandlers } from './ipc/ai'
 import { killAllSeparations } from './stems'
 import { loadNativeEngine, registerEngineHandlers } from './engine'
+import { registerCastHandlers } from './cast'
 import { warmModel } from './integrations/beat-analysis'
 import { startWatcher } from './integrations/watch-folder'
 import { loadSettings, saveSettings } from './settings'
@@ -96,6 +97,7 @@ app.whenReady().then(() => {
   registerBackupHandlers()
   registerAiHandlers()
   registerEngineHandlers()
+  registerCastHandlers()
   loadNativeEngine()    // non-fatal: logs warning if .node not compiled yet
   setupAutoUpdater()
   createWindow()
