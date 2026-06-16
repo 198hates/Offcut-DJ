@@ -113,6 +113,32 @@ function buildPool(
   return out.sort((a, b) => b.score - a.score).slice(0, poolSize)
 }
 
+/**
+ * Cross-direction dedup. Each route dedups *within* its own pool, but the same
+ * track legitimately surfaces from several routes (e.g. on the same label AND
+ * played alongside the seed). Left alone it takes a slot in every branch's pool
+ * and the persisted candidate (keyed by track) keeps only one branch's reason.
+ *
+ * Keep each track in its single strongest branch only, freeing the weaker
+ * branches for genuinely new finds. Run as a deterministic post-pass over the
+ * finished pools — a shared `seen` during the concurrent routes would make the
+ * winner depend on network timing.
+ */
+export function dedupeAcrossDirections(directions: Direction[]): void {
+  const ordered = [...directions].sort(
+    (a, b) =>
+      (b.pool[0]?.score || 0) - (a.pool[0]?.score || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  )
+  const claimed = new Set<string>()
+  for (const d of ordered) {
+    d.pool = d.pool.filter((c) => {
+      if (claimed.has(c.key)) return false
+      claimed.add(c.key)
+      return true
+    })
+  }
+}
+
 // discogs, store required. opts: { poolSize=24, maxDirections=8, rootSeedKey? }.
 // clients: { lastfm?, identity?, tracklists? } — each optional; route skipped if absent.
 export async function discover(
@@ -385,9 +411,14 @@ export async function discover(
 
   await Promise.all([discogsWork, listenerWork, sampleWork, setWork])
 
-  // Surface the strongest branches first; cap the count.
-  directions.sort((a, b) => (b.pool[0]?.score || 0) - (a.pool[0]?.score || 0))
-  const top = directions.slice(0, maxDirections)
+  // Drop cross-branch duplicates (a track keeps a slot only in its strongest
+  // branch), then surface the strongest branches first and cap the count.
+  // Dedup can empty a branch, so filter empties before sorting.
+  dedupeAcrossDirections(directions)
+  const top = directions
+    .filter((d) => d.pool.length)
+    .sort((a, b) => (b.pool[0]?.score || 0) - (a.pool[0]?.score || 0))
+    .slice(0, maxDirections)
 
   for (const d of top) {
     for (const c of d.pool) {

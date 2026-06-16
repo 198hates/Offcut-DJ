@@ -15,11 +15,22 @@
 import { spawn } from 'node:child_process'
 import { RateLimiter } from './rate-limiter'
 import { httpJson } from './http'
+import { looksLikeMatch } from './match'
 import type { DeezerTrack, IdentityResult } from './types'
 
 const mbLimiter = new RateLimiter(1100) // MusicBrainz: <= 1/sec
 const acoustLimiter = new RateLimiter(350) // AcoustID: be gentle
 const MB = 'https://musicbrainz.org/ws/2'
+
+// AcoustID returns an acoustic-confidence score (0–1) per result. Below this we
+// treat the fingerprint as inconclusive rather than accept a wrong recording —
+// a bad identity silently poisons every downstream ISRC/preview lookup.
+const MIN_ACOUSTID_SCORE = 0.5
+
+/** Escape the characters that would break a quoted Lucene phrase. */
+function lucenePhrase(s: string): string {
+  return s.replace(/(["\\])/g, '\\$1')
+}
 
 interface Fingerprint {
   duration: number
@@ -89,7 +100,9 @@ export class Identity {
       results?: { score?: number; recordings?: { id: string }[] }[]
     }
     const best = (data.results || []).sort((a, b) => (b.score || 0) - (a.score || 0))[0]
-    return best?.recordings?.[0]?.id || null // a MusicBrainz recording MBID
+    // Reject a low-confidence acoustic match instead of guessing.
+    if (!best || (best.score || 0) < MIN_ACOUSTID_SCORE) return null
+    return best.recordings?.[0]?.id || null // a MusicBrainz recording MBID
   }
 
   // --- tag path ---------------------------------------------------------
@@ -101,11 +114,29 @@ export class Identity {
     artist: string
     title: string
   }): Promise<string | null> {
-    const q = encodeURIComponent(`artist:"${artist}" AND recording:"${title}"`)
-    const data = await this.mb<{ recordings?: { id: string }[] }>(
-      `/recording?query=${q}&fmt=json&limit=3`
+    // Quote the phrases (and escape any embedded quotes/backslashes — a title
+    // like `Back"slash` would otherwise break the query syntax).
+    const q = encodeURIComponent(
+      `artist:"${lucenePhrase(artist)}" AND recording:"${lucenePhrase(title)}"`
     )
-    return (data.recordings || [])[0]?.id || null
+    const data = await this.mb<{
+      recordings?: {
+        id: string
+        title?: string
+        'artist-credit'?: { name?: string; artist?: { name?: string } }[]
+      }[]
+    }>(`/recording?query=${q}&fmt=json&limit=5`)
+    // The Lucene relevance score is relative to the query, so the top hit is
+    // always "score 100" even for a poor match. Verify the candidate's actual
+    // artist/title against what we searched and take the first that lines up.
+    for (const rec of data.recordings || []) {
+      const credit = (rec['artist-credit'] || [])
+        .map((a) => a.name || a.artist?.name || '')
+        .join(' ')
+        .trim()
+      if (looksLikeMatch({ artist, title }, credit, rec.title)) return rec.id
+    }
+    return null
   }
 
   // --- shared -----------------------------------------------------------

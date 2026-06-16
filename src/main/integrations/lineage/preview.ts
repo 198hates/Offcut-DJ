@@ -6,26 +6,11 @@
 
 import { RateLimiter } from './rate-limiter'
 import { deezerByIsrc } from './identity'
+import { looksLikeMatch } from './match'
 import type { Identity } from './identity'
 import type { LibraryTrackRef, PreviewLinks, PreviewResult } from './types'
 
 const itunesLimiter = new RateLimiter(3500) // iTunes Search API: ~20/min
-
-function norm(s = ''): string {
-  return s
-    .toLowerCase()
-    .replace(/\(.*?\)|\[.*?\]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
-
-// Light sanity check that a catalogue hit is actually the track we asked for,
-// so we don't preview the wrong "Silhouettes".
-function looksLikeMatch(want: LibraryTrackRef, gotArtist = '', gotTitle = ''): boolean {
-  const a = norm(want.artist).split(' ')[0]
-  const t = norm(want.title).split(' ')[0]
-  return norm(gotArtist).includes(a) && norm(gotTitle).includes(t)
-}
 
 interface DeezerSearchItem {
   id?: number
