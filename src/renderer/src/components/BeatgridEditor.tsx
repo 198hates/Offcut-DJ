@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { generateBeatgrid } from '../lib/compatibility'
 import { formatTime } from '../lib/format'
-import type { Track, BeatgridMarker } from '@shared/types'
+import type { Track, BeatgridMarker, PhraseSegment } from '@shared/types'
 
 // Re-flag downbeats so bar 1 falls on beat `phase` (0–3) of every 4, letting the
 // user place the musical "1" without moving the beats themselves.
@@ -118,6 +118,11 @@ interface ViewState {
   pps: number          // pixels per second
 }
 
+const PHRASE_COLORS: Record<PhraseSegment['label'], string> = {
+  intro: '54,187,165', buildup: '230,170,60', drop: '224,94,59', chorus: '201,144,42',
+  verse: '110,128,144', breakdown: '123,97,168', bridge: '74,155,111', outro: '120,120,120'
+}
+
 function drawEditor(
   canvas: HTMLCanvasElement,
   peaks: EditorPeaks,
@@ -127,6 +132,7 @@ function drawEditor(
   anchorMs: number,
   hoveredMs: number | null,
   playheadMs: number,
+  phrases: PhraseSegment[] | null,
 ): void {
   const dpr = window.devicePixelRatio || 1
   const W = canvas.offsetWidth
@@ -244,6 +250,30 @@ function drawEditor(
     ctx.fillText(`${m}:${s.toString().padStart(2, '0')}`, x + 3, H - 5)
   }
 
+  // ── Phrase / structure strip (top) ─────────────────────────────────────────
+  if (phrases?.length) {
+    ctx.font = `600 9px 'JetBrains Mono', monospace`
+    ctx.textAlign = 'left'
+    for (const p of phrases) {
+      const x0 = ((p.startMs - view.startMs) / visMs) * W
+      const x1 = ((p.endMs - view.startMs) / visMs) * W
+      if (x1 < 0 || x0 > W) continue
+      const rgb = PHRASE_COLORS[p.label]
+      const cx0 = Math.max(0, x0)
+      const w = Math.min(W, x1) - cx0
+      ctx.fillStyle = `rgba(${rgb},0.55)`
+      ctx.fillRect(cx0, 0, w, 11)            // top label band
+      ctx.fillStyle = `rgba(${rgb},0.05)`
+      ctx.fillRect(cx0, 11, w, H - 29)       // faint region tint under the waveform
+      ctx.fillStyle = `rgba(${rgb},0.8)`
+      ctx.fillRect(Math.round(x0), 0, 1, H - 18) // boundary line
+      if (w > 26) {
+        ctx.fillStyle = 'rgba(20,16,12,0.9)'
+        ctx.fillText(p.label, cx0 + 3, 8)
+      }
+    }
+  }
+
   ctx.restore()
 }
 
@@ -354,7 +384,7 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
 
   const redraw = useCallback(() => {
     if (!canvasRef.current || !peaks) return
-    drawEditor(canvasRef.current, peaks, duration, markers, view, anchorMs, hovered, playheadMs)
+    drawEditor(canvasRef.current, peaks, duration, markers, view, anchorMs, hovered, playheadMs, track.phrases)
   }, [peaks, duration, markers, view, anchorMs, hovered, playheadMs])
 
   useEffect(() => {

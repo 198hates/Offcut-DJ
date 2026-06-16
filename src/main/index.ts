@@ -7,8 +7,10 @@ import { registerSettingsHandlers } from './ipc/settings'
 import { registerAudioHandlers } from './ipc/audio'
 import { registerLineageHandlers } from './ipc/lineage'
 import { registerStemHandlers } from './ipc/stems'
+import { registerPhraseHandlers } from './ipc/phrase'
 import { registerAiHandlers } from './ipc/ai'
 import { killAllSeparations } from './stems'
+import { killAllPhraseJobs } from './phrase'
 import { loadNativeEngine, registerEngineHandlers } from './engine'
 import { warmModel } from './integrations/beat-analysis'
 import { startWatcher } from './integrations/watch-folder'
@@ -92,6 +94,7 @@ app.whenReady().then(() => {
   registerAudioHandlers()
   registerLineageHandlers()
   registerStemHandlers()
+  registerPhraseHandlers()
   registerAiHandlers()
   registerEngineHandlers()
   loadNativeEngine()    // non-fatal: logs warning if .node not compiled yet
@@ -110,6 +113,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  // Demucs separations run for minutes — never leave them orphaned.
+  // Demucs / phrase jobs run for minutes — never leave them orphaned.
   killAllSeparations()
+  killAllPhraseJobs()
 })

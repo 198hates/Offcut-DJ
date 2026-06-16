@@ -24,7 +24,8 @@ const ANALYSE_TOOLS = [
   { id: 'cues', label: 'Auto-cue' },
   { id: 'genre', label: 'Genre' },
   { id: 'gain', label: 'Auto-gain' },
-  { id: 'similarity', label: 'Audio similarity' }
+  { id: 'similarity', label: 'Audio similarity' },
+  { id: 'phrase', label: 'Phrases' }
 ] as const
 type AnalyseTool = (typeof ANALYSE_TOOLS)[number]['id']
 
@@ -861,6 +862,87 @@ function SimilaritySection(): JSX.Element {
   )
 }
 
+// ── Phrase / structure ────────────────────────────────────────────────────────
+
+function PhraseSection(): JSX.Element {
+  const { tracks, updateTrack } = useLibraryStore()
+  const [running, setRunning]   = useState(false)
+  const [progress, setProgress] = useState({ current: 0, total: 0, label: '', pct: 0 })
+  const [avail, setAvail]       = useState<{ available: boolean; pythonPath: string } | null>(null)
+  const [error, setError]       = useState<string | null>(null)
+  const cancelRef = useRef(false)
+
+  useEffect(() => { window.api.phrase.status().then(setAvail).catch(() => setAvail({ available: false, pythonPath: 'python3' })) }, [])
+  useEffect(() => window.api.phrase.onProgress((p) => setProgress((s) => ({ ...s, pct: p.percent, label: p.label }))), [])
+
+  const unanalysed = tracks.filter((t) => t.phrases == null)
+  const analysedCount = tracks.length - unanalysed.length
+
+  const run = useCallback(async () => {
+    cancelRef.current = false
+    setRunning(true)
+    setError(null)
+    const toProcess = tracks.filter((t) => t.phrases == null)
+    for (let i = 0; i < toProcess.length; i++) {
+      if (cancelRef.current) break
+      const t = toProcess[i]
+      setProgress({ current: i + 1, total: toProcess.length, label: t.title || t.id, pct: 0 })
+      const res = await window.api.phrase.detect(t.id, t.filePath)
+      if (res.ok) await updateTrack({ id: t.id, phrases: res.phrases })
+      else { setError(res.error); break }
+    }
+    setRunning(false)
+    setProgress({ current: 0, total: 0, label: '', pct: 0 })
+  }, [tracks, updateTrack])
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">phrase / structure</h2>
+          <p className="font-mono text-[13px] text-muted mt-0.5">
+            detects intro / build / drop / breakdown / outro from audio (all-in-one) — shown on the beatgrid editor
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {running && (
+            <button onClick={() => { cancelRef.current = true }}
+              className="px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors">
+              cancel
+            </button>
+          )}
+          {!running && (
+            <button onClick={run} disabled={!avail?.available || unanalysed.length === 0} className={btnPrimary}>
+              {`analyse ${unanalysed.length} track${unanalysed.length !== 1 ? 's' : ''}`}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {avail && !avail.available && (
+        <div className="flex items-start gap-2 font-mono text-[12px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
+          <span className="shrink-0 text-accent">ℹ</span>
+          <span>
+            Phrase detection needs the <span className="text-accent">all-in-one</span> package. Install it in your
+            configured Python (<span className="text-accent">{avail.pythonPath}</span>): <span className="text-accent">pip install allin1</span>.
+            It runs offline and is slow on first use (downloads the model). Set the Python path in Settings → Stems.
+          </span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="analysed" value={analysedCount.toLocaleString()} sub={`of ${tracks.length.toLocaleString()} tracks`} accent={analysedCount > 0} />
+        <StatCard label="pending" value={unanalysed.length.toLocaleString()} />
+      </div>
+
+      {running && progress.total > 0 && (
+        <ProgressBar current={progress.current} total={progress.total} label={`structure · ${progress.pct}%`} title={progress.label} />
+      )}
+      {error && !running && <p className="font-mono text-[12px] text-red-400/90">{error}</p>}
+    </section>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function AnalysePage(): JSX.Element {
@@ -928,6 +1010,7 @@ export function AnalysePage(): JSX.Element {
         {tool === 'genre' && <GenreSection />}
         {tool === 'gain' && <GainSection />}
         {tool === 'similarity' && <SimilaritySection />}
+        {tool === 'phrase' && <PhraseSection />}
       </div>
     </div>
   )

@@ -150,6 +150,15 @@ declare global {
         clear: (trackId: string) => Promise<boolean>
         onProgress: (cb: (p: StemProgress) => void) => () => void
       }
+      /** Phrase / song-structure detection (all-in-one) bridge. */
+      phrase: {
+        status: () => Promise<{ available: boolean; pythonPath: string }>
+        detect: (
+          trackId: string,
+          filePath: string
+        ) => Promise<{ ok: true; phrases: PhraseSegment[] } | { ok: false; error: string }>
+        onProgress: (cb: (p: { trackId: string; percent: number; label: string }) => void) => () => void
+      }
       /** AI features bridge (Claude). Metadata only — never audio. */
       ai: {
         status: () => Promise<{ enabled: boolean; hasKey: boolean }>
