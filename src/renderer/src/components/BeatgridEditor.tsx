@@ -13,16 +13,12 @@
  */
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { generateBeatgrid } from '../lib/compatibility'
+import { buildGridMarkers } from '../lib/beatgridEdit'
 import { formatTime } from '../lib/format'
 import type { Track, BeatgridMarker, PhraseSegment } from '@shared/types'
 
-// Re-flag downbeats so bar 1 falls on beat `phase` (0–3) of every 4, letting the
-// user place the musical "1" without moving the beats themselves.
-function withDownbeatPhase(markers: BeatgridMarker[], phase: number): BeatgridMarker[] {
-  const p = ((phase % 4) + 4) % 4
-  return markers.map((m, i) => ({ ...m, isDownbeat: i % 4 === p }))
-}
+// Grid construction (single anchor + mid-track re-anchor) lives in
+// lib/beatgridEdit.ts so it can be unit-tested; imported below.
 
 // ── Audio helpers ─────────────────────────────────────────────────────────────
 //
@@ -133,6 +129,7 @@ function drawEditor(
   hoveredMs: number | null,
   playheadMs: number,
   phrases: PhraseSegment[] | null,
+  anchor2Ms: number | null,
 ): void {
   const dpr = window.devicePixelRatio || 1
   const W = canvas.offsetWidth
@@ -208,6 +205,21 @@ function drawEditor(
     ctx.lineTo(anchorX, 9)
     ctx.closePath()
     ctx.fill()
+  }
+
+  // ── Re-anchor handle (the re-drop / second downbeat) ──────────────────────
+  if (anchor2Ms != null) {
+    const a2x = Math.round(((anchor2Ms - view.startMs) / visMs) * W)
+    if (a2x >= -8 && a2x <= W + 8) {
+      ctx.fillStyle = 'rgba(216,106,200,0.95)' // magenta — distinct from the cyan "1"
+      ctx.fillRect(a2x - 1, 0, 2, H - 18)
+      ctx.beginPath()
+      ctx.moveTo(a2x - 6, 0)
+      ctx.lineTo(a2x + 6, 0)
+      ctx.lineTo(a2x, 9)
+      ctx.closePath()
+      ctx.fill()
+    }
   }
 
   // ── Playhead ──────────────────────────────────────────────────────────────
@@ -316,6 +328,11 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
   const [bpm,      setBpm]      = useState(initBpm)
   // anchorMs = absolute ms of the chosen downbeat (bar 1). Click a kick to set it.
   const [anchorMs, setAnchorMs] = useState(initAnchor)
+  // Optional second downbeat: re-phases the grid from here on (a remix re-drop
+  // that isn't a whole number of bars). null = single uniform grid.
+  const [anchor2Ms, setAnchor2Ms] = useState<number | null>(null)
+  // When armed, the next click sets the re-anchor instead of the "1".
+  const [reanchorArmed, setReanchorArmed] = useState(false)
   const [view,     setView]     = useState<ViewState>({ startMs: 0, pps: DEFAULT_PPS })
   const [hovered,  setHovered]  = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -338,13 +355,9 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
   // Derive the generator inputs (first-beat phase + which beat-of-4 is the
   // downbeat) from the single anchor, so a beat always lands ON the anchor and
   // that beat is flagged as the "1".
-  const beatMs = 60000 / bpm
-  const offsetMs = ((anchorMs % beatMs) + beatMs) % beatMs
-  const downbeatPhase = ((Math.round((anchorMs - offsetMs) / beatMs) % 4) + 4) % 4
-
   const markers = useMemo(
-    () => withDownbeatPhase(generateBeatgrid(bpm, offsetMs, duration * 1000), downbeatPhase),
-    [bpm, offsetMs, duration, downbeatPhase]
+    () => buildGridMarkers(bpm, duration * 1000, anchorMs, anchor2Ms),
+    [bpm, duration, anchorMs, anchor2Ms]
   )
   markersRef.current = markers
   useEffect(() => { metronomeRef.current = metronome }, [metronome])
@@ -384,8 +397,8 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
 
   const redraw = useCallback(() => {
     if (!canvasRef.current || !peaks) return
-    drawEditor(canvasRef.current, peaks, duration, markers, view, anchorMs, hovered, playheadMs, track.phrases)
-  }, [peaks, duration, markers, view, anchorMs, hovered, playheadMs])
+    drawEditor(canvasRef.current, peaks, duration, markers, view, anchorMs, hovered, playheadMs, track.phrases, anchor2Ms)
+  }, [peaks, duration, markers, view, anchorMs, hovered, playheadMs, anchor2Ms])
 
   useEffect(() => {
     cancelAnimationFrame(rafRef.current)
@@ -583,12 +596,18 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    setDragging(true)
     const ms = Math.max(0, snapToKick(msAtX(e.clientX)))
-    setAnchorMs(ms)             // place the "1"
+    if (reanchorArmed) {
+      // Set the re-anchor (the re-drop) — one click, no drag.
+      setAnchor2Ms(ms)
+      setReanchorArmed(false)
+    } else {
+      setDragging(true)
+      setAnchorMs(ms)           // place the "1"
+    }
     setPlayheadMs(ms)           // …and cue playback there
     if (playingRef.current) startPlayback(ms)
-  }, [msAtX, snapToKick, startPlayback])
+  }, [msAtX, snapToKick, startPlayback, reanchorArmed])
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const ms = msAtX(e.clientX)
@@ -624,7 +643,7 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
   // ── Save ──────────────────────────────────────────────────────────────────
 
   const handleSave = (): void =>
-    onSave(withDownbeatPhase(generateBeatgrid(bpm, offsetMs, duration * 1000), downbeatPhase), bpm)
+    onSave(buildGridMarkers(bpm, duration * 1000, anchorMs, anchor2Ms), bpm)
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -735,6 +754,28 @@ export function BeatgridEditor({ track, onSave, onClose }: Props): JSX.Element {
             className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">◀ beat</button>
           <button onClick={() => nudgeDownbeat(1)} title="move downbeat one beat later"
             className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">beat ▶</button>
+        </div>
+
+        {/* Re-anchor — fix a mid-track phase shift (remix re-drop after a middle-8) */}
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-[12px] uppercase tracking-[0.12em] mr-1" style={{ color: 'rgb(216,106,200)' }}>re-drop</span>
+          {anchor2Ms == null ? (
+            <button
+              onClick={() => setReanchorArmed((v) => !v)}
+              title="Click, then click the beat where the track drops back in out of time, to re-phase the grid from there"
+              className={`px-2 py-1 text-[12px] rounded border transition-colors ${reanchorArmed ? 'border-[rgb(216,106,200)] text-[rgb(216,106,200)] bg-[rgba(216,106,200,0.12)]' : 'text-muted hover:text-ink border-border/35'}`}
+            >
+              {reanchorArmed ? 'click the re-drop…' : '+ re-anchor'}
+            </button>
+          ) : (
+            <>
+              <span className="px-2 py-1 text-[12px] tabular-nums" style={{ color: 'rgb(216,106,200)' }}>
+                {(anchor2Ms / 1000).toFixed(3)}s
+              </span>
+              <button onClick={() => setAnchor2Ms(null)} title="remove the re-anchor"
+                className="px-1.5 py-1 text-[12px] text-muted hover:text-ink border border-border/35 rounded transition-colors">clear</button>
+            </>
+          )}
         </div>
 
         {/* Zoom */}
