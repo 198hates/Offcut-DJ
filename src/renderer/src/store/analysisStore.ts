@@ -15,6 +15,7 @@ import type { Track } from '@shared/types'
 import { useLibraryStore } from './libraryStore'
 import { useToastStore } from './toastStore'
 import { analyzeAudio, decodeTrackToBuffer, downbeatsForTrack, suggestedCuesToCuePoints } from '../lib/analyzer'
+import { fromBeatgridMarkers } from '../lib/quantiser'
 import { withPhraseCues } from '../lib/phraseDetect'
 import { mapPool, resolveConcurrency } from '../lib/concurrency'
 import { resolveCueTemplate, applyCueTemplate, templateThresholdScale } from '../lib/cueTemplates'
@@ -138,7 +139,15 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     set({ running: true })
     set({ progress: { label: 'beat grid', current: 0, total: ids.length, track: '' } })
     await mapPool(ids, await concurrency(), async (id) => {
-      await window.api.library.analyzeBeats(id)
+      const updated = await window.api.library.analyzeBeats(id)
+      // analyzeBeats persists only the legacy `beatgrid` markers + bpm. The grid
+      // that sync / automix / quantise actually read is the v2 `analysedBeatgrid`,
+      // so build it from the model's (phase-following) markers and persist it too
+      // — otherwise re-analysing a track leaves the old v2 grid untouched and
+      // playback never changes. Mirrors BeatThisQuantiser.analyse().
+      const sorted = [...updated.beatgrid].sort((a, b) => a.positionMs - b.positionMs)
+      const v2 = fromBeatgridMarkers(sorted, 'beat-this')
+      await window.api.library.updateTrack({ id, analysedBeatgrid: v2 })
     }, { onProgress: (done) => set({ progress: { label: 'beat grid', current: done, total: ids.length, track: '' } }) })
     await useLibraryStore.getState().loadLibrary()
     set({ progress: null, running: false })
