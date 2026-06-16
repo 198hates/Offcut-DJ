@@ -8,9 +8,13 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { useAnalysisStore } from '../../store/analysisStore'
 import { analyzeAudio, generateCuesForFile, downbeatsForTrack } from '../../lib/analyzer'
-import { computeLufsGainDb } from '../../lib/loudness'
+import { integratedLufs, lufsGainDb } from '../../lib/loudness'
 import { audioFeatureVector } from '../../lib/audioFeatures'
-import { detectPhrases } from '../../lib/phraseDetect'
+import { detectPhrasesFromMono } from '../../lib/phraseDetect'
+import { mapPool } from '../../lib/concurrency'
+
+/** Tracks decoded concurrently during batch analysis (ffmpeg runs in main). */
+const ANALYSIS_CONCURRENCY = 4
 import { generateBeatgrid } from '../../lib/compatibility'
 import { getQuantiser, initQuantiser } from '../../lib/quantiser'
 import { batchInferGenres } from '../../lib/genreInference'
@@ -696,23 +700,15 @@ function GainSection(): JSX.Element {
     cancelRef.current = false
     setRunning(true)
     setDone(false)
-    const ctx = new AudioContext()
     const toProcess = tracks.filter((t) => t.gainDb == null)
     setProgress({ current: 0, total: toProcess.length, label: '' })
-
-    for (let i = 0; i < toProcess.length; i++) {
-      if (cancelRef.current) break
-      const t = toProcess[i]
-      const label = t.title || t.filePath.split('/').pop() || t.id
-      setProgress({ current: i + 1, total: toProcess.length, label })
-      try {
-        const ab  = await window.api.audio.readFile(t.filePath)
-        const buf = await ctx.decodeAudioData(ab)
-        const gainDb = computeLufsGainDb(buf)
-        await updateTrack({ id: t.id, gainDb })
-      } catch { /* skip unreadable */ }
-    }
-    await ctx.close()
+    await mapPool(toProcess, ANALYSIS_CONCURRENCY, async (t) => {
+      // mono downmix decode → duplicate to both channels so the BS.1770
+      // channel-sum keeps the −14 LUFS target right.
+      const { samples, sampleRate } = await window.api.audio.decodePcm(t.filePath, 22050)
+      const gainDb = lufsGainDb(integratedLufs([samples, samples], sampleRate))
+      await updateTrack({ id: t.id, gainDb })
+    }, { onProgress: (done, total) => setProgress({ current: done, total, label: '' }), cancelled: () => cancelRef.current })
     setRunning(false)
     setDone(true)
     setProgress({ current: 0, total: 0, label: '' })
@@ -780,14 +776,6 @@ function GainSection(): JSX.Element {
 
 // ── Audio similarity ──────────────────────────────────────────────────────────
 
-function bufToMono(buf: AudioBuffer): Float32Array {
-  if (buf.numberOfChannels === 1) return buf.getChannelData(0)
-  const a = buf.getChannelData(0), b = buf.getChannelData(1)
-  const out = new Float32Array(buf.length)
-  for (let i = 0; i < out.length; i++) out[i] = 0.5 * (a[i] + b[i])
-  return out
-}
-
 function SimilaritySection(): JSX.Element {
   const { tracks, updateTrack } = useLibraryStore()
   const [running, setRunning]   = useState(false)
@@ -802,21 +790,13 @@ function SimilaritySection(): JSX.Element {
     cancelRef.current = false
     setRunning(true)
     setDone(false)
-    const ctx = new AudioContext()
     const toProcess = tracks.filter((t) => t.embedding == null)
     setProgress({ current: 0, total: toProcess.length, label: '' })
-    for (let i = 0; i < toProcess.length; i++) {
-      if (cancelRef.current) break
-      const t = toProcess[i]
-      setProgress({ current: i + 1, total: toProcess.length, label: t.title || t.filePath.split('/').pop() || t.id })
-      try {
-        const ab  = await window.api.audio.readFile(t.filePath)
-        const buf = await ctx.decodeAudioData(ab)
-        const embedding = audioFeatureVector(bufToMono(buf), buf.sampleRate)
-        await updateTrack({ id: t.id, embedding })
-      } catch { /* skip unreadable */ }
-    }
-    await ctx.close()
+    await mapPool(toProcess, ANALYSIS_CONCURRENCY, async (t) => {
+      const { samples, sampleRate } = await window.api.audio.decodePcm(t.filePath, 22050)
+      const embedding = audioFeatureVector(samples, sampleRate)
+      await updateTrack({ id: t.id, embedding })
+    }, { onProgress: (done, total) => setProgress({ current: done, total, label: '' }), cancelled: () => cancelRef.current })
     setRunning(false)
     setDone(true)
     setProgress({ current: 0, total: 0, label: '' })
@@ -879,22 +859,14 @@ function PhraseSection(): JSX.Element {
     cancelRef.current = false
     setRunning(true)
     setDone(false)
-    const ctx = new AudioContext()
     const toProcess = tracks.filter((t) => t.phrases == null)
     setProgress({ current: 0, total: toProcess.length, label: '' })
-    for (let i = 0; i < toProcess.length; i++) {
-      if (cancelRef.current) break
-      const t = toProcess[i]
-      setProgress({ current: i + 1, total: toProcess.length, label: t.title || t.id })
-      try {
-        const ab  = await window.api.audio.readFile(t.filePath)
-        const buf = await ctx.decodeAudioData(ab)
-        const firstBeatMs = t.beatgrid[0]?.positionMs ?? t.analysedBeatgrid?.firstBeatMs ?? 0
-        const phrases = detectPhrases(buf, t.bpm, firstBeatMs)
-        await updateTrack({ id: t.id, phrases })
-      } catch { /* skip unreadable */ }
-    }
-    await ctx.close()
+    await mapPool(toProcess, ANALYSIS_CONCURRENCY, async (t) => {
+      const { samples, sampleRate } = await window.api.audio.decodePcm(t.filePath, 22050)
+      const firstBeatMs = t.beatgrid[0]?.positionMs ?? t.analysedBeatgrid?.firstBeatMs ?? 0
+      const phrases = detectPhrasesFromMono(samples, sampleRate, t.bpm, firstBeatMs)
+      await updateTrack({ id: t.id, phrases })
+    }, { onProgress: (done, total) => setProgress({ current: done, total, label: '' }), cancelled: () => cancelRef.current })
     setRunning(false)
     setDone(true)
     setProgress({ current: 0, total: 0, label: '' })
