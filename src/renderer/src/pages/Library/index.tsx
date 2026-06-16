@@ -2,6 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { useDeckAStore, useDeckBStore } from '../../store/playerStore'
 import { useAutomixStore } from '../../store/automixStore'
+import type { TransitionStyleChoice } from '../../lib/automixPlan'
+
+/** Auto-mix transition styles offered in the Library toolbar. */
+const AUTOMIX_STYLES: { id: TransitionStyleChoice; label: string }[] = [
+  { id: 'auto',       label: 'Auto' },
+  { id: 'fade',       label: 'Fade' },
+  { id: 'eqBassSwap', label: 'Bass swap' },
+  { id: 'echoOut',    label: 'Echo out' },
+  { id: 'filter',     label: 'Filter' },
+  { id: 'cut',        label: 'Cut' }
+]
 import { FilterBar } from '../../components/FilterBar'
 import { BulkEditBar } from '../../components/BulkEditBar'
 import { SetTimeline } from '../../components/SetTimeline'
@@ -69,6 +80,7 @@ export function LibraryPage(): JSX.Element {
   const filteredTracks = useLibraryStore((s) => s.filteredTracks())
   const allTracks = useLibraryStore((s) => s.tracks)
   const automix = useAutomixStore()
+  const [amStyle, setAmStyle] = useState<TransitionStyleChoice>('auto')
 
   const openTrackMenu = useTrackMenuContext()
   const [showSuggest, setShowSuggest] = useState(false)
@@ -317,16 +329,26 @@ export function LibraryPage(): JSX.Element {
                 ■ auto{automix.phase === 'transition' ? ' ⇢' : ''}{automix.nextTitle ? ` · ${automix.nextTitle.slice(0, 14)}` : ''}
               </button>
             ) : (
-              <button
-                onClick={() => {
-                  const seed = (selectedTrackIds.size ? sorted.find((t) => selectedTrackIds.has(t.id)) : null) ?? sorted[0]
-                  if (seed) automix.start([seed], 0, 16, { autoSelect: true, pool: sorted })
-                }}
-                title="Auto-mix — start from the selected (or first) track and auto-pick compatible tracks from this view"
-                className="ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[12px] text-muted hover:text-accent hover:bg-accent/10 transition-colors"
-              >
-                ▶ auto-mix
-              </button>
+              <span className="ml-1 flex items-center gap-1">
+                <select
+                  value={amStyle}
+                  onChange={(e) => setAmStyle(e.target.value as TransitionStyleChoice)}
+                  title="Transition style"
+                  className="bg-paper border border-border/40 rounded font-mono text-[11px] text-ink px-1 py-0.5 outline-none focus:border-accent/60"
+                >
+                  {AUTOMIX_STYLES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+                <button
+                  onClick={() => {
+                    const seed = (selectedTrackIds.size ? sorted.find((t) => selectedTrackIds.has(t.id)) : null) ?? sorted[0]
+                    if (seed) automix.start([seed], 0, 16, { autoSelect: true, pool: sorted, style: amStyle })
+                  }}
+                  title="Auto-mix — start from the selected (or first) track and auto-pick compatible tracks from this view"
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[12px] text-muted hover:text-accent hover:bg-accent/10 transition-colors"
+                >
+                  ▶ auto-mix
+                </button>
+              </span>
             )
           )}
           {activePlaylist && sorted.length >= 1 && (

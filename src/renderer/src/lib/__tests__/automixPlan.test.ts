@@ -6,7 +6,9 @@ import {
   crossfadeAt,
   xfadeForDeck,
   entryCueMs,
-  pickNextTrack
+  pickNextTrack,
+  transitionFrameAt,
+  resolveTransitionStyle
 } from '../automixPlan'
 import type { CuePoint, Track } from '@shared/types'
 
@@ -115,5 +117,56 @@ describe('pickNextTrack', () => {
   it('returns null when the pool is exhausted', () => {
     expect(pickNextTrack(current, [current], new Set())).toBeNull()
     expect(pickNextTrack(current, [], new Set())).toBeNull()
+  })
+})
+
+describe('resolveTransitionStyle', () => {
+  it('passes an explicit style through unchanged', () => {
+    expect(resolveTransitionStyle('filter', 'auto')).toBe('filter')
+    expect(resolveTransitionStyle('cut', 'handback')).toBe('cut')
+  })
+  it('maps auto to a band-appropriate style', () => {
+    expect(resolveTransitionStyle('auto', 'auto')).toBe('eqBassSwap')
+    expect(resolveTransitionStyle('auto', 'assisted')).toBe('filter')
+    expect(resolveTransitionStyle('auto', 'handback')).toBe('echoOut')
+  })
+})
+
+describe('transitionFrameAt', () => {
+  it('fade crossfades end to end with no FX', () => {
+    expect(transitionFrameAt('fade', 0).xfadeOutToIn).toBe(0)
+    expect(transitionFrameAt('fade', 1).xfadeOutToIn).toBe(1)
+    const mid = transitionFrameAt('fade', 0.5)
+    expect(mid.outgoing.eqLow).toBe(0)
+    expect(mid.outgoing.filter).toBe(0)
+    expect(mid.outgoing.delayEnabled).toBe(false)
+  })
+
+  it('cut holds the outgoing track then switches at the end', () => {
+    expect(transitionFrameAt('cut', 0.5).xfadeOutToIn).toBe(0)
+    expect(transitionFrameAt('cut', 1).xfadeOutToIn).toBe(1)
+  })
+
+  it('eqBassSwap hands the bass from outgoing to incoming across the middle', () => {
+    const start = transitionFrameAt('eqBassSwap', 0)
+    const end = transitionFrameAt('eqBassSwap', 1)
+    expect(start.outgoing.eqLow).toBeCloseTo(0) // outgoing keeps its bass early
+    expect(start.incoming.eqLow).toBeCloseTo(-24) // incoming bass killed early
+    expect(end.outgoing.eqLow).toBeCloseTo(-24) // outgoing bass gone by the end
+    expect(end.incoming.eqLow).toBeCloseTo(0) // incoming has full bass
+  })
+
+  it('echoOut rings the outgoing track out and mixes in fast', () => {
+    const f = transitionFrameAt('echoOut', 0.4)
+    expect(f.outgoing.delayEnabled).toBe(true)
+    expect(f.outgoing.delayMix).toBeGreaterThan(0)
+    // Reaches the incoming track by the halfway point.
+    expect(transitionFrameAt('echoOut', 0.5).xfadeOutToIn).toBeCloseTo(1)
+  })
+
+  it('filter sweeps a high-pass up on the outgoing track', () => {
+    expect(transitionFrameAt('filter', 0).outgoing.filter).toBe(0)
+    expect(transitionFrameAt('filter', 1).outgoing.filter).toBe(1)
+    expect(transitionFrameAt('filter', 0.5).incoming.filter).toBe(0)
   })
 })

@@ -25,6 +25,17 @@ import { compatibilityScore, camelotDistance, harmonicScore } from '../../lib/co
 import { scoreLibrary, transitionContext } from '../../lib/roadNotTaken'
 import { scoreTransition, BAND_LABEL, BAND_GLYPH, BAND_COLOR, BAND_BG, BAND_BORDER } from '../../lib/automix'
 import { useAutomixStore } from '../../store/automixStore'
+import type { TransitionStyleChoice } from '../../lib/automixPlan'
+
+/** Auto-mix transition styles offered on the running order. */
+const AUTOMIX_STYLES: { id: TransitionStyleChoice; label: string }[] = [
+  { id: 'auto',       label: 'Auto' },
+  { id: 'fade',       label: 'Fade' },
+  { id: 'eqBassSwap', label: 'Bass swap' },
+  { id: 'echoOut',    label: 'Echo out' },
+  { id: 'filter',     label: 'Filter' },
+  { id: 'cut',        label: 'Cut' }
+]
 import type { RunningOrder, OrderEntry, TransitionKind, Track, AutoMixDecision } from '@shared/types'
 // crypto.randomUUID() is used throughout (browser built-in)
 
@@ -430,6 +441,7 @@ export function OrdersPage(): JSX.Element {
   const deckATrack = useDeckAStore((s) => s.currentTrack)
   const deckBTrack = useDeckBStore((s) => s.currentTrack)
   const automix = useAutomixStore()
+  const [amStyle, setAmStyle] = useState<TransitionStyleChoice>('auto')
   const { previewId, toggle: previewToggle } = usePreview()
 
   const [orders, setOrders] = useState<RunningOrder[]>([])
@@ -894,14 +906,24 @@ export function OrdersPage(): JSX.Element {
                 )
               }
               return (
-                <button
-                  onClick={() => automix.start(playable, 0)}
-                  disabled={playable.length < 2}
-                  title="Auto-mix this order (beat-synced blends through the engine)"
-                  className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted hover:text-accent border border-border/30 hover:border-accent/30 rounded px-1.5 py-0.5 transition-colors shrink-0 disabled:opacity-40"
-                >
-                  ▶ auto-mix
-                </button>
+                <span className="flex items-center gap-1 shrink-0">
+                  <select
+                    value={amStyle}
+                    onChange={(e) => setAmStyle(e.target.value as TransitionStyleChoice)}
+                    title="Transition style"
+                    className="bg-paper border border-border/40 rounded font-mono text-[10px] text-ink px-1 py-0.5 outline-none focus:border-accent/60"
+                  >
+                    {AUTOMIX_STYLES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                  </select>
+                  <button
+                    onClick={() => automix.start(playable, 0, 16, { style: amStyle })}
+                    disabled={playable.length < 2}
+                    title="Auto-mix this order (beat-synced blends through the engine)"
+                    className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted hover:text-accent border border-border/30 hover:border-accent/30 rounded px-1.5 py-0.5 transition-colors disabled:opacity-40"
+                  >
+                    ▶ auto-mix
+                  </button>
+                </span>
               )
             })()}
 

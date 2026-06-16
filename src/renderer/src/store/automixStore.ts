@@ -24,10 +24,13 @@ import { scoreTransition } from '../lib/automix'
 import {
   transitionBarsForBand,
   barsToMs,
-  crossfadeAt,
   xfadeForDeck,
   entryCueMs,
-  pickNextTrack
+  pickNextTrack,
+  transitionFrameAt,
+  resolveTransitionStyle,
+  type DeckFx,
+  type TransitionStyleChoice
 } from '../lib/automixPlan'
 
 type AutomixPhase = 'idle' | 'playing' | 'transition'
@@ -37,6 +40,8 @@ interface AutomixStartOptions {
   autoSelect?: boolean
   /** Candidate library for auto-select mode. */
   pool?: Track[]
+  /** Transition style ('auto' resolves per transition by confidence). */
+  style?: TransitionStyleChoice
 }
 
 interface AutomixState {
@@ -51,6 +56,8 @@ interface AutomixState {
   autoSelect: boolean
   /** Default blend length in bars for a clean ("auto") transition. */
   baseBars: number
+  /** Transition style (UI selection; 'auto' resolves per transition). */
+  style: TransitionStyleChoice
   nextTitle: string | null
   /**
    * Start auto-mixing. In ordered mode `queue` is the full running order and
@@ -70,10 +77,48 @@ let _transitioning = false
 let _pool: Track[] = []
 let _played: Set<string> = new Set()
 let _plannedNext: Track | null = null
+// Last FX sent per deck, so the per-frame apply only sends changed params.
+let _fxA: DeckFx | null = null
+let _fxB: DeckFx | null = null
 
 export const useAutomixStore = create<AutomixState>((set, get) => {
   const api = (d: 'A' | 'B'): DeckStore => (d === 'A' ? useDeckAStore : useDeckBStore).getState()
   const otherDeck = (d: 'A' | 'B'): 'A' | 'B' => (d === 'A' ? 'B' : 'A')
+
+  // Drive a deck's EQ/filter/delay directly on the engine (outside React, like
+  // the mixer), sending only the params that changed since the last frame.
+  const applyDeckFx = (deck: 'A' | 'B', f: DeckFx, delayMs: number): void => {
+    const e = api(deck)._engine
+    const prev = deck === 'A' ? _fxA : _fxB
+    if (!prev || prev.eqLow !== f.eqLow) e.setEqGain('low', f.eqLow)
+    if (!prev || prev.eqMid !== f.eqMid) e.setEqGain('mid', f.eqMid)
+    if (!prev || prev.eqHigh !== f.eqHigh) e.setEqGain('high', f.eqHigh)
+    if (!prev || prev.filter !== f.filter) e.setFilter(f.filter)
+    if (!prev || prev.delayMix !== f.delayMix || prev.delayFeedback !== f.delayFeedback || prev.delayEnabled !== f.delayEnabled) {
+      e.setDelay(delayMs, f.delayFeedback, f.delayMix, f.delayEnabled)
+    }
+    if (deck === 'A') _fxA = f
+    else _fxB = f
+  }
+
+  // Restore a deck to its own (user-set) EQ and clear all FX. Called when a
+  // transition ends or the session stops so nothing sticks on either deck.
+  const resetDeckFx = (deck: 'A' | 'B'): void => {
+    const s = (deck === 'A' ? useDeckAStore : useDeckBStore).getState()
+    s._engine.setEqGain('low', s.eqLow)
+    s._engine.setEqGain('mid', s.eqMid)
+    s._engine.setEqGain('high', s.eqHigh)
+    s._engine.setFilter(0)
+    s._engine.setDelay(500, 0.4, 0, false)
+    if (deck === 'A') _fxA = null
+    else _fxB = null
+  }
+
+  // Eighth-note echo time (ms) at the master's audible tempo, for delay sync.
+  const echoTimeMs = (bpm: number | null | undefined, rate: number): number => {
+    const b = (bpm && bpm > 0 ? bpm : 128) * (rate > 0 ? rate : 1)
+    return (60000 / b) * 0.5
+  }
 
   const cleanup = (): void => {
     if (_unsub) { _unsub(); _unsub = null }
@@ -130,21 +175,33 @@ export const useAutomixStore = create<AutomixState>((set, get) => {
     const nextTrack = _plannedNext
     if (!nextTrack) { _transitioning = false; set({ phase: 'playing' }); return }
     const durMs = barsToMs(bars, masterTrack.bpm)
+    // Resolve the concrete style from the (possibly 'auto') selection + the
+    // transition's confidence band.
+    const decision = scoreTransition(masterTrack, nextTrack)
+    const style = resolveTransitionStyle(get().style, decision.band)
     try {
-      // Prep the incoming deck at its entry cue, paused; then start + beat-sync
-      // it to the master so the two run phase-locked through the blend.
+      // Prep the incoming deck at its entry cue, paused; pre-apply the style's
+      // opening FX (e.g. bass killed) so it never flashes in full, then start +
+      // beat-sync it to the master so the two run phase-locked through the blend.
       await api(slave).loadTrack(nextTrack, { autoplay: false, startAtMs: entryCueMs(nextTrack) })
       if (!get().active) { _transitioning = false; return }
+      _fxA = null
+      _fxB = null
+      const delayMs = echoTimeMs(masterTrack.bpm, api(master).playbackRate)
+      applyDeckFx(slave, transitionFrameAt(style, 0).incoming, delayMs)
       api(slave).togglePlay() // paused → playing
       api(slave).toggleSync() // slave → master (beat-aligned)
 
-      const fromX = xfadeForDeck(master)
-      const toX = xfadeForDeck(slave)
       const t0 = performance.now()
       const step = (): void => {
         if (!get().active) return
         const elapsed = performance.now() - t0
-        useMixerStore.getState().setXfade(crossfadeAt(elapsed, durMs, fromX, toX))
+        const t = durMs > 0 ? Math.min(1, elapsed / durMs) : 1
+        const frame = transitionFrameAt(style, t)
+        // Map outgoing→incoming onto A/B and drive the crossfader + per-deck FX.
+        useMixerStore.getState().setXfade(master === 'A' ? frame.xfadeOutToIn : 1 - frame.xfadeOutToIn)
+        applyDeckFx(master, frame.outgoing, delayMs)
+        applyDeckFx(slave, frame.incoming, delayMs)
         if (elapsed >= durMs) { finishTransition(slave); return }
         _raf = requestAnimationFrame(step)
       }
@@ -162,6 +219,10 @@ export const useAutomixStore = create<AutomixState>((set, get) => {
     if (api(master).isPlaying) api(master).togglePlay()
     if (api(slave).synced) api(slave).toggleSync()
     useMixerStore.getState().setXfade(xfadeForDeck(slave))
+    // Clear any transition FX: the outgoing deck (stopped) and the new master,
+    // which must play clean (no leftover bass-kill / filter / echo).
+    resetDeckFx(master)
+    resetDeckFx(slave)
 
     const incoming = _plannedNext
     // Auto-select grows the history with the track we just brought in; ordered
@@ -187,6 +248,7 @@ export const useAutomixStore = create<AutomixState>((set, get) => {
     index: 0,
     autoSelect: false,
     baseBars: 16,
+    style: 'auto',
     nextTitle: null,
 
     start: async (queue, startIndex = 0, baseBars = 16, opts) => {
@@ -208,6 +270,7 @@ export const useAutomixStore = create<AutomixState>((set, get) => {
         index: autoSelect ? 0 : startIndex,
         autoSelect,
         baseBars,
+        style: opts?.style ?? 'auto',
         nextTitle: null
       })
       await api(master).loadTrack(seed, { autoplay: true })
@@ -219,6 +282,9 @@ export const useAutomixStore = create<AutomixState>((set, get) => {
       cleanup()
       _pool = []
       _played = new Set()
+      // Clear any half-applied transition FX from both decks.
+      resetDeckFx('A')
+      resetDeckFx('B')
       set({ active: false, phase: 'idle', nextTitle: null })
     }
   }
