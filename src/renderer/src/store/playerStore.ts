@@ -62,7 +62,10 @@ export interface DeckStore {
   // Analysis
   analysisState: AnalysisState
   analyzeCurrentTrack: () => Promise<void>
-  loadTrack: (track: Track) => Promise<void>
+  /** Load a track. `autoplay` (default true) starts playback; `startAtMs`
+   *  positions the playhead (used by automix to prep the incoming deck at its
+   *  mix-in cue without playing). */
+  loadTrack: (track: Track, opts?: { autoplay?: boolean; startAtMs?: number }) => Promise<void>
   togglePlay: () => void
   seek: (time: number) => void
   /** Begin/end a scrub gesture (needle search) — produces audio while paused. */
@@ -294,7 +297,9 @@ function createDeckStore(deckId: 'A' | 'B') {
       analysisState: 'idle' as AnalysisState,
       _engine: engine,
 
-      loadTrack: async (track) => {
+      loadTrack: async (track, opts) => {
+        const autoplay = opts?.autoplay ?? true
+        const startAtSec = opts?.startAtMs != null ? Math.max(0, opts.startAtMs / 1000) : 0
         const gen = ++_loadGen
         _fluxStartPos = 0; _fluxStartClock = Date.now()
         // A new track invalidates any active beat-sync (BPM/phase change).
@@ -331,8 +336,13 @@ function createDeckStore(deckId: 'A' | 'B') {
           engine.setEqGain('high', 0)
           engine.setEqGain('mid', 0)
           engine.setEqGain('low', 0)
-          engine.play()
-          set({ isPlaying: true })
+          if (startAtSec > 0) { engine.seek(startAtSec); set({ currentTime: startAtSec }) }
+          if (autoplay) {
+            engine.play(startAtSec > 0 ? startAtSec : undefined)
+            set({ isPlaying: true })
+          } else {
+            set({ isPlaying: false })
+          }
 
           // Auto-load cached stems for this track, if Demucs has already separated it.
           window.api.stems
