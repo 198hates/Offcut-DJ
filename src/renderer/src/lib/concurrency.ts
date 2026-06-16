@@ -34,3 +34,21 @@ export async function mapPool<T>(
 
   await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), total) }, worker))
 }
+
+/**
+ * Recommended analysis concurrency for a machine. Scales with cores but is
+ * pulled back on low-RAM systems (each in-flight track holds a decoded buffer).
+ */
+export function suggestConcurrency(cpuCount: number, totalMemGB: number): number {
+  let c = Math.max(2, Math.min(8, cpuCount - 2))
+  if (totalMemGB && totalMemGB <= 8) c = Math.min(c, 3)
+  if (totalMemGB && totalMemGB <= 4) c = 2
+  return c
+}
+
+/** Resolve a user setting (0/undefined = auto) to a concrete concurrency. */
+export function resolveConcurrency(setting: number | undefined): number {
+  if (setting && setting > 0) return Math.min(16, setting)
+  const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4
+  return suggestConcurrency(cores, 0)
+}

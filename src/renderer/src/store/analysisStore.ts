@@ -16,10 +16,13 @@ import { useLibraryStore } from './libraryStore'
 import { useToastStore } from './toastStore'
 import { analyzeAudio, decodeTrackToBuffer, downbeatsForTrack } from '../lib/analyzer'
 import { withPhraseCues } from '../lib/phraseDetect'
-import { mapPool } from '../lib/concurrency'
+import { mapPool, resolveConcurrency } from '../lib/concurrency'
 
-/** Tracks processed concurrently in batch analysis. */
-const CONCURRENCY = 4
+/** Resolve the user's analysis-concurrency setting (0 = auto) for this run. */
+async function concurrency(): Promise<number> {
+  try { return resolveConcurrency((await window.api.settings.get()).analysisConcurrency) }
+  catch { return resolveConcurrency(undefined) }
+}
 import { generateBeatgrid } from '../lib/compatibility'
 
 export interface AnalysisProgress {
@@ -60,7 +63,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     const updateTrack = useLibraryStore.getState().updateTrack
     const ctx = new AudioContext()
     set({ progress: { label: 'BPM + key', current: 0, total: ids.length, track: '' } })
-    await mapPool(ids, CONCURRENCY, async (id) => {
+    await mapPool(ids, await concurrency(), async (id) => {
       const t = findTrack(id)
       if (!t) return
       // Phase 1: embedded tags
@@ -105,7 +108,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     const updateTrack = useLibraryStore.getState().updateTrack
     const ctx = new AudioContext()
     set({ progress: { label: 'energy', current: 0, total: ids.length, track: '' } })
-    await mapPool(ids, CONCURRENCY, async (id) => {
+    await mapPool(ids, await concurrency(), async (id) => {
       const t = findTrack(id)
       if (!t) return
       const buf = await decodeTrackToBuffer(t.filePath, ctx)
@@ -126,7 +129,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     if (get().running || ids.length === 0) return
     set({ running: true })
     set({ progress: { label: 'beat grid', current: 0, total: ids.length, track: '' } })
-    await mapPool(ids, CONCURRENCY, async (id) => {
+    await mapPool(ids, await concurrency(), async (id) => {
       await window.api.library.analyzeBeats(id)
     }, { onProgress: (done) => set({ progress: { label: 'beat grid', current: done, total: ids.length, track: '' } }) })
     await useLibraryStore.getState().loadLibrary()
@@ -140,7 +143,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     const updateTrack = useLibraryStore.getState().updateTrack
     const actx = new AudioContext()
     set({ progress: { label: 'auto-cue', current: 0, total: ids.length, track: '' } })
-    await mapPool(ids, CONCURRENCY, async (id) => {
+    await mapPool(ids, await concurrency(), async (id) => {
       const t = findTrack(id)
       if (!t) return
       const buf = await decodeTrackToBuffer(t.filePath, actx)

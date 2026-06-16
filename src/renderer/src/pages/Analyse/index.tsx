@@ -11,10 +11,13 @@ import { analyzeAudio, generateCuesForFile, downbeatsForTrack } from '../../lib/
 import { integratedLufs, lufsGainDb } from '../../lib/loudness'
 import { audioFeatureVector } from '../../lib/audioFeatures'
 import { detectPhrasesFromMono } from '../../lib/phraseDetect'
-import { mapPool } from '../../lib/concurrency'
+import { mapPool, resolveConcurrency } from '../../lib/concurrency'
 
-/** Tracks decoded concurrently during batch analysis (ffmpeg runs in main). */
-const ANALYSIS_CONCURRENCY = 4
+/** Resolve the user's analysis-concurrency setting (0 = auto) for this run. */
+async function runConcurrency(): Promise<number> {
+  try { return resolveConcurrency((await window.api.settings.get()).analysisConcurrency) }
+  catch { return resolveConcurrency(undefined) }
+}
 import { generateBeatgrid } from '../../lib/compatibility'
 import { getQuantiser, initQuantiser } from '../../lib/quantiser'
 import { batchInferGenres } from '../../lib/genreInference'
@@ -702,7 +705,7 @@ function GainSection(): JSX.Element {
     setDone(false)
     const toProcess = tracks.filter((t) => t.gainDb == null)
     setProgress({ current: 0, total: toProcess.length, label: '' })
-    await mapPool(toProcess, ANALYSIS_CONCURRENCY, async (t) => {
+    await mapPool(toProcess, await runConcurrency(), async (t) => {
       // mono downmix decode → duplicate to both channels so the BS.1770
       // channel-sum keeps the −14 LUFS target right.
       const { samples, sampleRate } = await window.api.audio.decodePcm(t.filePath, 22050)
@@ -792,7 +795,7 @@ function SimilaritySection(): JSX.Element {
     setDone(false)
     const toProcess = tracks.filter((t) => t.embedding == null)
     setProgress({ current: 0, total: toProcess.length, label: '' })
-    await mapPool(toProcess, ANALYSIS_CONCURRENCY, async (t) => {
+    await mapPool(toProcess, await runConcurrency(), async (t) => {
       const { samples, sampleRate } = await window.api.audio.decodePcm(t.filePath, 22050)
       const embedding = audioFeatureVector(samples, sampleRate)
       await updateTrack({ id: t.id, embedding })
@@ -861,7 +864,7 @@ function PhraseSection(): JSX.Element {
     setDone(false)
     const toProcess = tracks.filter((t) => t.phrases == null)
     setProgress({ current: 0, total: toProcess.length, label: '' })
-    await mapPool(toProcess, ANALYSIS_CONCURRENCY, async (t) => {
+    await mapPool(toProcess, await runConcurrency(), async (t) => {
       const { samples, sampleRate } = await window.api.audio.decodePcm(t.filePath, 22050)
       const firstBeatMs = t.beatgrid[0]?.positionMs ?? t.analysedBeatgrid?.firstBeatMs ?? 0
       const phrases = detectPhrasesFromMono(samples, sampleRate, t.bpm, firstBeatMs)

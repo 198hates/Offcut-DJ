@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mapPool } from '../concurrency'
+import { mapPool, suggestConcurrency, resolveConcurrency } from '../concurrency'
 
 const tick = (ms = 1): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
@@ -41,5 +41,40 @@ describe('mapPool', () => {
     const ok: number[] = []
     await mapPool([1, 2, 3], 2, async (n) => { if (n === 2) throw new Error('boom'); ok.push(n) })
     expect(ok.sort()).toEqual([1, 3])
+  })
+})
+
+describe('suggestConcurrency', () => {
+  it('scales with cores but leaves headroom', () => {
+    expect(suggestConcurrency(4, 16)).toBe(2)   // 4 - 2
+    expect(suggestConcurrency(8, 16)).toBe(6)   // 8 - 2
+    expect(suggestConcurrency(10, 32)).toBe(8)  // capped at 8
+  })
+
+  it('never drops below 2', () => {
+    expect(suggestConcurrency(1, 16)).toBe(2)
+    expect(suggestConcurrency(2, 16)).toBe(2)
+  })
+
+  it('pulls back on low-RAM machines', () => {
+    expect(suggestConcurrency(8, 8)).toBe(3)  // 8GB cap
+    expect(suggestConcurrency(8, 4)).toBe(2)  // 4GB floor
+  })
+
+  it('ignores RAM when unknown (0)', () => {
+    expect(suggestConcurrency(8, 0)).toBe(6)
+  })
+})
+
+describe('resolveConcurrency', () => {
+  it('honours an explicit positive setting, capped at 16', () => {
+    expect(resolveConcurrency(5)).toBe(5)
+    expect(resolveConcurrency(99)).toBe(16)
+  })
+
+  it('falls back to auto for 0 / undefined', () => {
+    // navigator may be undefined in the node test env → cores default to 4 → suggest 2
+    expect(resolveConcurrency(0)).toBeGreaterThanOrEqual(2)
+    expect(resolveConcurrency(undefined)).toBeGreaterThanOrEqual(2)
   })
 })

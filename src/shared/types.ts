@@ -390,6 +390,16 @@ export interface AppSettings {
   aiEnabled?: boolean
   /** Anthropic API key for AI features. Only track metadata is ever sent — never audio. */
   anthropicApiKey?: string
+  /** How many tracks to analyse at once. 0 = auto (derived from CPU cores). */
+  analysisConcurrency?: number
+}
+
+/** Hardware summary for tuning analysis concurrency. */
+export interface SystemInfo {
+  cpuCount: number
+  totalMemGB: number
+  platform: string
+  arch: string
 }
 
 /**

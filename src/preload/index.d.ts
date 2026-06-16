@@ -6,7 +6,7 @@ import type {
   StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef,
   StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, BeatgridMarker, CuePoint,
   AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent,
-  BackupInfo,
+  BackupInfo, SystemInfo,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -120,6 +120,7 @@ declare global {
         get: () => Promise<AppSettings>
         save: (patch: Partial<AppSettings>) => Promise<AppSettings>
         getDetectedPaths: () => Promise<Record<string, string>>
+        systemInfo: () => Promise<SystemInfo>
         choosePath: (title: string, isDirectory: boolean) => Promise<string | null>
         openInFinder: (path: string) => Promise<void>
       }

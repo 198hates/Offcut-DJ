@@ -42,7 +42,8 @@ const DEFAULTS: AppSettings = {
   usbWaveformColors: { low: '#1e64ff', mid: '#ff8c1a', high: '#ffffff' },
   usbExportCues: false,
   aiEnabled: false,
-  anthropicApiKey: ''
+  anthropicApiKey: '',
+  analysisConcurrency: 0
 }
 
 // Simple JSON-file settings store (no external dependency)

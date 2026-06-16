@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, createContext, useContext } from 'react'
-import type { AppSettings } from '@shared/types'
+import type { AppSettings, SystemInfo } from '@shared/types'
+import { suggestConcurrency } from '../../lib/concurrency'
 import { useWaveformStore, type WaveformStyle, type KeyNotation } from '../../store/waveformStore'
 import { useThemeStore } from '../../store/themeStore'
 import { MidiSettings } from '../../components/MidiSettings'
@@ -49,6 +50,7 @@ export function SettingsPage(): JSX.Element {
   } = useWaveformStore()
   const { theme: currentTheme, toggleTheme } = useThemeStore()
   const [detected, setDetected] = useState<Record<string, string>>({})
+  const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -71,6 +73,7 @@ export function SettingsPage(): JSX.Element {
       setSettings(s)
       setDetected(d)
     })
+    window.api.settings.systemInfo().then(setSysInfo).catch(() => setSysInfo(null))
   }, [])
 
   const patch = (p: SettingsPatch): void => {
@@ -496,6 +499,60 @@ export function SettingsPage(): JSX.Element {
             </button>
           </div>
         </div>
+      </Section>
+
+      {/* Performance / Analysis */}
+      <Section title="Performance" icon="⚡" category="general">
+        {(() => {
+          const suggested = sysInfo ? suggestConcurrency(sysInfo.cpuCount, sysInfo.totalMemGB) : 4
+          const current = settings.analysisConcurrency ?? 0
+          const effective = current > 0 ? current : suggested
+          const set = (n: number): void => patch({ analysisConcurrency: Math.max(0, Math.min(16, n)) })
+          return (
+            <div className="space-y-4">
+              <div>
+                <p className="font-mono text-[13px] text-ink mb-0.5">analysis concurrency</p>
+                <p className="font-mono text-[12px] text-muted mb-2">
+                  how many tracks are analysed at once (BPM/key, energy, beat grid, audio similarity, loudness, phrases).
+                  higher is faster but uses more CPU and RAM — each in-flight track holds a decoded buffer.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => set(current === 0 ? Math.max(1, effective - 1) : current - 1)}
+                    className="font-mono text-[14px] w-8 h-8 rounded border border-border/30 text-muted hover:text-ink hover:border-border/60 transition-colors"
+                  >−</button>
+                  <div className="font-mono text-[13px] text-ink min-w-[140px] text-center px-3 py-1.5 rounded border border-border/30 bg-paper/40">
+                    {current === 0 ? `auto · ${suggested}` : current}
+                  </div>
+                  <button
+                    onClick={() => set(current === 0 ? effective + 1 : current + 1)}
+                    className="font-mono text-[14px] w-8 h-8 rounded border border-border/30 text-muted hover:text-ink hover:border-border/60 transition-colors"
+                  >+</button>
+                  <button
+                    onClick={() => set(0)}
+                    className={`font-mono text-[12px] uppercase tracking-[0.1em] px-3 py-1.5 rounded border transition-colors
+                      ${current === 0
+                        ? 'border-accent/50 bg-accent/10 text-accent'
+                        : 'border-border/30 text-muted hover:text-ink hover:border-border/60'}`}
+                  >auto</button>
+                </div>
+              </div>
+
+              <div className="rounded border border-border/30 bg-paper/40 p-3 space-y-1">
+                <p className="font-mono text-[12px] text-muted">
+                  detected:{' '}
+                  <span className="text-ink">
+                    {sysInfo ? `${sysInfo.cpuCount} cores · ${sysInfo.totalMemGB} GB · ${sysInfo.arch}` : 'reading…'}
+                  </span>
+                  {sysInfo && <> → suggested <span className="text-accent">{suggested}</span></>}
+                </p>
+                <p className="font-mono text-[11px] text-muted/60">
+                  rough guide — laptop / 8 GB: 2–3 · desktop / 16 GB: 4–6 · workstation / 32 GB+: 6–8
+                </p>
+              </div>
+            </div>
+          )
+        })()}
       </Section>
 
       {/* Pre-listen / Headphone cue */}

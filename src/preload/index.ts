@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, IntegrationId, AppSettings, SmartRule, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent, BackupInfo } from '../shared/types'
+import type { Track, IntegrationId, AppSettings, SmartRule, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent, BackupInfo, SystemInfo } from '../shared/types'
 
 const api = {
   library: {
@@ -247,6 +247,7 @@ const api = {
       ipcRenderer.invoke('settings:save', patch),
     getDetectedPaths: (): Promise<Record<string, string>> =>
       ipcRenderer.invoke('settings:getDetectedPaths'),
+    systemInfo: (): Promise<SystemInfo> => ipcRenderer.invoke('settings:systemInfo'),
     choosePath: (title: string, isDirectory: boolean): Promise<string | null> =>
       ipcRenderer.invoke('settings:choosePath', title, isDirectory),
     openInFinder: (path: string): Promise<void> =>
