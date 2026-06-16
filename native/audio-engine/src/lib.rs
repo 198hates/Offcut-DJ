@@ -12,6 +12,7 @@
 mod deck;
 mod decoder;
 mod eq;
+mod filter;
 mod output;
 mod recorder;
 mod ring;
@@ -276,6 +277,29 @@ impl DeckHandle {
             "high" => self.engine.eq_high_db100.store(bits, Ordering::Relaxed),
             _      => {}
         }
+    }
+
+    // ── Filter / Delay (per-deck FX) ────────────────────────────────────────
+
+    /// DJ filter knob: −1 = full low-pass sweep, 0 = off, +1 = full high-pass.
+    #[napi]
+    pub fn set_filter(&self, knob: f64) {
+        let knob = (knob as f32).clamp(-1.0, 1.0);
+        self.engine.filter_knob.store(f32::to_bits(knob), Ordering::Relaxed);
+    }
+
+    /// Beat-synced delay/echo send. `time_ms` is the delay time (JS computes it
+    /// from BPM/rate); `feedback` recirculates the tail; `mix` is the wet amount.
+    /// Disabling fades the wet to zero and the tail rings out, then clears.
+    #[napi]
+    pub fn set_delay(&self, time_ms: f64, feedback: f64, mix: f64, enabled: bool) {
+        self.engine.delay_time_ms.store(
+            f32::to_bits((time_ms as f32).clamp(1.0, 2000.0)), Ordering::Relaxed);
+        self.engine.delay_feedback.store(
+            f32::to_bits((feedback as f32).clamp(0.0, 0.95)), Ordering::Relaxed);
+        self.engine.delay_mix.store(
+            f32::to_bits((mix as f32).clamp(0.0, 1.0)), Ordering::Relaxed);
+        self.engine.delay_enabled.store(enabled, Ordering::Relaxed);
     }
 
     // ── Stems ─────────────────────────────────────────────────────────────────

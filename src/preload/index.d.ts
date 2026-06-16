@@ -207,6 +207,8 @@ declare global {
         setRate:      (deckId: string, r: number) => void
         setKeylock:   (deckId: string, v: boolean) => void
         setEqGain:    (deckId: string, band: string, db: number) => void
+        setFilter:    (deckId: string, knob: number) => void
+        setDelay:     (deckId: string, timeMs: number, feedback: number, mix: number, enabled: boolean) => void
         setStemGain:  (deckId: string, kind: string, db: number) => void
         setStemMuted: (deckId: string, kind: string, muted: boolean) => void
         setStemSoloed:(deckId: string, kind: string, soloed: boolean) => void

@@ -329,6 +329,12 @@ class AudioEngine implements AudioEngineContract {
   get eqMidGain():  number { return this._eqMid  }
   get eqLowGain():  number { return this._eqLow  }
 
+  // ── FX (filter / delay) ──────────────────────────────────────────────────
+  // Native-engine-only: the Web Audio fallback has no FX graph, so these no-op.
+  // Automix transitions that use FX degrade to a plain crossfade on this engine.
+  setFilter(_knob: number): void {}
+  setDelay(_timeMs: number, _feedback: number, _mix: number, _enabled: boolean): void {}
+
   // ── VU level (post-fader RMS, 0–1 linear) ────────────────────────────────
 
   getLevel(): number {

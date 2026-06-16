@@ -94,6 +94,14 @@ export interface AudioEngineContract {
   readonly eqMidGain:  number
   readonly eqLowGain:  number
 
+  /** DJ filter knob: −1 = full low-pass sweep, 0 = off (transparent),
+   *  +1 = full high-pass sweep. */
+  setFilter(knob: number): void
+  /** Beat-synced delay/echo send. `timeMs` is the delay time (caller derives it
+   *  from BPM/rate), `feedback` (0–0.95) the tail decay, `mix` (0–1) the wet
+   *  amount; `enabled=false` fades the wet out and rings the tail to silence. */
+  setDelay(timeMs: number, feedback: number, mix: number, enabled: boolean): void
+
   // ── Pitch / Tempo ────────────────────────────────────────────────────────
 
   /**

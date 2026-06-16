@@ -99,6 +99,15 @@ pub struct DeckEngine {
     pub eq_mid_db100:  AtomicU32,
     pub eq_low_db100:  AtomicU32,
 
+    // ── Filter (single DJ knob: −1 = LP sweep, 0 = off, +1 = HP sweep) ────
+    pub filter_knob: AtomicU32,    // f32 bits, −1.0..=1.0
+
+    // ── Delay / echo (post-fader send; rings out as the fader drops) ─────
+    pub delay_enabled:  AtomicBool,
+    pub delay_time_ms:  AtomicU32, // f32 bits — JS sets beat-synced ms
+    pub delay_feedback: AtomicU32, // f32 bits, 0.0..=0.95
+    pub delay_mix:      AtomicU32, // f32 bits, 0.0..=1.0 (wet send amount)
+
     // ── Stems (gain in dB, muted flag, per bus) ───────────────────────────
     /// Gain for each stem bus, stored as f32 bits.
     pub stem_gain:   [AtomicU32;  STEM_COUNT],
@@ -160,6 +169,11 @@ impl DeckEngine {
             eq_high_db100: AtomicU32::new(f32::to_bits(0.0)),
             eq_mid_db100:  AtomicU32::new(f32::to_bits(0.0)),
             eq_low_db100:  AtomicU32::new(f32::to_bits(0.0)),
+            filter_knob:   AtomicU32::new(f32::to_bits(0.0)),
+            delay_enabled:  AtomicBool::new(false),
+            delay_time_ms:  AtomicU32::new(f32::to_bits(500.0)),
+            delay_feedback: AtomicU32::new(f32::to_bits(0.4)),
+            delay_mix:      AtomicU32::new(f32::to_bits(0.0)),
             stem_gain,
             stem_muted,
             stem_soloed,

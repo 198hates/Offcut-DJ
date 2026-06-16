@@ -41,6 +41,7 @@ use cpal::{
 
 use crate::deck::{AudioEvent, DeckEngine, STEM_COUNT};
 use crate::eq::{build_bands, Biquad, BiquadState};
+use crate::filter::{knob_to_filter, FilterMode, SvfCoeffs, SvfState};
 use crate::recorder::Recorder;
 use crate::signalsmith::SignalsmithStretcher;
 
@@ -70,6 +71,15 @@ const AMP_TAU_SECS: f32 = 0.006;
 
 /// One-pole time constant for EQ gain glides, seconds.
 const EQ_TAU_SECS: f32 = 0.03;
+
+/// One-pole time constant for the filter knob glide (smooth sweeps), seconds.
+const FILTER_TAU_SECS: f32 = 0.02;
+
+/// One-pole time constant for the delay wet-mix glide, seconds.
+const DELAY_TAU_SECS: f32 = 0.05;
+
+/// Maximum delay time the ring buffer holds, seconds (covers a bar at low BPM).
+const DELAY_MAX_SECS: f32 = 2.0;
 
 /// At or below this dB an EQ band is treated as a kill (full cut).
 const EQ_KILL_DB: f32 = -23.9;
@@ -155,6 +165,20 @@ pub struct DeckRenderer {
     /// Smoothed EQ gains (dB, [low, mid, high]) gliding toward their targets.
     eq_current: [f32; 3],
 
+    /// DJ filter: per-channel SVF state + coeffs rebuilt per block from the
+    /// smoothed knob. `filter_knob_cur` glides so sweeps are zipper-free.
+    filter_states: Vec<SvfState>,
+    filter_coeffs: SvfCoeffs,
+    filter_mode: FilterMode,
+    filter_knob_cur: f32,
+
+    /// Delay/echo: one ring per channel (shared write head), smoothed wet mix.
+    delay_lines: Vec<Vec<f32>>,
+    delay_write: usize,
+    delay_mix_cur: f32,
+    /// True while the ring holds live audio — lets us clear once on idle.
+    delay_running: bool,
+
     stretcher: SignalsmithStretcher,
     prev_use_stretch: bool,
 
@@ -184,6 +208,14 @@ impl DeckRenderer {
             eq_states: vec![[BiquadState::default(); 3]; out_chs],
             eq_coeffs: [Biquad::unity(); 3],
             eq_current: [0.0; 3],
+            filter_states: vec![SvfState::default(); out_chs],
+            filter_coeffs: SvfCoeffs::bypass(),
+            filter_mode: FilterMode::Off,
+            filter_knob_cur: 0.0,
+            delay_lines: vec![vec![0.0; (DELAY_MAX_SECS * out_rate as f32) as usize + 1]; out_chs],
+            delay_write: 0,
+            delay_mix_cur: 0.0,
+            delay_running: false,
             stretcher: SignalsmithStretcher::new(out_chs.min(2), out_rate),
             prev_use_stretch: false,
             scrub_last: 0.0,
@@ -354,6 +386,19 @@ impl DeckRenderer {
             );
         }
 
+        // ── Filter: glide the knob, rebuild the SVF per block ────────────────
+        let filter_target = f32::from_bits(engine.filter_knob.load(Ordering::Relaxed));
+        let k_filter = 1.0 - (-(frame_count as f32) / (FILTER_TAU_SECS * self.out_rate_f32)).exp();
+        self.filter_knob_cur += (filter_target - self.filter_knob_cur) * k_filter;
+        if (filter_target - self.filter_knob_cur).abs() <= 1e-4 {
+            self.filter_knob_cur = filter_target;
+        }
+        let (fmode, fcut) = knob_to_filter(self.filter_knob_cur, self.out_rate_f32);
+        self.filter_mode = fmode;
+        if fmode != FilterMode::Off {
+            self.filter_coeffs = SvfCoeffs::new(fcut, self.out_rate_f32);
+        }
+
         // ── Source reader: 4-point Hermite, stem-summed or single mix ───────
         let read_frame = |sp: f64, out_ch: usize| -> f32 {
             if sp < 0.0 { return 0.0; }
@@ -413,6 +458,10 @@ impl DeckRenderer {
                         sample = self.eq_coeffs[0].process(&mut state[0], sample);
                         sample = self.eq_coeffs[1].process(&mut state[1], sample);
                         sample = self.eq_coeffs[2].process(&mut state[2], sample);
+                        if self.filter_mode != FilterMode::Off {
+                            sample = self.filter_coeffs.process(
+                                &mut self.filter_states[out_ch], self.filter_mode, sample);
+                        }
                         out[i * out_chs + out_ch] = sample * self.amp;
                     }
                 }
@@ -494,6 +543,10 @@ impl DeckRenderer {
                         sample = self.eq_coeffs[0].process(&mut state[0], sample);
                         sample = self.eq_coeffs[1].process(&mut state[1], sample);
                         sample = self.eq_coeffs[2].process(&mut state[2], sample);
+                        if self.filter_mode != FilterMode::Off {
+                            sample = self.filter_coeffs.process(
+                                &mut self.filter_states[out_ch], self.filter_mode, sample);
+                        }
                         out[i * out_chs + out_ch] = sample * self.amp;
                     }
                 }
@@ -542,6 +595,10 @@ impl DeckRenderer {
                         sample = self.eq_coeffs[0].process(&mut state[0], sample);
                         sample = self.eq_coeffs[1].process(&mut state[1], sample);
                         sample = self.eq_coeffs[2].process(&mut state[2], sample);
+                        if self.filter_mode != FilterMode::Off {
+                            sample = self.filter_coeffs.process(
+                                &mut self.filter_states[out_ch], self.filter_mode, sample);
+                        }
                         out[i * out_chs + out_ch] = sample * self.amp;
                     }
 
@@ -555,6 +612,9 @@ impl DeckRenderer {
             self.prev_use_stretch = use_stretch;
         }
         self.prev_scrubbing = scrubbing;
+
+        // ── Delay / echo (post-fader send over the final block) ──────────────
+        self.apply_delay(engine, out, frame_count);
 
         // Commit the cursor and mark ended.
         engine.set_cursor(cursor);
@@ -578,6 +638,59 @@ impl DeckRenderer {
             let pos_secs = (cursor / src_rate - lat_now).max(0.0);
             let _ = engine.event_tx.try_send(AudioEvent::TimeUpdate(pos_secs));
         }
+    }
+
+    /// Beat-synced feedback delay applied to the final, post-fader block. Adds a
+    /// wet echo on top of the dry signal (a "send"), so at mix = 0 it is exactly
+    /// transparent. Because it runs after the channel gain, the feedback tail
+    /// keeps ringing as the fader is pulled down — the classic echo-out. The wet
+    /// mix glides to avoid clicks; when disabled it fades out then clears the
+    /// ring so the next engage starts clean.
+    fn apply_delay(&mut self, engine: &DeckEngine, out: &mut [f32], frame_count: usize) {
+        let on = engine.delay_enabled.load(Ordering::Relaxed);
+        let target_mix = if on {
+            f32::from_bits(engine.delay_mix.load(Ordering::Relaxed))
+        } else {
+            0.0
+        };
+        let k = 1.0 - (-(frame_count as f32) / (DELAY_TAU_SECS * self.out_rate_f32)).exp();
+        self.delay_mix_cur += (target_mix - self.delay_mix_cur) * k;
+
+        if !on && self.delay_mix_cur < 1e-4 {
+            // Fully idle — clear the ring once so a later engage has no stale echo.
+            if self.delay_running {
+                for b in self.delay_lines.iter_mut() {
+                    for s in b.iter_mut() { *s = 0.0; }
+                }
+                self.delay_write = 0;
+                self.delay_running = false;
+            }
+            return;
+        }
+        self.delay_running = true;
+
+        let feedback = f32::from_bits(engine.delay_feedback.load(Ordering::Relaxed)).clamp(0.0, 0.95);
+        let time_ms = f32::from_bits(engine.delay_time_ms.load(Ordering::Relaxed))
+            .clamp(1.0, DELAY_MAX_SECS * 1000.0);
+        let buflen = self.delay_lines[0].len();
+        let delay_samples = ((time_ms / 1000.0 * self.out_rate_f32) as usize).clamp(1, buflen - 1);
+        let mix = self.delay_mix_cur;
+        let out_chs = self.out_chs;
+
+        let mut w = self.delay_write;
+        for f in 0..frame_count {
+            let r = (w + buflen - delay_samples) % buflen;
+            for ch in 0..out_chs {
+                let dry = out[f * out_chs + ch];
+                let echoed = self.delay_lines[ch][r];
+                // ANTI_DENORMAL keeps the feedback loop out of denormal range when
+                // the source goes silent (avoids CPU spikes); ~−360 dBFS, inaudible.
+                self.delay_lines[ch][w] = dry + echoed * feedback + ANTI_DENORMAL;
+                out[f * out_chs + ch] = dry + echoed * mix;
+            }
+            w = if w + 1 >= buflen { 0 } else { w + 1 };
+        }
+        self.delay_write = w;
     }
 }
 

@@ -39,6 +39,8 @@ interface DeckHandle {
   setRate(r: number): void
   setKeylock(enabled: boolean): void
   setEqGain(band: string, db: number): void
+  setFilter(knob: number): void
+  setDelay(timeMs: number, feedback: number, mix: number, enabled: boolean): void
   setStemGain(kind: string, db: number): void
   setStemMuted(kind: string, muted: boolean): void
   setStemSoloed(kind: string, soloed: boolean): void
@@ -179,6 +181,8 @@ export function registerEngineHandlers(): void {
   ipcMain.on('engine:setRate',    (_e, deckId: string, r: number)    => { try { getDeck(deckId).setRate(r)     } catch {} })
   ipcMain.on('engine:setKeylock', (_e, deckId: string, v: boolean)   => { try { getDeck(deckId).setKeylock(v)  } catch {} })
   ipcMain.on('engine:setEqGain',  (_e, deckId: string, band: string, db: number) => { try { getDeck(deckId).setEqGain(band, db)  } catch {} })
+  ipcMain.on('engine:setFilter',  (_e, deckId: string, knob: number) => { try { getDeck(deckId).setFilter(knob) } catch {} })
+  ipcMain.on('engine:setDelay',   (_e, deckId: string, timeMs: number, feedback: number, mix: number, enabled: boolean) => { try { getDeck(deckId).setDelay(timeMs, feedback, mix, enabled) } catch {} })
   ipcMain.on('engine:setStemGain',   (_e, deckId: string, kind: string, db: number)      => { try { getDeck(deckId).setStemGain(kind, db)   } catch {} })
   ipcMain.on('engine:setStemMuted',  (_e, deckId: string, kind: string, muted: boolean)  => { try { getDeck(deckId).setStemMuted(kind, muted) } catch {} })
   ipcMain.on('engine:setStemSoloed', (_e, deckId: string, kind: string, soloed: boolean) => { try { getDeck(deckId).setStemSoloed(kind, soloed) } catch {} })

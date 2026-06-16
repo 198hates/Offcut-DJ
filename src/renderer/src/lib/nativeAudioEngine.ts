@@ -157,6 +157,14 @@ export class NativeAudioEngine implements AudioEngineContract {
   get eqMidGain():  number { return this._eqMid  }
   get eqLowGain():  number { return this._eqLow  }
 
+  setFilter(knob: number): void {
+    window.api.engine.setFilter(this.deckId, knob)
+  }
+
+  setDelay(timeMs: number, feedback: number, mix: number, enabled: boolean): void {
+    window.api.engine.setDelay(this.deckId, timeMs, feedback, mix, enabled)
+  }
+
   // ── Pitch ────────────────────────────────────────────────────────────────
 
   set playbackRate(rate: number) {
