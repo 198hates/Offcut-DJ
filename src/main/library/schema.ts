@@ -155,7 +155,54 @@ export function applySchema(db: import('better-sqlite3').Database): void {
     // Date last modified (tag write-back timestamp)
     "ALTER TABLE tracks ADD COLUMN updated_at TEXT",
     // Session history playlist type
-    "ALTER TABLE playlists ADD COLUMN is_history INTEGER NOT NULL DEFAULT 0"
+    "ALTER TABLE playlists ADD COLUMN is_history INTEGER NOT NULL DEFAULT 0",
+
+    // ── Library sync (mobile companion / multi-device) ──────────────────────
+    // Content hash gives a file a stable identity across devices, so the same
+    // track reconciles even though primary keys are library-local.
+    "ALTER TABLE tracks ADD COLUMN content_hash TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_content_hash ON tracks(content_hash)",
+    // Append-only change journal. The autoincrement seq is the sync cursor; a
+    // 'delete' row is the tombstone for a hard-deleted entity.
+    `CREATE TABLE IF NOT EXISTS sync_log (
+       seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+       entity     TEXT NOT NULL,
+       entity_id  TEXT NOT NULL,
+       op         TEXT NOT NULL,
+       changed_at TEXT NOT NULL DEFAULT (datetime('now'))
+     )`,
+    // Triggers journal every write regardless of which code path made it.
+    `CREATE TRIGGER IF NOT EXISTS sync_tracks_ai AFTER INSERT ON tracks BEGIN
+       INSERT INTO sync_log(entity, entity_id, op) VALUES ('track', NEW.id, 'upsert');
+     END`,
+    `CREATE TRIGGER IF NOT EXISTS sync_tracks_au AFTER UPDATE ON tracks BEGIN
+       INSERT INTO sync_log(entity, entity_id, op) VALUES ('track', NEW.id, 'upsert');
+     END`,
+    `CREATE TRIGGER IF NOT EXISTS sync_tracks_ad AFTER DELETE ON tracks BEGIN
+       INSERT INTO sync_log(entity, entity_id, op) VALUES ('track', OLD.id, 'delete');
+     END`,
+    `CREATE TRIGGER IF NOT EXISTS sync_playlists_ai AFTER INSERT ON playlists BEGIN
+       INSERT INTO sync_log(entity, entity_id, op) VALUES ('playlist', NEW.id, 'upsert');
+     END`,
+    `CREATE TRIGGER IF NOT EXISTS sync_playlists_au AFTER UPDATE ON playlists BEGIN
+       INSERT INTO sync_log(entity, entity_id, op) VALUES ('playlist', NEW.id, 'upsert');
+     END`,
+    `CREATE TRIGGER IF NOT EXISTS sync_playlists_ad AFTER DELETE ON playlists BEGIN
+       INSERT INTO sync_log(entity, entity_id, op) VALUES ('playlist', OLD.id, 'delete');
+     END`,
+    // Membership changes mark the owning playlist dirty. The WHEN guard skips
+    // cascade-deletes of an already-removed playlist, so a deleted playlist is
+    // never resurrected by a later 'upsert' from its vanishing rows.
+    `CREATE TRIGGER IF NOT EXISTS sync_pltrk_ai AFTER INSERT ON playlist_tracks BEGIN
+       INSERT INTO sync_log(entity, entity_id, op) VALUES ('playlist', NEW.playlist_id, 'upsert');
+     END`,
+    `CREATE TRIGGER IF NOT EXISTS sync_pltrk_au AFTER UPDATE ON playlist_tracks BEGIN
+       INSERT INTO sync_log(entity, entity_id, op) VALUES ('playlist', NEW.playlist_id, 'upsert');
+     END`,
+    `CREATE TRIGGER IF NOT EXISTS sync_pltrk_ad AFTER DELETE ON playlist_tracks
+       WHEN EXISTS (SELECT 1 FROM playlists WHERE id = OLD.playlist_id) BEGIN
+       INSERT INTO sync_log(entity, entity_id, op) VALUES ('playlist', OLD.playlist_id, 'upsert');
+     END`
   ]) {
     try {
       db.exec(stmt)

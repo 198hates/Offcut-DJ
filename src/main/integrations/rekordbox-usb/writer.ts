@@ -506,6 +506,10 @@ export interface SyncProgress {
   trackIndex: number
   trackTotal: number
   action: 'link' | 'copy'
+  /** Total bytes of unique audio to copy across the whole export. */
+  totalBytes: number
+  /** Bytes copied so far (excludes the track named in this event). */
+  copiedBytes: number
 }
 
 export interface SyncContext {
@@ -569,7 +573,11 @@ export function syncPlaylistToUsb(
       track: `${t.artist} – ${t.title}`,
       trackIndex: ti,
       trackTotal: opts.tracks.length,
-      action: existing != null ? 'link' : 'copy'
+      action: existing != null ? 'link' : 'copy',
+      // This append-based path doesn't pre-size the transfer; the UI falls back
+      // to track-count progress when totalBytes is 0.
+      totalBytes: 0,
+      copiedBytes: 0
     })
     if (existing != null) {
       resolvedIds.push(existing)
@@ -787,6 +795,27 @@ export async function exportPlaylistsToUsb(
     } catch { /* unreadable existing db — fall back to a fresh build */ }
   }
 
+  // Pre-flight: total bytes of unique audio we'll copy, so the UI can show an
+  // ETA from the first progress event. copiedBytes tracks completed work for
+  // live throughput reporting.
+  const totalBytes = (() => {
+    const seen = new Set<string>()
+    let sum = 0
+    for (const pl of playlists) {
+      for (const t of pl.tracks) {
+        if (seen.has(t.audioFilePath)) continue
+        seen.add(t.audioFilePath)
+        try {
+          sum += statSync(t.audioFilePath).size
+        } catch {
+          /* missing files are skipped during copy */
+        }
+      }
+    }
+    return sum
+  })()
+  let copiedBytes = 0
+
   const resolveTrack = async (t: SyncTrackInput): Promise<number | null> => {
     const existing = trackIdByPath.get(t.audioFilePath)
     if (existing != null) return existing
@@ -805,6 +834,7 @@ export async function exportPlaylistsToUsb(
     const safeFileName = `${hex}_${basename(t.audioFilePath)}`
     const deviceFilePath = `/Contents/Offcut/${safeFileName}`
     copyFileSync(t.audioFilePath, join(contentsDir, safeFileName))
+    copiedBytes += fileSize
 
     // Spectral analysis for true-colour waveforms (bass/mid/treble). Falls back
     // to a flat waveform if decoding fails — never aborts the export.
@@ -852,7 +882,8 @@ export async function exportPlaylistsToUsb(
       opts.onProgress?.({
         playlist: pl.name, playlistIndex: pi, playlistTotal: playlists.length,
         track: `${t.artist} – ${t.title}`, trackIndex: ti, trackTotal: pl.tracks.length,
-        action: trackIdByPath.has(t.audioFilePath) ? 'link' : 'copy'
+        action: trackIdByPath.has(t.audioFilePath) ? 'link' : 'copy',
+        totalBytes, copiedBytes
       })
       const id = await resolveTrack(t)
       if (id != null) ids.push(id)

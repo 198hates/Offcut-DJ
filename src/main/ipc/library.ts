@@ -29,13 +29,14 @@ import { analyzeBeats, isModelAvailable, getDefaultModelPath, warmModel } from '
 import { writeTagsToFile } from '../integrations/file-tags/writer'
 import { readUsbHistory, findPioneerUsbMount } from '../integrations/pioneer-usb/history-reader'
 import { findRekordboxUsbs, readRekordboxUsb, listUsbVolumes, resolveExportPdb } from '../integrations/rekordbox-usb/reader'
+import { usbPreflight } from '../integrations/rekordbox-usb/drive-health'
 import { writePlaylistToUsb, initializeUsb, exportPlaylistsToUsb } from '../integrations/rekordbox-usb/writer'
 import type { SyncTrackInput } from '../integrations/rekordbox-usb/writer'
 import { importFromUsbBackup } from '../integrations/rekordbox-usb/backup-import'
 import { startWatcher } from '../integrations/watch-folder'
 import { loadSettings, saveSettings, getSettings } from '../settings'
 import { autoBackup } from '../backup'
-import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule, UsbExport } from '../../shared/types'
+import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule, UsbExport, UsbPreflight } from '../../shared/types'
 import type Database from 'better-sqlite3'
 
 type IntegrationReader = (db: Database.Database, path: string) => ImportResult
@@ -1036,6 +1037,19 @@ ${rows}
       return []
     }
   })
+
+  // Pre-flight a stick: capacity + filesystem (instant) and, when benchmark is
+  // set, a real read/write speed test used to estimate export time.
+  ipcMain.handle(
+    'rekordboxUsb:preflight',
+    async (_e, usbRoot: string, benchmark = false): Promise<UsbPreflight | { error: string }> => {
+      try {
+        return await usbPreflight(usbRoot, { benchmark })
+      } catch (err) {
+        return { error: (err as Error).message }
+      }
+    }
+  )
 
   // Is this USB still mounted with a readable export.pdb? (for detecting removal)
   ipcMain.handle('rekordboxUsb:exists', (_e, usbRoot: string) => {

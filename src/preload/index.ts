@@ -113,6 +113,11 @@ const api = {
       ipcRenderer.invoke('rekordboxUsb:read', usbRoot),
     listVolumes: (): Promise<{ root: string; name: string; hasRekordbox: boolean }[]> =>
       ipcRenderer.invoke('rekordboxUsb:listVolumes'),
+    preflight: (
+      usbRoot: string,
+      benchmark = false
+    ): Promise<import('../shared/types').UsbPreflight | { error: string }> =>
+      ipcRenderer.invoke('rekordboxUsb:preflight', usbRoot, benchmark),
     initialize: (usbRoot: string): Promise<{ pdbPath: string; created: boolean } | { error: string }> =>
       ipcRenderer.invoke('rekordboxUsb:initialize', usbRoot),
     exists: (usbRoot: string): Promise<boolean> => ipcRenderer.invoke('rekordboxUsb:exists', usbRoot),
@@ -154,10 +159,24 @@ const api = {
       { backupPath: string | null; playlists: { name: string; tracks: number }[]; totalTracks: number; skipped: string[] }
       | { error: string }
     > => ipcRenderer.invoke('rekordboxUsb:syncPlaylists', usbRoot, playlists, mode),
-    onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy' }) => void): (() => void) => {
+    onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy'; totalBytes: number; copiedBytes: number }) => void): (() => void) => {
       const h = (_e: unknown, p: Parameters<typeof cb>[0]): void => cb(p)
       ipcRenderer.on('rekordboxUsb:syncProgress', h)
       return () => ipcRenderer.removeListener('rekordboxUsb:syncProgress', h)
+    }
+  },
+  sync: {
+    status: (): Promise<import('../shared/types').SyncStatus> => ipcRenderer.invoke('sync:status'),
+    setEnabled: (enabled: boolean): Promise<import('../shared/types').SyncStatus | { error: string }> =>
+      ipcRenderer.invoke('sync:setEnabled', enabled),
+    pairing: (): Promise<import('../shared/types').SyncPairingInfo> => ipcRenderer.invoke('sync:pairing'),
+    unpairAll: (): Promise<import('../shared/types').SyncStatus> => ipcRenderer.invoke('sync:unpairAll'),
+    removeDevice: (id: string): Promise<import('../shared/types').SyncStatus> =>
+      ipcRenderer.invoke('sync:removeDevice', id),
+    onLibraryChanged: (cb: () => void): (() => void) => {
+      const h = (): void => cb()
+      ipcRenderer.on('sync:libraryChanged', h)
+      return () => ipcRenderer.removeListener('sync:libraryChanged', h)
     }
   },
   audio: {

@@ -4,9 +4,10 @@ import type {
   AppSettings, SmartRule, RunningOrder, EditLineage, CutHistory,
   EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed,
   StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef,
-  StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, BeatgridMarker, CuePoint,
+  StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, UsbPreflight, BeatgridMarker, CuePoint,
   AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent,
   BackupInfo, SystemInfo, CastDevice, CastStatus,
+  SyncStatus, SyncPairingInfo,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -88,6 +89,7 @@ declare global {
         browse: () => Promise<string | null>
         read: (usbRoot: string) => Promise<UsbExport | { error: string }>
         listVolumes: () => Promise<{ root: string; name: string; hasRekordbox: boolean }[]>
+        preflight: (usbRoot: string, benchmark?: boolean) => Promise<UsbPreflight | { error: string }>
         initialize: (usbRoot: string) => Promise<{ pdbPath: string; created: boolean } | { error: string }>
         exists: (usbRoot: string) => Promise<boolean>
         importBackup: (backupRoot: string, includeAnalysis?: boolean) => Promise<{ tracksImported: number; playlistsImported: number; errors: string[] } | { error: string }>
@@ -104,7 +106,15 @@ declare global {
         ) => Promise<
           { backupPath: string | null; playlists: { name: string; tracks: number }[]; totalTracks: number; skipped: string[] } | { error: string }
         >
-        onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy' }) => void) => () => void
+        onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy'; totalBytes: number; copiedBytes: number }) => void) => () => void
+      }
+      sync: {
+        status: () => Promise<SyncStatus>
+        setEnabled: (enabled: boolean) => Promise<SyncStatus | { error: string }>
+        pairing: () => Promise<SyncPairingInfo>
+        unpairAll: () => Promise<SyncStatus>
+        removeDevice: (id: string) => Promise<SyncStatus>
+        onLibraryChanged: (cb: () => void) => () => void
       }
       audio: {
         readFile: (filePath: string) => Promise<ArrayBuffer>

@@ -80,6 +80,9 @@ export default function App(): JSX.Element {
     return () => { off() }
   }, [loadLibrary])
 
+  // Reload when a paired phone pushes prep edits.
+  useEffect(() => window.api.sync.onLibraryChanged(() => loadLibrary()), [loadLibrary])
+
   useEffect(() => {
     if (isLoading) return
     window.api.settings.get().then((s) => {

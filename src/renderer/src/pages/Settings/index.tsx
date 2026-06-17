@@ -8,6 +8,7 @@ import { useThemeStore } from '../../store/themeStore'
 import { MidiSettings } from '../../components/MidiSettings'
 import { AI_SETTINGS_CHANGED } from '../../hooks/useAiStatus'
 import { tabClass } from '../../lib/ui'
+import { PhoneSyncPanel } from '../../components/PhoneSyncPanel'
 
 type SettingsPatch = Partial<AppSettings>
 
@@ -585,6 +586,11 @@ export function SettingsPage(): JSX.Element {
       {/* MIDI Controllers */}
       <Section title="MIDI Controllers" icon="◈" category="general">
         <MidiSettings />
+      </Section>
+
+      {/* Phone Sync */}
+      <Section title="Phone Sync" icon="▢" category="general">
+        <PhoneSyncPanel />
       </Section>
 
       {/* Quick import shortcuts using saved paths */}

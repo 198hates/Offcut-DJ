@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { useToastStore } from '../store/toastStore'
 import { formatDuration, formatBpm } from '../lib/format'
-import type { UsbExport, UsbPlaylistNode, UsbTrack, UsbDeviceSettings, UsbWaveformColors } from '@shared/types'
+import type { UsbExport, UsbPlaylistNode, UsbTrack, UsbDeviceSettings, UsbWaveformColors, UsbPreflight } from '@shared/types'
 
 const hexToRgb = (h: string): [number, number, number] => {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(h.trim())
@@ -76,6 +76,40 @@ const DEVICE_SETTING_FIELDS: {
   { key: 'quantizeBeat', label: 'Quantize beat', options: [{ value: '1', label: '1 Beat' }, { value: '1/2', label: '1/2 Beat' }, { value: '1/4', label: '1/4 Beat' }, { value: '1/8', label: '1/8 Beat' }] },
   { key: 'hotcueAutoload', label: 'Hot cue auto-load', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }, { value: 'rekordbox', label: 'rekordbox' }] }
 ]
+
+/** Human-readable bytes, e.g. 1.4 GB. */
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)))
+  return `${(n / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
+/** Seconds → '3m 20s' / '45s' / '1h 5m'. */
+function formatEta(secs: number): string {
+  if (!Number.isFinite(secs) || secs < 0) return '—'
+  const s = Math.round(secs)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ${s % 60}s`
+  return `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
+type SpeedClass = UsbPreflight['speedClass']
+
+function speedColor(c: SpeedClass): string {
+  if (c === 'slow') return 'text-red-400'
+  if (c === 'adequate') return 'text-amber-400'
+  if (c === 'fast') return 'text-green-400'
+  return 'text-muted'
+}
+
+function speedLabel(c: SpeedClass): string {
+  if (c === 'slow') return 'slow — may lag or fail on a CDJ'
+  if (c === 'adequate') return 'adequate'
+  if (c === 'fast') return 'fast'
+  return ''
+}
 
 /** Loose key for matching Offcut tracks to tracks already on the USB. */
 function matchKey(artist: string, title: string): string {
@@ -161,7 +195,16 @@ export function RekordboxUsbPanel(): JSX.Element {
   const [progress, setProgress] = useState<{
     playlist: string; playlistIndex: number; playlistTotal: number
     track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy'
+    totalBytes: number; copiedBytes: number
   } | null>(null)
+  // Wall-clock when the current export started, for live throughput/ETA.
+  const writeStartRef = useRef<number>(0)
+  const [elapsedMs, setElapsedMs] = useState(0)
+
+  // Pre-flight (drive health) state, cached per volume root.
+  const [preflight, setPreflight] = useState<UsbPreflight | null>(null)
+  const [benchmarking, setBenchmarking] = useState(false)
+  const benchCache = useRef<Map<string, UsbPreflight>>(new Map())
 
   // Initialise-a-blank-USB state.
   const [initVolumes, setInitVolumes] = useState<{ root: string; name: string; hasRekordbox: boolean }[] | null>(null)
@@ -232,6 +275,40 @@ export function RekordboxUsbPanel(): JSX.Element {
   useEffect(() => {
     if (usbRoot) void read(usbRoot)
   }, [usbRoot, read])
+
+  // Pre-flight the stick on selection: capacity + filesystem are instant. Reuse
+  // a cached benchmark (which includes a write test) if we've already run one.
+  useEffect(() => {
+    if (!usbRoot) {
+      setPreflight(null)
+      return
+    }
+    const cached = benchCache.current.get(usbRoot)
+    if (cached) {
+      setPreflight(cached)
+      return
+    }
+    let live = true
+    void window.api.rekordboxUsb.preflight(usbRoot, false).then((res) => {
+      if (live && !('error' in res)) setPreflight(res)
+    })
+    return () => {
+      live = false
+    }
+  }, [usbRoot])
+
+  const runBenchmark = useCallback(async () => {
+    if (!usbRoot) return
+    setBenchmarking(true)
+    const res = await window.api.rekordboxUsb.preflight(usbRoot, true)
+    setBenchmarking(false)
+    if ('error' in res) {
+      showToast(`Speed test failed: ${res.error}`, 'error')
+      return
+    }
+    benchCache.current.set(usbRoot, res)
+    setPreflight(res)
+  }, [usbRoot, showToast])
 
   const browse = useCallback(async () => {
     const root = await window.api.rekordboxUsb.browse()
@@ -323,10 +400,12 @@ export function RekordboxUsbPanel(): JSX.Element {
 
   // Aggregate preview across the selected playlists (unique tracks).
   const aggregate = useMemo(() => {
-    if (!data || selectedPlaylists.length === 0) return { total: 0, onUsb: 0, toCopy: 0 }
+    if (!data || selectedPlaylists.length === 0) return { total: 0, onUsb: 0, toCopy: 0, bytes: 0, unknownSizes: 0 }
     const seen = new Set<string>()
     let onUsb = 0
     let toCopy = 0
+    let bytes = 0
+    let unknownSizes = 0
     for (const pl of selectedPlaylists) {
       for (const tid of pl.trackIds) {
         const t = libTrackById.get(tid)
@@ -336,10 +415,20 @@ export function RekordboxUsbPanel(): JSX.Element {
         seen.add(key)
         if (usbIndex.get(key) != null) onUsb++
         else toCopy++
+        // The export rebuilds the stick from scratch, so every unique track is
+        // copied — size the transfer over all of them, not just the new ones.
+        if (typeof t.fileSize === 'number' && t.fileSize > 0) bytes += t.fileSize
+        else unknownSizes++
       }
     }
-    return { total: seen.size, onUsb, toCopy }
+    return { total: seen.size, onUsb, toCopy, bytes, unknownSizes }
   }, [data, selectedPlaylists, usbIndex, libTrackById])
+
+  // Estimated export time from the measured write speed (null until benchmarked).
+  const estEtaSecs = useMemo(() => {
+    if (!preflight?.writeMBps || aggregate.bytes <= 0) return null
+    return aggregate.bytes / (preflight.writeMBps * 1e6)
+  }, [preflight, aggregate.bytes])
 
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -356,10 +445,44 @@ export function RekordboxUsbPanel(): JSX.Element {
     return off
   }, [])
 
+  // Tick a 1 Hz clock while exporting so the live throughput/ETA stays current.
+  useEffect(() => {
+    if (!writing) return
+    const id = setInterval(() => setElapsedMs(performance.now() - writeStartRef.current), 1000)
+    return () => clearInterval(id)
+  }, [writing])
+
+  // Live transfer stats derived from emitted bytes + wall-clock elapsed.
+  const liveStats = useMemo(() => {
+    if (!progress || !progress.totalBytes || elapsedMs < 500 || progress.copiedBytes <= 0) return null
+    const mbps = progress.copiedBytes / 1e6 / (elapsedMs / 1000)
+    const remainingBytes = Math.max(0, progress.totalBytes - progress.copiedBytes)
+    const etaSecs = mbps > 0 ? remainingBytes / 1e6 / mbps : null
+    return { mbps, etaSecs, pct: progress.copiedBytes / progress.totalBytes }
+  }, [progress, elapsedMs])
+
   const syncSelected = useCallback(async () => {
     if (!usbRoot || selectedPlaylists.length === 0) return
+    // Capacity guard: refuse a doomed export rather than failing half-copied.
+    // Leave ~64 MB headroom for the pdb + ANLZ + settings files.
+    if (preflight?.freeBytes != null && aggregate.bytes > 0 && aggregate.bytes + 64 * 1024 * 1024 > preflight.freeBytes) {
+      showToast(
+        `Not enough room: needs ~${formatBytes(aggregate.bytes)}, only ${formatBytes(preflight.freeBytes)} free on the stick.`,
+        'error'
+      )
+      return
+    }
+    if (preflight?.fsCompatible === false) {
+      showToast(
+        `This drive is ${preflight.filesystem?.toUpperCase() ?? 'an unsupported filesystem'} — CDJs can't read it. Reformat to exFAT or FAT32.`,
+        'error'
+      )
+      return
+    }
     setWriting(true)
     setProgress(null)
+    writeStartRef.current = performance.now()
+    setElapsedMs(0)
     const payload = selectedPlaylists.map((pl) => ({
       name: pl.name,
       tracks: pl.trackIds
@@ -392,7 +515,7 @@ export function RekordboxUsbPanel(): JSX.Element {
     if (skippedCount) parts.push(`${skippedCount} skipped`)
     showToast(`Synced ${n} playlist${n === 1 ? '' : 's'} → USB · ${parts.join(' · ')} · backup saved`, 'success')
     await read(usbRoot)
-  }, [usbRoot, selectedPlaylists, libTrackById, showToast, read, syncMode])
+  }, [usbRoot, selectedPlaylists, libTrackById, showToast, read, syncMode, preflight, aggregate.bytes])
 
   return (
     <div className="rounded border border-border/40 overflow-hidden">
@@ -444,6 +567,52 @@ export function RekordboxUsbPanel(): JSX.Element {
           </button>
         )}
       </div>
+
+      {/* Drive health — capacity, filesystem, measured speed */}
+      {usbRoot && preflight && (
+        <div className="flex items-center gap-x-4 gap-y-1 flex-wrap px-3 py-2 border-b border-border/20 bg-ink/[0.02] font-mono text-[11px]">
+          {preflight.freeBytes != null && preflight.capacityBytes != null && (
+            <span className="text-muted">
+              <span className="text-ink-soft tabular-nums">{formatBytes(preflight.freeBytes)}</span> free
+              <span className="text-muted/50"> / {formatBytes(preflight.capacityBytes)}</span>
+            </span>
+          )}
+          {preflight.filesystem && (
+            <span className={preflight.fsCompatible === false ? 'text-red-400' : 'text-muted'}>
+              {preflight.filesystem.toUpperCase()}
+              {preflight.fsCompatible === false && ' · not CDJ-readable'}
+              {preflight.fsCompatible === true && <span className="text-green-400/80"> ✓</span>}
+            </span>
+          )}
+          {preflight.writeMBps != null ? (
+            <span className={speedColor(preflight.speedClass)}>
+              <span className="tabular-nums">{preflight.writeMBps.toFixed(0)}</span> MB/s write
+              {preflight.readMBps != null && (
+                <span className="text-muted/50"> · {preflight.readMBps.toFixed(0)} read</span>
+              )}
+              {' · '}
+              {speedLabel(preflight.speedClass)}
+            </span>
+          ) : (
+            <button
+              onClick={runBenchmark}
+              disabled={benchmarking}
+              className="text-accent/90 hover:text-accent disabled:opacity-50"
+            >
+              {benchmarking ? 'testing speed…' : '↺ test drive speed'}
+            </button>
+          )}
+          {preflight.writeMBps != null && (
+            <button
+              onClick={runBenchmark}
+              disabled={benchmarking}
+              className="text-muted/50 hover:text-ink disabled:opacity-50"
+            >
+              {benchmarking ? '…' : 're-test'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Initialise a blank USB */}
       {initVolumes && (
@@ -599,16 +768,26 @@ export function RekordboxUsbPanel(): JSX.Element {
                 <div
                   className="h-full bg-accent transition-all duration-150"
                   style={{
-                    width: progress
-                      ? `${Math.round(((progress.playlistIndex + (progress.trackIndex + 1) / Math.max(1, progress.trackTotal)) / Math.max(1, progress.playlistTotal)) * 100)}%`
-                      : '4%'
+                    width: liveStats
+                      ? `${Math.round(liveStats.pct * 100)}%`
+                      : progress
+                        ? `${Math.round(((progress.playlistIndex + (progress.trackIndex + 1) / Math.max(1, progress.trackTotal)) / Math.max(1, progress.playlistTotal)) * 100)}%`
+                        : '4%'
                   }}
                 />
               </div>
-              <div className="font-mono text-[10px] text-muted/70 truncate">
-                {progress
-                  ? `playlist ${progress.playlistIndex + 1}/${progress.playlistTotal} · ${progress.action === 'copy' ? 'copying' : 'linking'} ${progress.trackIndex + 1}/${progress.trackTotal} — ${progress.track}`
-                  : 'preparing…'}
+              <div className="flex items-center gap-2 font-mono text-[10px] text-muted/70">
+                <span className="truncate flex-1">
+                  {progress
+                    ? `playlist ${progress.playlistIndex + 1}/${progress.playlistTotal} · ${progress.action === 'copy' ? 'copying' : 'linking'} ${progress.trackIndex + 1}/${progress.trackTotal} — ${progress.track}`
+                    : 'preparing…'}
+                </span>
+                {liveStats && (
+                  <span className="shrink-0 tabular-nums text-ink-soft">
+                    {liveStats.mbps.toFixed(0)} MB/s
+                    {liveStats.etaSecs != null && ` · ${formatEta(liveStats.etaSecs)} left`}
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -685,10 +864,31 @@ export function RekordboxUsbPanel(): JSX.Element {
           </label>
 
           <div className="flex items-center gap-2">
-            <div className="flex-1 font-mono text-[11px] text-muted/70">
+            <div className="flex-1 font-mono text-[11px] text-muted/70 space-y-0.5">
               {selectedPlaylists.length > 0 && (
                 <>
-                  {aggregate.total} tracks · {aggregate.onUsb} on USB · {aggregate.toCopy} to copy
+                  <div>
+                    {aggregate.total} tracks · {aggregate.onUsb} on USB · {aggregate.toCopy} to copy ·{' '}
+                    <span className="text-ink-soft">{formatBytes(aggregate.bytes)}</span>
+                    {aggregate.unknownSizes > 0 && (
+                      <span className="text-muted/40"> (+{aggregate.unknownSizes} unknown)</span>
+                    )}
+                    {estEtaSecs != null ? (
+                      <span className="text-ink-soft"> · ~{formatEta(estEtaSecs)}</span>
+                    ) : (
+                      preflight?.writeMBps == null && aggregate.bytes > 0 && (
+                        <button onClick={runBenchmark} disabled={benchmarking} className="text-accent/80 hover:text-accent">
+                          {benchmarking ? ' · timing…' : ' · test speed for ETA'}
+                        </button>
+                      )
+                    )}
+                  </div>
+                  {preflight?.freeBytes != null && aggregate.bytes + 64 * 1024 * 1024 > preflight.freeBytes && (
+                    <div className="text-red-400">⚠ not enough free space on this stick</div>
+                  )}
+                  {preflight?.fsCompatible === false && (
+                    <div className="text-red-400">⚠ {preflight.filesystem?.toUpperCase()} isn't CDJ-readable — reformat to exFAT/FAT32</div>
+                  )}
                 </>
               )}
             </div>

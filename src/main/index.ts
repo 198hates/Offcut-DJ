@@ -9,6 +9,7 @@ import { registerLineageHandlers } from './ipc/lineage'
 import { registerStemHandlers } from './ipc/stems'
 import { registerBackupHandlers } from './ipc/backup'
 import { registerAiHandlers } from './ipc/ai'
+import { registerSyncHandlers, startSyncServerIfEnabled, stopSyncServer } from './ipc/sync'
 import { killAllSeparations } from './stems'
 import { loadNativeEngine, registerEngineHandlers } from './engine'
 import { registerCastHandlers } from './cast'
@@ -96,6 +97,7 @@ app.whenReady().then(() => {
   registerStemHandlers()
   registerBackupHandlers()
   registerAiHandlers()
+  registerSyncHandlers()
   registerEngineHandlers()
   registerCastHandlers()
   loadNativeEngine()    // non-fatal: logs warning if .node not compiled yet
@@ -103,6 +105,7 @@ app.whenReady().then(() => {
   createWindow()
   warmModel() // preload beat model into memory if installed
   startWatcher(loadSettings().watchFolders)
+  void startSyncServerIfEnabled() // resume phone-sync if it was left on
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -116,4 +119,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   // Demucs separations run for minutes — never leave them orphaned.
   killAllSeparations()
+  void stopSyncServer()
 })

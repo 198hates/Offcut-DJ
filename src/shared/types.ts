@@ -218,6 +218,126 @@ export interface Track {
   embedding: number[] | null
 }
 
+// ── Library sync (mobile companion / multi-device) ─────────────────────────────
+
+/** One collapsed change from the sync journal: the latest op for an entity. */
+export interface SyncChange {
+  entity: 'track' | 'playlist'
+  entityId: string
+  op: 'upsert' | 'delete'
+  /** Monotonic journal sequence — use as the cursor for the next pull. */
+  seq: number
+}
+
+/**
+ * A delta (or, when pulling from cursor 0, a full snapshot) of everything that
+ * changed in the library since a given cursor. `cursor` is the value to send on
+ * the next pull. Deleted ids let a client drop entities that no longer exist.
+ */
+export interface SyncPull {
+  cursor: number
+  tracks: Track[]
+  playlists: Playlist[]
+  deletedTrackIds: string[]
+  deletedPlaylistIds: string[]
+}
+
+/**
+ * A prep edit pushed from the phone for one track. Only the keys present are
+ * applied (a partial patch); `updatedAt` is when the phone made the edit and
+ * gates a last-writer-wins merge against the desktop's copy. Tracks are matched
+ * by `id`, falling back to `contentHash`. File-level metadata is desktop-owned
+ * and intentionally not patchable from mobile.
+ */
+export interface TrackPatch {
+  id: string
+  contentHash?: string
+  updatedAt: string
+  rating?: number
+  energy?: number | null
+  mood?: number | null
+  comment?: string
+  color?: string
+  tags?: string[]
+  customTags?: Record<string, string>
+  cuePoints?: CuePoint[]
+  beatgrid?: BeatgridMarker[]
+  analysedBeatgrid?: Beatgrid | null
+}
+
+/**
+ * A playlist edit pushed from the phone. Unknown ids create a new playlist;
+ * `deleted` removes it; `trackIds` replaces membership in order. Gated by
+ * last-writer-wins on `updatedAt` (except creation).
+ */
+export interface PlaylistPatch {
+  id: string
+  updatedAt: string
+  deleted?: boolean
+  name?: string
+  color?: string
+  trackIds?: string[]
+}
+
+export interface SyncPushPayload {
+  tracks?: TrackPatch[]
+  playlists?: PlaylistPatch[]
+}
+
+export interface SyncPushResult {
+  appliedTracks: number
+  skippedTracks: number
+  appliedPlaylists: number
+  skippedPlaylists: number
+  /** Cursor after applying, so the phone can fast-forward past its own echo. */
+  cursor: number
+}
+
+/** A phone (or other device) that has paired with this desktop. */
+export interface SyncPairedDevice {
+  id: string
+  name: string
+  firstSeen: string
+  lastSeen: string
+}
+
+/** Current state of the phone-sync LAN server. */
+export interface SyncStatus {
+  enabled: boolean
+  running: boolean
+  port: number
+  addresses: string[]
+  devices: SyncPairedDevice[]
+}
+
+/** Pairing details shown to the user (QR + the address/token behind it). */
+export interface SyncPairingInfo {
+  uri: string
+  host: string
+  port: number
+  addresses: string[]
+  /** PNG data-URL of the pairing QR, or null if generation failed. */
+  qr: string | null
+}
+
+/**
+ * USB pre-flight report — capacity, filesystem suitability for CDJs, and a
+ * measured speed benchmark used to estimate how long an export will take.
+ */
+export interface UsbPreflight {
+  root: string
+  capacityBytes: number | null
+  freeBytes: number | null
+  /** Normalised filesystem label, e.g. 'msdos' (FAT32), 'exfat', 'hfs', 'ntfs'. */
+  filesystem: string | null
+  /** Can a CDJ read this filesystem? null = unknown. */
+  fsCompatible: boolean | null
+  /** Sequential write throughput; null until the speed test has run. */
+  writeMBps: number | null
+  readMBps: number | null
+  speedClass: 'fast' | 'adequate' | 'slow' | null
+}
+
 // ── Stem separation ───────────────────────────────────────────────────────────
 
 /** The four stem buses produced by HT-Demucs (or a mock in dev). */
