@@ -23,9 +23,11 @@ import {
 } from './src/pairing'
 import { SyncClient, type HealthInfo } from './src/syncClient'
 import { useLibrary } from './src/useLibrary'
+import { usePlaylistActions } from './src/usePlaylists'
 import { LibraryScreen } from './src/LibraryScreen'
 import { TrackScreen } from './src/TrackScreen'
-import type { Track } from './src/sync-types'
+import { PlaylistScreen } from './src/PlaylistScreen'
+import type { Playlist, Track } from './src/sync-types'
 
 type Phase = 'loading' | 'unpaired' | 'connecting' | 'connected' | 'error'
 
@@ -170,8 +172,21 @@ export default function App(): JSX.Element {
 function ConnectedApp({ conn, onDisconnect }: { conn: Connection; onDisconnect: () => void }): JSX.Element {
   const client = useMemo(() => new SyncClient(conn), [conn])
   const lib = useLibrary(client)
+  const actions = usePlaylistActions(client, lib)
   const [selected, setSelected] = useState<Track | null>(null)
+  const [managing, setManaging] = useState<string | null>(null)
 
+  if (managing) {
+    return (
+      <PlaylistScreen
+        playlistId={managing}
+        lib={lib}
+        actions={actions}
+        onBack={() => setManaging(null)}
+        onSelectTrack={setSelected}
+      />
+    )
+  }
   if (selected) {
     return (
       <TrackScreen
@@ -179,10 +194,22 @@ function ConnectedApp({ conn, onDisconnect }: { conn: Connection; onDisconnect: 
         client={client}
         onBack={() => setSelected(null)}
         onPatched={lib.patchTrack}
+        playlists={lib.playlists}
+        onAddToPlaylist={actions.addTrack}
       />
     )
   }
-  return <LibraryScreen lib={lib} onSelectTrack={setSelected} onDisconnect={onDisconnect} />
+  return (
+    <LibraryScreen
+      lib={lib}
+      onSelectTrack={setSelected}
+      onDisconnect={onDisconnect}
+      onCreatePlaylist={(name) => {
+        void actions.create(name)
+      }}
+      onManagePlaylist={(p: Playlist) => setManaging(p.id)}
+    />
+  )
 }
 
 const styles = StyleSheet.create({

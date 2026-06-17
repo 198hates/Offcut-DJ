@@ -43,7 +43,11 @@ If the desktop later does **Unpair all**, the token rotates and the app gets
   `updatedAt`). Hot cues hook the audition player: "set at playhead" captures the
   current time, tapping a cue seeks to it. The phone never sends beatgrids (the
   lean mirror omits them), so grids are preserved desktop-side.
-- [ ] 4. Playlists — create/reorder/rename/delete.
+- [x] **4. Playlists** — create (phone mints a v4 id), rename, recolour, reorder
+  (up/down) and remove tracks, delete (confirm), and "Add to playlist" from a
+  track. Optimistic local update → `POST /sync/push` (one patch per change),
+  rolled back on failure or LWW rejection. Smart playlists / folders are
+  read-only.
 - [ ] 5. Offline — cache proxies + peaks; queue edits and flush on reconnect.
 
 ## Layout

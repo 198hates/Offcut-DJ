@@ -1,7 +1,9 @@
-// Browse the synced library — tracks + playlists. Read-only (slice 2).
+// Browse the synced library — tracks + playlists. Playlist create/manage is
+// slice 4 (the rest is read-only browse from slice 2).
 
 import { useMemo, useState } from 'react'
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
+import { isEditable } from './playlists'
 import type { LibraryState } from './useLibrary'
 import type { Playlist, Track } from './sync-types'
 
@@ -10,15 +12,20 @@ type Tab = 'tracks' | 'playlists'
 export function LibraryScreen({
   lib,
   onSelectTrack,
-  onDisconnect
+  onDisconnect,
+  onCreatePlaylist,
+  onManagePlaylist
 }: {
   lib: LibraryState
   onSelectTrack: (t: Track) => void
   onDisconnect: () => void
+  onCreatePlaylist: (name: string) => void
+  onManagePlaylist: (p: Playlist) => void
 }): JSX.Element {
   const [tab, setTab] = useState<Tab>('tracks')
   const [query, setQuery] = useState('')
   const [playlist, setPlaylist] = useState<Playlist | null>(null)
+  const [newName, setNewName] = useState('')
 
   const tracks = useMemo<Track[]>(() => {
     const base = playlist
@@ -105,18 +112,55 @@ export function LibraryScreen({
         <FlatList
           data={lib.playlists}
           keyExtractor={(p) => p.id}
+          ListHeaderComponent={
+            <View style={styles.newRow}>
+              <TextInput
+                style={styles.newInput}
+                placeholder="New playlist name"
+                placeholderTextColor="#7a7264"
+                value={newName}
+                onChangeText={setNewName}
+                onSubmitEditing={() => {
+                  if (newName.trim()) {
+                    onCreatePlaylist(newName.trim())
+                    setNewName('')
+                  }
+                }}
+                returnKeyType="done"
+              />
+              <Pressable
+                style={[styles.newBtn, !newName.trim() && styles.newBtnOff]}
+                disabled={!newName.trim()}
+                onPress={() => {
+                  onCreatePlaylist(newName.trim())
+                  setNewName('')
+                }}
+              >
+                <Text style={styles.newBtnTxt}>Create</Text>
+              </Pressable>
+            </View>
+          }
           renderItem={({ item }) => (
-            <Pressable
-              style={styles.row}
-              onPress={() => {
-                setPlaylist(item)
-                setQuery('')
-                setTab('tracks')
-              }}
-            >
-              <Text style={styles.title} numberOfLines={1}>{item.name}</Text>
-              <Text style={styles.meta}>{item.trackIds.length}</Text>
-            </Pressable>
+            <View style={styles.row}>
+              <Pressable
+                style={styles.plRowMain}
+                onPress={() => {
+                  setPlaylist(item)
+                  setQuery('')
+                  setTab('tracks')
+                }}
+              >
+                <Text style={[styles.title, { flex: 1 }]} numberOfLines={1}>
+                  {item.isSmart ? '✨ ' : item.isFolder ? '📁 ' : ''}{item.name}
+                </Text>
+                <Text style={styles.meta}>{item.trackIds.length}</Text>
+              </Pressable>
+              {isEditable(item) && (
+                <Pressable hitSlop={10} onPress={() => onManagePlaylist(item)}>
+                  <Text style={styles.manage}>edit</Text>
+                </Pressable>
+              )}
+            </View>
           )}
           ListEmptyComponent={<Text style={styles.empty}>No playlists</Text>}
         />
@@ -161,6 +205,15 @@ const styles = StyleSheet.create({
     gap: 10
   },
   rowMain: { flex: 1 },
+  plRowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  manage: { color: '#D86A4A', fontSize: 13 },
+  newRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 10 },
+  newInput: {
+    flex: 1, borderWidth: 1, borderColor: '#3a352b', borderRadius: 8, color: '#ECE3CC', paddingHorizontal: 12, paddingVertical: 8, fontSize: 14
+  },
+  newBtn: { backgroundColor: '#D86A4A', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' },
+  newBtnOff: { backgroundColor: '#2a261d' },
+  newBtnTxt: { color: '#17150f', fontSize: 13, fontWeight: '700' },
   colorBar: { width: 3, alignSelf: 'stretch', borderRadius: 2, backgroundColor: 'transparent' },
   title: { color: '#ECE3CC', fontSize: 15, flex: 1 },
   sub: { color: '#8c8270', fontSize: 12, marginTop: 1 },

@@ -6,8 +6,9 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio'
 import { Waveform } from './Waveform'
 import { TrackEditor } from './TrackEditor'
+import { isEditable } from './playlists'
 import type { SyncClient } from './syncClient'
-import type { PeaksData, Track } from './sync-types'
+import type { PeaksData, Playlist, Track } from './sync-types'
 
 function mmss(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00'
@@ -19,12 +20,16 @@ export function TrackScreen({
   track,
   client,
   onBack,
-  onPatched
+  onPatched,
+  playlists,
+  onAddToPlaylist
 }: {
   track: Track
   client: SyncClient
   onBack: () => void
   onPatched: (id: string, fields: Partial<Track>) => void
+  playlists: Playlist[]
+  onAddToPlaylist: (p: Playlist, trackId: string) => Promise<void>
 }): JSX.Element {
   const [peaks, setPeaks] = useState<PeaksData | null>(null)
   const [peaksErr, setPeaksErr] = useState<string | null>(null)
@@ -89,6 +94,8 @@ export function TrackScreen({
         {!status.isLoaded && <Text style={styles.dim}>buffering…</Text>}
       </View>
 
+      <AddToPlaylist playlists={playlists} track={track} onAdd={onAddToPlaylist} />
+
       <TrackEditor
         track={track}
         client={client}
@@ -109,6 +116,49 @@ function Meta({ label, value }: { label: string; value: string }): JSX.Element {
   )
 }
 
+function AddToPlaylist({
+  playlists,
+  track,
+  onAdd
+}: {
+  playlists: Playlist[]
+  track: Track
+  onAdd: (p: Playlist, trackId: string) => Promise<void>
+}): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const targets = playlists.filter(isEditable)
+
+  const add = (p: Playlist): void => {
+    setMsg(null)
+    const already = p.trackIds.includes(track.id)
+    onAdd(p, track.id)
+      .then(() => setMsg(already ? `Already in ${p.name}` : `Added to ${p.name} ✓`))
+      .catch((e) => setMsg((e as Error).message))
+    setOpen(false)
+  }
+
+  return (
+    <View style={styles.addWrap}>
+      <Pressable style={styles.addBtn} onPress={() => setOpen((o) => !o)}>
+        <Text style={styles.addBtnTxt}>＋ Add to playlist {open ? '▴' : '▾'}</Text>
+      </Pressable>
+      {open && (
+        <View style={styles.addList}>
+          {targets.length === 0 && <Text style={styles.dim}>No editable playlists — create one first.</Text>}
+          {targets.map((p) => (
+            <Pressable key={p.id} style={styles.addRow} onPress={() => add(p)}>
+              <Text style={styles.addRowTxt} numberOfLines={1}>{p.name}</Text>
+              <Text style={styles.addRowCount}>{p.trackIds.length}</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+      {msg && <Text style={styles.addMsg}>{msg}</Text>}
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: '#17150f' },
   content: { padding: 20, paddingTop: 60, gap: 6 },
@@ -121,6 +171,14 @@ const styles = StyleSheet.create({
   metaValue: { color: '#ECE3CC', fontSize: 16, fontVariant: ['tabular-nums'] },
   waveBox: { minHeight: 96, justifyContent: 'center', backgroundColor: '#0e0d09', borderRadius: 8, padding: 8, marginBottom: 18 },
   dim: { color: '#7a7264', fontSize: 12, textAlign: 'center' },
+  addWrap: { marginTop: 18, gap: 8 },
+  addBtn: { borderWidth: 1, borderColor: '#3a352b', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
+  addBtnTxt: { color: '#D86A4A', fontSize: 13, fontWeight: '600' },
+  addList: { borderWidth: 1, borderColor: '#2a261d', borderRadius: 8, overflow: 'hidden' },
+  addRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2a261d' },
+  addRowTxt: { color: '#ECE3CC', fontSize: 14, flex: 1 },
+  addRowCount: { color: '#7a7264', fontSize: 12, marginLeft: 10 },
+  addMsg: { color: '#a59a82', fontSize: 12, textAlign: 'center' },
   transport: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   playBtn: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#D86A4A', alignItems: 'center', justifyContent: 'center' },
   playIcon: { color: '#17150f', fontSize: 20, fontWeight: '800' },

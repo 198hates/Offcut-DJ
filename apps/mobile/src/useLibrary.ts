@@ -15,6 +15,10 @@ export interface LibraryState {
   /** Merge fields into a track in memory (after a successful push) so the list
    *  reflects the edit without a full re-pull. */
   patchTrack: (id: string, fields: Partial<Track>) => void
+  /** Insert or replace a playlist in memory (create / rename / reorder). */
+  upsertPlaylist: (p: Playlist) => void
+  /** Drop a playlist from memory (delete). */
+  removePlaylist: (id: string) => void
 }
 
 export function useLibrary(client: SyncClient): LibraryState {
@@ -50,9 +54,23 @@ export function useLibrary(client: SyncClient): LibraryState {
     })
   }, [])
 
+  const upsertPlaylist = useCallback((p: Playlist): void => {
+    setPlaylists((prev) => {
+      const i = prev.findIndex((x) => x.id === p.id)
+      if (i === -1) return [...prev, p]
+      const next = prev.slice()
+      next[i] = p
+      return next
+    })
+  }, [])
+
+  const removePlaylist = useCallback((id: string): void => {
+    setPlaylists((prev) => prev.filter((p) => p.id !== id))
+  }, [])
+
   useEffect(() => {
     void refresh()
   }, [refresh])
 
-  return { loading, error, tracks, playlists, byId, refresh, patchTrack }
+  return { loading, error, tracks, playlists, byId, refresh, patchTrack, upsertPlaylist, removePlaylist }
 }
