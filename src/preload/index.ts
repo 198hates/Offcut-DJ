@@ -113,6 +113,11 @@ const api = {
       ipcRenderer.invoke('rekordboxUsb:read', usbRoot),
     listVolumes: (): Promise<{ root: string; name: string; hasRekordbox: boolean }[]> =>
       ipcRenderer.invoke('rekordboxUsb:listVolumes'),
+    preflight: (
+      usbRoot: string,
+      benchmark = false
+    ): Promise<import('../shared/types').UsbPreflight | { error: string }> =>
+      ipcRenderer.invoke('rekordboxUsb:preflight', usbRoot, benchmark),
     initialize: (usbRoot: string): Promise<{ pdbPath: string; created: boolean } | { error: string }> =>
       ipcRenderer.invoke('rekordboxUsb:initialize', usbRoot),
     exists: (usbRoot: string): Promise<boolean> => ipcRenderer.invoke('rekordboxUsb:exists', usbRoot),
@@ -153,7 +158,7 @@ const api = {
       { backupPath: string; totalAdded: number; totalLinked: number; playlists: { name: string; linked: number; added: number; newEntries: number; updatedExisting: boolean; skipped: string[] }[] }
       | { error: string }
     > => ipcRenderer.invoke('rekordboxUsb:syncPlaylists', usbRoot, playlists),
-    onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy' }) => void): (() => void) => {
+    onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy'; totalBytes: number; copiedBytes: number }) => void): (() => void) => {
       const h = (_e: unknown, p: Parameters<typeof cb>[0]): void => cb(p)
       ipcRenderer.on('rekordboxUsb:syncProgress', h)
       return () => ipcRenderer.removeListener('rekordboxUsb:syncProgress', h)

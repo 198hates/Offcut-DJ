@@ -5,7 +5,7 @@ import type {
   PlayerStatus, CapturedTrack, ProLinkNetworkIface, ProLinkSessionState,
   EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed,
   StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef,
-  StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, BeatgridMarker, CuePoint,
+  StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, UsbPreflight, BeatgridMarker, CuePoint,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -87,6 +87,7 @@ declare global {
         browse: () => Promise<string | null>
         read: (usbRoot: string) => Promise<UsbExport | { error: string }>
         listVolumes: () => Promise<{ root: string; name: string; hasRekordbox: boolean }[]>
+        preflight: (usbRoot: string, benchmark?: boolean) => Promise<UsbPreflight | { error: string }>
         initialize: (usbRoot: string) => Promise<{ pdbPath: string; created: boolean } | { error: string }>
         exists: (usbRoot: string) => Promise<boolean>
         importBackup: (backupRoot: string, includeAnalysis?: boolean) => Promise<{ tracksImported: number; playlistsImported: number; errors: string[] } | { error: string }>
@@ -102,7 +103,7 @@ declare global {
         ) => Promise<
           { backupPath: string; totalAdded: number; totalLinked: number; playlists: { name: string; linked: number; added: number; newEntries: number; updatedExisting: boolean; skipped: string[] }[] } | { error: string }
         >
-        onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy' }) => void) => () => void
+        onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy'; totalBytes: number; copiedBytes: number }) => void) => () => void
       }
       audio: {
         readFile: (filePath: string) => Promise<ArrayBuffer>

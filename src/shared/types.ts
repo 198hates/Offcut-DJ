@@ -213,6 +213,24 @@ export interface Track {
   phrases: PhraseSegment[] | null
 }
 
+/**
+ * USB pre-flight report — capacity, filesystem suitability for CDJs, and a
+ * measured speed benchmark used to estimate how long an export will take.
+ */
+export interface UsbPreflight {
+  root: string
+  capacityBytes: number | null
+  freeBytes: number | null
+  /** Normalised filesystem label, e.g. 'msdos' (FAT32), 'exfat', 'hfs', 'ntfs'. */
+  filesystem: string | null
+  /** Can a CDJ read this filesystem? null = unknown. */
+  fsCompatible: boolean | null
+  /** Sequential write throughput; null until the speed test has run. */
+  writeMBps: number | null
+  readMBps: number | null
+  speedClass: 'fast' | 'adequate' | 'slow' | null
+}
+
 // ── Stem separation ───────────────────────────────────────────────────────────
 
 /** The four stem buses produced by HT-Demucs (or a mock in dev). */
