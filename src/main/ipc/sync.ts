@@ -7,9 +7,9 @@ import { PairingStore } from '../sync/pairing'
 import { SyncServer } from '../sync/server'
 import { getLanAddresses } from '../sync/lan-address'
 import { getLibraryDb } from '../library/db'
-import { pullChanges } from '../library/sync'
+import { pullChanges, leanTrack } from '../library/sync'
 import { applyPush } from '../library/apply-push'
-import { backfillContentHashes } from '../library/content-hash'
+import { backfillContentHashesChunked } from '../library/content-hash'
 import { getPeaks, getProxyPath } from '../sync/media'
 import type { SyncStatus } from '../../shared/types'
 
@@ -22,6 +22,23 @@ function notifyLibraryChanged(): void {
 
 let pairing: PairingStore | null = null
 let server: SyncServer | null = null
+
+// Content-hash backfill runs in the background (never on the pull request path —
+// hashing files off a cloud drive would freeze the main process). Guarded so
+// only one pass runs at a time; it stops itself when the server is shut down.
+let backfilling = false
+function kickContentHashBackfill(): void {
+  if (backfilling) return
+  backfilling = true
+  void backfillContentHashesChunked(getLibraryDb(), {
+    batch: 25,
+    shouldStop: () => server === null || !server.running
+  })
+    .catch((e) => console.warn('[phone-sync] content-hash backfill failed:', (e as Error).message))
+    .finally(() => {
+      backfilling = false
+    })
+}
 
 function getPairing(): PairingStore {
   if (!pairing) pairing = new PairingStore(join(app.getPath('userData'), 'phone-sync.json'))
@@ -39,9 +56,14 @@ function getServer(): SyncServer {
       verify: (t) => p.verify(t),
       pull: (cursor) => {
         const db = getLibraryDb()
-        // Make sure recently-added tracks carry a content hash before they sync.
-        backfillContentHashes(db, 500)
-        return pullChanges(db, cursor)
+        // Content hashes are only needed for two-way reconciliation (push); the
+        // read-only mirror doesn't need them. Backfill them lazily in the
+        // background instead of blocking the pull (and the whole event loop).
+        kickContentHashBackfill()
+        // Send a metadata-only mirror — the per-beat grids would balloon the
+        // snapshot to hundreds of MB (see leanTrack).
+        const res = pullChanges(db, cursor)
+        return { ...res, tracks: res.tracks.map(leanTrack) }
       },
       applyPush: (payload) => {
         const res = applyPush(getLibraryDb(), payload)
@@ -74,6 +96,7 @@ export async function startSyncServerIfEnabled(): Promise<void> {
   if (!p.enabled) return
   try {
     await getServer().start(p.port)
+    kickContentHashBackfill()
   } catch (e) {
     console.warn('[phone-sync] failed to start:', (e as Error).message)
   }

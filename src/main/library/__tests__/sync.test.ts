@@ -4,8 +4,8 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import Database from 'better-sqlite3'
 import { applySchema } from '../schema'
-import { getSyncCursor, getChangesSince, pullChanges } from '../sync'
-import { computeContentHash, backfillContentHashes } from '../content-hash'
+import { getSyncCursor, getChangesSince, pullChanges, leanTrack } from '../sync'
+import { computeContentHash, backfillContentHashes, backfillContentHashesChunked } from '../content-hash'
 
 function freshDb(): Database.Database {
   const db = new Database(':memory:')
@@ -134,6 +134,36 @@ describe('pullChanges', () => {
   })
 })
 
+describe('leanTrack', () => {
+  beforeEach(() => {
+    id = 0
+  })
+
+  it('drops the heavy grids and embedding but keeps metadata', () => {
+    const db = freshDb()
+    const tid = insertTrack(db, { title: 'keep me' })
+    db.prepare(
+      'UPDATE tracks SET beatgrid = ?, analysed_beatgrid = ?, embedding = ? WHERE id = ?'
+    ).run(
+      JSON.stringify([{ position: 0, bpm: 128 }]),
+      JSON.stringify({ bpm: 128, anchorMs: 0, beatPhase: 0 }),
+      JSON.stringify([0.1, 0.2, 0.3]),
+      tid
+    )
+
+    const full = pullChanges(db, 0).tracks[0]
+    expect(full.beatgrid).toHaveLength(1) // sanity: the heavy data is present pre-projection
+
+    const lean = leanTrack(full)
+    expect(lean.beatgrid).toEqual([])
+    expect(lean.analysedBeatgrid).toBeNull()
+    expect(lean.embedding).toBeNull()
+    // everything else survives
+    expect(lean.id).toBe(tid)
+    expect(lean.title).toBe('keep me')
+  })
+})
+
 describe('content hash', () => {
   let dir: string
   beforeEach(() => {
@@ -171,6 +201,34 @@ describe('content hash', () => {
 
     const row = db.prepare('SELECT content_hash FROM tracks WHERE id = ?').get(tid) as { content_hash: string }
     expect(row.content_hash).toBe(computeContentHash(file))
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('chunked backfill hashes existing files and matches the sync hash', async () => {
+    const db = freshDb()
+    const file = join(dir, 'song.mp3')
+    writeFileSync(file, Buffer.alloc(100_000, 3))
+    const tid = insertTrack(db, { file_path: file })
+    insertTrack(db, { file_path: join(dir, 'missing.mp3') })
+
+    const res = await backfillContentHashesChunked(db, { batch: 1 })
+    expect(res.processed).toBe(2)
+    expect(res.hashed).toBe(1)
+
+    const row = db.prepare('SELECT content_hash FROM tracks WHERE id = ?').get(tid) as { content_hash: string }
+    expect(row.content_hash).toBe(computeContentHash(file)) // async + sync hashes agree
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('chunked backfill stops early when shouldStop is already true', async () => {
+    const db = freshDb()
+    const file = join(dir, 'song.mp3')
+    writeFileSync(file, Buffer.alloc(1000, 1))
+    insertTrack(db, { file_path: file })
+
+    const res = await backfillContentHashesChunked(db, { batch: 1, shouldStop: () => true })
+    expect(res.processed).toBe(0)
+    expect(res.hashed).toBe(0)
     rmSync(dir, { recursive: true, force: true })
   })
 })
