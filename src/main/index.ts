@@ -8,6 +8,7 @@ import { registerAudioHandlers } from './ipc/audio'
 import { registerProLinkHandlers } from './ipc/prolink'
 import { registerLineageHandlers } from './ipc/lineage'
 import { registerStemHandlers } from './ipc/stems'
+import { registerSyncHandlers, startSyncServerIfEnabled, stopSyncServer } from './ipc/sync'
 import { killAllSeparations } from './stems'
 import { loadNativeEngine, registerEngineHandlers } from './engine'
 import { warmModel } from './integrations/beat-analysis'
@@ -93,12 +94,14 @@ app.whenReady().then(() => {
   registerProLinkHandlers()
   registerLineageHandlers()
   registerStemHandlers()
+  registerSyncHandlers()
   registerEngineHandlers()
   loadNativeEngine()    // non-fatal: logs warning if .node not compiled yet
   setupAutoUpdater()
   createWindow()
   warmModel() // preload beat model into memory if installed
   startWatcher(loadSettings().watchFolders)
+  void startSyncServerIfEnabled() // resume phone-sync if it was left on
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -112,4 +115,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   // Demucs separations run for minutes — never leave them orphaned.
   killAllSeparations()
+  void stopSyncServer()
 })

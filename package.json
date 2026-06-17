@@ -30,6 +30,7 @@
     "music-metadata": "^7.14.0",
     "onnxruntime-node": "^1.26.0",
     "prolink-connect": "^0.11.0",
+    "qrcode": "^1.5.4",
     "zustand": "^4.5.4"
   },
   "devDependencies": {
@@ -41,6 +42,7 @@
     "@types/better-sqlite3": "^7.6.11",
     "@types/cytoscape": "^3.21.9",
     "@types/node": "^20.16.0",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

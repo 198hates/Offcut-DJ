@@ -164,6 +164,15 @@ const api = {
       return () => ipcRenderer.removeListener('rekordboxUsb:syncProgress', h)
     }
   },
+  sync: {
+    status: (): Promise<import('../shared/types').SyncStatus> => ipcRenderer.invoke('sync:status'),
+    setEnabled: (enabled: boolean): Promise<import('../shared/types').SyncStatus | { error: string }> =>
+      ipcRenderer.invoke('sync:setEnabled', enabled),
+    pairing: (): Promise<import('../shared/types').SyncPairingInfo> => ipcRenderer.invoke('sync:pairing'),
+    unpairAll: (): Promise<import('../shared/types').SyncStatus> => ipcRenderer.invoke('sync:unpairAll'),
+    removeDevice: (id: string): Promise<import('../shared/types').SyncStatus> =>
+      ipcRenderer.invoke('sync:removeDevice', id)
+  },
   audio: {
     readFile: (filePath: string): Promise<ArrayBuffer> =>
       ipcRenderer.invoke('audio:readFile', filePath),

@@ -6,6 +6,7 @@ import type {
   EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed,
   StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef,
   StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, UsbPreflight, BeatgridMarker, CuePoint,
+  SyncStatus, SyncPairingInfo,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -104,6 +105,13 @@ declare global {
           { backupPath: string; totalAdded: number; totalLinked: number; playlists: { name: string; linked: number; added: number; newEntries: number; updatedExisting: boolean; skipped: string[] }[] } | { error: string }
         >
         onSyncProgress: (cb: (p: { playlist: string; playlistIndex: number; playlistTotal: number; track: string; trackIndex: number; trackTotal: number; action: 'link' | 'copy'; totalBytes: number; copiedBytes: number }) => void) => () => void
+      }
+      sync: {
+        status: () => Promise<SyncStatus>
+        setEnabled: (enabled: boolean) => Promise<SyncStatus | { error: string }>
+        pairing: () => Promise<SyncPairingInfo>
+        unpairAll: () => Promise<SyncStatus>
+        removeDevice: (id: string) => Promise<SyncStatus>
       }
       audio: {
         readFile: (filePath: string) => Promise<ArrayBuffer>

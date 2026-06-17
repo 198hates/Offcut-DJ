@@ -3,6 +3,7 @@ import type { AppSettings } from '@shared/types'
 import { useWaveformStore, type WaveformStyle, type KeyNotation } from '../../store/waveformStore'
 import { useThemeStore } from '../../store/themeStore'
 import { MidiSettings } from '../../components/MidiSettings'
+import { PhoneSyncPanel } from '../../components/PhoneSyncPanel'
 
 type SettingsPatch = Partial<AppSettings>
 
@@ -445,6 +446,11 @@ export function SettingsPage(): JSX.Element {
       {/* MIDI Controllers */}
       <Section title="MIDI Controllers" icon="◈">
         <MidiSettings />
+      </Section>
+
+      {/* Phone Sync */}
+      <Section title="Phone Sync" icon="▢">
+        <PhoneSyncPanel />
       </Section>
 
       {/* Quick import shortcuts using saved paths */}

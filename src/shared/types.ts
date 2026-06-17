@@ -237,6 +237,33 @@ export interface SyncPull {
   deletedPlaylistIds: string[]
 }
 
+/** A phone (or other device) that has paired with this desktop. */
+export interface SyncPairedDevice {
+  id: string
+  name: string
+  firstSeen: string
+  lastSeen: string
+}
+
+/** Current state of the phone-sync LAN server. */
+export interface SyncStatus {
+  enabled: boolean
+  running: boolean
+  port: number
+  addresses: string[]
+  devices: SyncPairedDevice[]
+}
+
+/** Pairing details shown to the user (QR + the address/token behind it). */
+export interface SyncPairingInfo {
+  uri: string
+  host: string
+  port: number
+  addresses: string[]
+  /** PNG data-URL of the pairing QR, or null if generation failed. */
+  qr: string | null
+}
+
 /**
  * USB pre-flight report — capacity, filesystem suitability for CDJs, and a
  * measured speed benchmark used to estimate how long an export will take.
