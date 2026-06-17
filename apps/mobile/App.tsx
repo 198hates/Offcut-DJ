@@ -173,7 +173,8 @@ export default function App(): JSX.Element {
 function ConnectedApp({ conn, onDisconnect }: { conn: Connection; onDisconnect: () => void }): JSX.Element {
   const client = useMemo(() => new SyncClient(conn), [conn])
   const lib = useLibrary(client)
-  const outbox = useOutbox(client, onDisconnect) // a rotated token → re-pair
+  // a rotated token → re-pair; after a reconnect-flush, re-pull to reconcile.
+  const outbox = useOutbox(client, onDisconnect, lib.refresh)
   const actions = usePlaylistActions(outbox.push, lib)
   const [selected, setSelected] = useState<Track | null>(null)
   const [managing, setManaging] = useState<string | null>(null)

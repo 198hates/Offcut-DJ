@@ -3,9 +3,35 @@
 // then a live /sync/pull refreshes and re-caches it when the desktop is reachable.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { loadSnapshot, saveSnapshot } from './offline'
+import { loadSnapshot, saveSnapshot, loadQueue, type QueueState } from './offline'
+import { patchAsTrackFields } from './edits'
 import type { SyncClient } from './syncClient'
 import type { Playlist, SyncPull, Track } from './sync-types'
+
+/** A full Playlist built from a queued create/patch (for offline replay). */
+function playlistFromPatch(prev: Playlist | undefined, p: QueueState['playlists'][number]): Playlist {
+  const base: Playlist =
+    prev ??
+    {
+      id: p.id,
+      name: 'Playlist',
+      color: '#8A8474',
+      isFolder: false,
+      isSmart: false,
+      isAutoGroup: false,
+      rules: [],
+      parentId: null,
+      sortOrder: 0,
+      trackIds: [],
+      sourceIds: {}
+    }
+  return {
+    ...base,
+    ...(p.name !== undefined ? { name: p.name } : {}),
+    ...(p.color !== undefined ? { color: p.color } : {}),
+    ...(p.trackIds !== undefined ? { trackIds: p.trackIds } : {})
+  }
+}
 
 export interface LibraryState {
   loading: boolean
@@ -79,16 +105,51 @@ export function useLibrary(client: SyncClient): LibraryState {
     setPlaylists((prev) => prev.filter((p) => p.id !== id))
   }, [])
 
+  // Replay queued offline edits over the in-memory mirror, so edits made offline
+  // are still visible after a cold start (they live in the queue until flushed).
+  const applyQueue = useCallback((q: QueueState): void => {
+    if (q.tracks.length) {
+      const fieldsById = new Map(q.tracks.map((p) => [p.id, patchAsTrackFields(p)]))
+      setTracks((prev) => prev.map((t) => (fieldsById.has(t.id) ? { ...t, ...fieldsById.get(t.id) } : t)))
+      setById((prev) => {
+        const next = new Map(prev)
+        for (const [id, fields] of fieldsById) {
+          const cur = next.get(id)
+          if (cur) next.set(id, { ...cur, ...fields })
+        }
+        return next
+      })
+    }
+    if (q.playlists.length) {
+      setPlaylists((prev) => {
+        const next = prev.slice()
+        for (const pp of q.playlists) {
+          const i = next.findIndex((x) => x.id === pp.id)
+          if (pp.deleted) {
+            if (i !== -1) next.splice(i, 1)
+          } else if (i !== -1) {
+            next[i] = playlistFromPatch(next[i], pp)
+          } else {
+            next.push(playlistFromPatch(undefined, pp))
+          }
+        }
+        return next
+      })
+    }
+  }, [])
+
   useEffect(() => {
     void (async () => {
       const cached = await loadSnapshot()
       if (cached) {
         apply(cached) // instant paint from disk
+        const queued = await loadQueue()
+        applyQueue(queued) // show offline edits that haven't synced yet
         setLoading(false)
       }
       await refresh() // then go to the network
     })()
-  }, [refresh, apply])
+  }, [refresh, apply, applyQueue])
 
   return { loading, error, tracks, playlists, byId, refresh, patchTrack, upsertPlaylist, removePlaylist }
 }

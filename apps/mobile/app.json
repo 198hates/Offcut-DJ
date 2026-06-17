@@ -7,13 +7,31 @@
     "scheme": "offcut",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#17150f"
+    },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "co.betweenthebridges.offcut.mobile"
+      "bundleIdentifier": "co.betweenthebridges.offcut.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "co.betweenthebridges.offcut.mobile",
-      "versionCode": 1
+      "versionCode": 3,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#17150f"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "plugins": [
       [
@@ -32,6 +50,11 @@
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "42b77c02-6ca6-4e77-b807-b8adbe68e994"
+      }
+    }
   }
 }

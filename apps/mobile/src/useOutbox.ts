@@ -28,7 +28,11 @@ export interface Outbox {
   flush: () => Promise<void>
 }
 
-export function useOutbox(client: SyncClient, onUnauthorized: () => void): Outbox {
+export function useOutbox(
+  client: SyncClient,
+  onUnauthorized: () => void,
+  onFlushed?: () => void
+): Outbox {
   const [online, setOnline] = useState(true)
   const [pending, setPending] = useState(0)
   const [flushing, setFlushing] = useState(false)
@@ -58,6 +62,7 @@ export function useOutbox(client: SyncClient, onUnauthorized: () => void): Outbo
       await clearQueue()
       setPending(0)
       setOnline(true)
+      onFlushed?.() // reconcile the mirror with the desktop's now-updated truth
     } catch (e) {
       if (e instanceof UnauthorizedError) {
         onUnauthorized()
@@ -67,7 +72,7 @@ export function useOutbox(client: SyncClient, onUnauthorized: () => void): Outbo
     } finally {
       setFlushing(false)
     }
-  }, [client, onUnauthorized])
+  }, [client, onUnauthorized, onFlushed])
 
   const enqueue = useCallback(
     async (payload: SyncPushPayload): Promise<void> => {
