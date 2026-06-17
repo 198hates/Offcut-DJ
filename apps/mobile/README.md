@@ -34,7 +34,10 @@ If the desktop later does **Unpair all**, the token rotates and the app gets
 ## Status — slices (see plan §4)
 
 - [x] **1. Pairing + connection** — scan/paste, persist, `/health`, connected state.
-- [ ] 2. Read-only mirror — `/sync/pull`, browse library + playlists, peaks, audition via `/media/proxy`.
+- [x] **2. Read-only mirror** — `/sync/pull` into memory, browse tracks + playlists,
+  waveform from `/media/peaks` (plain-view bars), audition the AAC proxy via
+  `expo-audio` (token in `?token=`; desktop `/media` accepts it). Offline disk
+  cache is slice 5.
 - [ ] 3. Two-way prep — edit rating/energy/mood/tags/comment/colour + hot cues; `POST /sync/push`.
 - [ ] 4. Playlists — create/reorder/rename/delete.
 - [ ] 5. Offline — cache proxies + peaks; queue edits and flush on reconnect.

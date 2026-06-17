@@ -21,7 +21,8 @@
           "cameraPermission": "Offcut uses the camera to scan the desktop pairing QR code."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-audio"
     ]
   }
 }

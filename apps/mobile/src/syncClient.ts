@@ -75,14 +75,11 @@ export class SyncClient {
     return (await res.json()) as PeaksData
   }
 
-  /** URL + auth headers for the AAC proxy (supports Range). Feed both to the
-   *  audio player — react-native-track-player accepts a `headers` field, so the
-   *  bearer token goes in the header the desktop expects (not the query). */
-  proxyRequest(trackId: string): { url: string; headers: Record<string, string> } {
-    return {
-      url: `${this.base}/media/proxy?track=${encodeURIComponent(trackId)}`,
-      headers: { Authorization: `Bearer ${this.conn.token}` }
-    }
+  /** Streamable URL for the AAC proxy (supports Range). The token rides in the
+   *  query because audio players (expo-audio) stream from a bare URL and can't
+   *  set headers — the desktop /media routes accept ?token= for exactly this. */
+  proxyUrl(trackId: string): string {
+    return `${this.base}/media/proxy?track=${encodeURIComponent(trackId)}&token=${encodeURIComponent(this.conn.token)}`
   }
 }
 

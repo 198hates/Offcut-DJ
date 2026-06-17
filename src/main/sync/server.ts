@@ -183,8 +183,12 @@ export class SyncServer {
   }
 
   private async handleMedia(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    // Media accepts the token via the Authorization header OR a ?token= query —
+    // audio players (expo-audio etc.) stream from a bare URL and can't set headers.
     const auth = req.headers.authorization
-    if (!this.deps.verify(bearer(Array.isArray(auth) ? auth[0] : auth))) {
+    const headerToken = bearer(Array.isArray(auth) ? auth[0] : auth)
+    const queryToken = url.searchParams.get('token')
+    if (!this.deps.verify(headerToken) && !this.deps.verify(queryToken)) {
       this.respond(res, { status: 401, json: { error: 'unauthorized' } })
       return
     }

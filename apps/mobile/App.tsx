@@ -1,8 +1,8 @@
-// Offcut mobile — slice 1: pairing + connection.
-// Scan the desktop QR (Settings → Phone Sync), persist {host,port,token}, and
-// confirm reachability via /health. Library mirror + audition come in slice 2.
+// Offcut mobile.
+// Slice 1: pairing + connection. Slice 2: browse the synced library, render
+// waveforms from /media/peaks, audition via the AAC proxy.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Pressable,
@@ -22,13 +22,16 @@ import {
   type Connection
 } from './src/pairing'
 import { SyncClient, type HealthInfo } from './src/syncClient'
+import { useLibrary } from './src/useLibrary'
+import { LibraryScreen } from './src/LibraryScreen'
+import { TrackScreen } from './src/TrackScreen'
+import type { Track } from './src/sync-types'
 
 type Phase = 'loading' | 'unpaired' | 'connecting' | 'connected' | 'error'
 
 export default function App(): JSX.Element {
   const [phase, setPhase] = useState<Phase>('loading')
   const [conn, setConn] = useState<Connection | null>(null)
-  const [info, setInfo] = useState<HealthInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [manual, setManual] = useState('')
@@ -39,11 +42,10 @@ export default function App(): JSX.Element {
     setPhase('connecting')
     setError(null)
     try {
-      const health = await new SyncClient(c).health()
+      const health: HealthInfo = await new SyncClient(c).health()
       if (!health.ok) throw new Error('desktop reported not-ok')
       await saveConnection(c)
       setConn(c)
-      setInfo(health)
       setPhase('connected')
     } catch (e) {
       setError(`Can't reach ${c.host}:${c.port} — ${(e as Error).message}`)
@@ -51,7 +53,6 @@ export default function App(): JSX.Element {
     }
   }, [])
 
-  // On launch, resume a saved pairing (verify it still answers).
   useEffect(() => {
     void (async () => {
       const saved = await loadConnection()
@@ -64,7 +65,7 @@ export default function App(): JSX.Element {
     (data: string): void => {
       if (handledScan.current) return
       const c = parsePairingUri(data)
-      if (!c) return // ignore non-Offcut QRs; keep scanning
+      if (!c) return
       handledScan.current = true
       setScanning(false)
       void connect(c)
@@ -97,12 +98,16 @@ export default function App(): JSX.Element {
   const disconnect = useCallback(async (): Promise<void> => {
     await clearConnection()
     setConn(null)
-    setInfo(null)
     setManual('')
     setPhase('unpaired')
   }, [])
 
-  // ── Scanning overlay ──────────────────────────────────────────────────────
+  // Connected → the library lives in its own component so its hooks (pull,
+  // audio player) mount only once we actually have a connection.
+  if (phase === 'connected' && conn) {
+    return <ConnectedApp conn={conn} onDisconnect={disconnect} />
+  }
+
   if (scanning) {
     return (
       <View style={styles.fill}>
@@ -128,26 +133,10 @@ export default function App(): JSX.Element {
       <StatusBar style="light" />
       <Text style={styles.brand}>OFFCUT</Text>
 
-      {phase === 'loading' && <ActivityIndicator color="#D86A4A" />}
-
-      {phase === 'connecting' && (
+      {(phase === 'loading' || phase === 'connecting') && (
         <>
           <ActivityIndicator color="#D86A4A" />
-          <Text style={styles.muted}>Connecting…</Text>
-        </>
-      )}
-
-      {phase === 'connected' && conn && (
-        <>
-          <Text style={styles.dot}>●</Text>
-          <Text style={styles.connected}>Connected to {info?.name ?? 'Offcut'}</Text>
-          <Text style={styles.muted}>
-            v{info?.version} · {conn.host}:{conn.port}
-          </Text>
-          <Text style={styles.note}>Library sync + audition land in the next build.</Text>
-          <Pressable style={[styles.btn, styles.btnGhost]} onPress={disconnect}>
-            <Text style={styles.btnGhostText}>Disconnect</Text>
-          </Pressable>
+          {phase === 'connecting' && <Text style={styles.muted}>Connecting…</Text>}
         </>
       )}
 
@@ -178,14 +167,22 @@ export default function App(): JSX.Element {
   )
 }
 
+function ConnectedApp({ conn, onDisconnect }: { conn: Connection; onDisconnect: () => void }): JSX.Element {
+  const client = useMemo(() => new SyncClient(conn), [conn])
+  const lib = useLibrary(client)
+  const [selected, setSelected] = useState<Track | null>(null)
+
+  if (selected) {
+    return <TrackScreen track={selected} client={client} onBack={() => setSelected(null)} />
+  }
+  return <LibraryScreen lib={lib} onSelectTrack={setSelected} onDisconnect={onDisconnect} />
+}
+
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: '#17150f' },
   center: { alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
   brand: { color: '#ECE3CC', fontSize: 28, fontWeight: '800', letterSpacing: 6, marginBottom: 8 },
   muted: { color: '#a59a82', fontSize: 14 },
-  note: { color: '#7a7264', fontSize: 12, marginTop: 4, textAlign: 'center' },
-  dot: { color: '#4A9B6F', fontSize: 22 },
-  connected: { color: '#ECE3CC', fontSize: 18, fontWeight: '600' },
   or: { color: '#7a7264', fontSize: 12, marginTop: 8 },
   input: {
     width: '100%',
