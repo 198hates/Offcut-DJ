@@ -74,8 +74,17 @@ export function parseRange(header: string | undefined, size: number): { start: n
   return { start, end: Math.min(end, size - 1) }
 }
 
+/**
+ * Stable key identifying a track's media version. Prefers the content hash (so a
+ * re-encode/edit yields a new key and a fresh proxy), falling back to the id.
+ * Exported so the Drive publisher keys uploads the same way the LAN cache does.
+ */
+export function proxyCacheKey(trackId: string, contentHash: string | null): string {
+  return contentHash || `id-${trackId.replace(/[^A-Za-z0-9]+/g, '_')}`
+}
+
 function cacheKey(info: TrackFile): string {
-  return info.contentHash || `id-${info.trackId.replace(/[^A-Za-z0-9]+/g, '_')}`
+  return proxyCacheKey(info.trackId, info.contentHash)
 }
 
 function peaksCachePath(cacheDir: string, info: TrackFile): string {
