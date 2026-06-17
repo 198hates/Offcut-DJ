@@ -20,6 +20,45 @@ npx expo start          # then press i (iOS sim), a (Android), or scan with Expo
 > The pinned versions in `package.json` target Expo SDK 52. If `npm install`
 > warns about mismatches, run `npx expo install --fix` to align them.
 
+## Build a standalone Android app (sideload onto your phone)
+
+Expo Go is for development. To get a real installable Offcut app, build an APK
+with **EAS Build** (Expo's cloud builder — no Android Studio needed) and sideload
+it. One-time:
+
+```bash
+cd apps/mobile
+npm i -g eas-cli          # or use: npx eas-cli@latest <cmd>
+eas login                 # your Expo account
+eas build:configure       # links/creates the EAS project (writes extra.eas.projectId)
+```
+
+Then build the sideloadable APK:
+
+```bash
+eas build -p android --profile preview
+```
+
+The first build generates and stores an Android keystore for you (EAS keeps it —
+don't lose the account). When it finishes (~10–20 min in the cloud) you get a
+download URL: open it on the phone, download the `.apk`, and install it
+(Android will prompt to allow "install unknown apps" for your browser/files app).
+
+Profiles (`eas.json`):
+- **preview** → internal-distribution **APK**, the sideload target.
+- **development** → APK with the dev client (for `expo-dev-client` debugging).
+- **production** → an **.aab** app bundle for the Play Store (`eas submit`).
+
+### Android build notes (already handled in `app.json`)
+- **Cleartext HTTP is enabled** (`expo-build-properties` → `usesCleartextTraffic`).
+  The companion talks to the desktop over `http://<lan-ip>` — a release Android
+  build blocks cleartext by default, so without this the app builds but can't
+  connect. (No effect in Expo Go, which is why dev "just works".)
+- Package id `co.betweenthebridges.offcut.mobile`, `versionCode` 1 — bump it for
+  each Play Store upload (sideloaded APKs don't care).
+- Uses the default Expo icon/splash until real art is added (`icon` / `splash`
+  in `app.json` + files under `assets/`).
+
 ## Pair with the desktop
 
 1. Desktop: **Settings → Phone Sync** → enable → a QR appears.

@@ -12,7 +12,8 @@
       "bundleIdentifier": "co.betweenthebridges.offcut.mobile"
     },
     "android": {
-      "package": "co.betweenthebridges.offcut.mobile"
+      "package": "co.betweenthebridges.offcut.mobile",
+      "versionCode": 1
     },
     "plugins": [
       [
@@ -22,7 +23,15 @@
         }
       ],
       "expo-asset",
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ]
   }
 }
