@@ -10,6 +10,7 @@ import { getLibraryDb } from '../library/db'
 import { pullChanges } from '../library/sync'
 import { applyPush } from '../library/apply-push'
 import { backfillContentHashes } from '../library/content-hash'
+import { getPeaks, getProxyPath } from '../sync/media'
 import type { SyncStatus } from '../../shared/types'
 
 /** Tell the renderer windows the library changed underneath them (phone push). */
@@ -25,6 +26,10 @@ let server: SyncServer | null = null
 function getPairing(): PairingStore {
   if (!pairing) pairing = new PairingStore(join(app.getPath('userData'), 'phone-sync.json'))
   return pairing
+}
+
+function mediaCacheDir(): string {
+  return join(app.getPath('userData'), 'media-cache')
 }
 
 function getServer(): SyncServer {
@@ -43,6 +48,8 @@ function getServer(): SyncServer {
         if (res.appliedTracks > 0 || res.appliedPlaylists > 0) notifyLibraryChanged()
         return res
       },
+      getPeaks: (trackId) => getPeaks(getLibraryDb(), mediaCacheDir(), trackId),
+      getProxyPath: (trackId) => getProxyPath(getLibraryDb(), mediaCacheDir(), trackId),
       recordDevice: (id, name) => p.recordDevice(id, name),
       info: () => ({ name: 'Offcut', version: app.getVersion() })
     })

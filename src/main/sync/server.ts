@@ -6,8 +6,10 @@
 // pull. Pushing edits from the phone is the next slice.
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http'
+import { createReadStream, statSync } from 'fs'
 import type { AddressInfo } from 'net'
 import type { SyncPull, SyncPushPayload, SyncPushResult } from '../../shared/types'
+import { parseRange } from './media'
 
 /** Reject bodies larger than this to avoid a memory-exhaustion vector. */
 const MAX_BODY_BYTES = 64 * 1024 * 1024
@@ -19,6 +21,10 @@ export interface RouteDeps {
   pull: (cursor: number) => SyncPull
   /** Apply edits pushed from the phone. */
   applyPush: (payload: SyncPushPayload) => SyncPushResult
+  /** Waveform peaks JSON for a track, or null if unavailable. */
+  getPeaks: (trackId: string) => Promise<unknown | null>
+  /** Filesystem path to a track's AAC proxy, or null if unavailable. */
+  getProxyPath: (trackId: string) => Promise<string | null>
   /** Note that a device connected (for the desktop's device list). */
   recordDevice: (id: string | null, name: string | null) => void
   /** Public server identity, returned by /health. */
@@ -121,6 +127,12 @@ export class SyncServer {
 
   private onRequest(req: IncomingMessage, res: ServerResponse): void {
     const url = new URL(req.url ?? '/', 'http://localhost')
+    // Media is async + binary (and needs range streaming), so it's handled
+    // outside the pure JSON router.
+    if (url.pathname.startsWith('/media/')) {
+      void this.handleMedia(req, res, url)
+      return
+    }
     const needsBody = req.method === 'POST' || req.method === 'PUT'
     if (!needsBody) {
       this.respond(res, this.route(req, url, undefined))
@@ -168,5 +180,73 @@ export class SyncServer {
       'content-length': Buffer.byteLength(body)
     })
     res.end(body)
+  }
+
+  private async handleMedia(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    const auth = req.headers.authorization
+    if (!this.deps.verify(bearer(Array.isArray(auth) ? auth[0] : auth))) {
+      this.respond(res, { status: 401, json: { error: 'unauthorized' } })
+      return
+    }
+    const id = (h: string): string | null => {
+      const v = req.headers[h]
+      return (Array.isArray(v) ? v[0] : v) ?? null
+    }
+    this.deps.recordDevice(id('x-device-id'), id('x-device-name'))
+
+    if (req.method !== 'GET') {
+      this.respond(res, { status: 404, json: { error: 'not found' } })
+      return
+    }
+    const trackId = url.searchParams.get('track') ?? ''
+    try {
+      if (url.pathname === '/media/peaks') {
+        const data = await this.deps.getPeaks(trackId)
+        if (!data) {
+          this.respond(res, { status: 404, json: { error: 'not found' } })
+          return
+        }
+        this.respond(res, { status: 200, json: data })
+        return
+      }
+      if (url.pathname === '/media/proxy') {
+        const path = await this.deps.getProxyPath(trackId)
+        if (!path) {
+          this.respond(res, { status: 404, json: { error: 'not found' } })
+          return
+        }
+        this.streamFile(res, path, Array.isArray(req.headers.range) ? req.headers.range[0] : req.headers.range)
+        return
+      }
+      this.respond(res, { status: 404, json: { error: 'not found' } })
+    } catch (e) {
+      this.respond(res, { status: 500, json: { error: (e as Error).message } })
+    }
+  }
+
+  /** Stream a file as audio/mp4 with HTTP range support (206 for partials). */
+  private streamFile(res: ServerResponse, path: string, rangeHeader: string | undefined): void {
+    let size: number
+    try {
+      size = statSync(path).size
+    } catch {
+      this.respond(res, { status: 404, json: { error: 'not found' } })
+      return
+    }
+    const type = 'audio/mp4'
+    const range = parseRange(rangeHeader, size)
+    if (range) {
+      const { start, end } = range
+      res.writeHead(206, {
+        'content-type': type,
+        'accept-ranges': 'bytes',
+        'content-range': `bytes ${start}-${end}/${size}`,
+        'content-length': end - start + 1
+      })
+      createReadStream(path, { start, end }).pipe(res)
+    } else {
+      res.writeHead(200, { 'content-type': type, 'accept-ranges': 'bytes', 'content-length': size })
+      createReadStream(path).pipe(res)
+    }
   }
 }

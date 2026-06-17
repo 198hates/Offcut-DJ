@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { handleSyncRequest, SyncServer, type RouteDeps } from '../server'
@@ -20,6 +20,8 @@ function deps(over: Partial<RouteDeps> = {}): RouteDeps {
     verify: (t) => t === 'good',
     pull: () => emptyPull,
     applyPush: () => emptyPush,
+    getPeaks: async () => null,
+    getProxyPath: async () => null,
     recordDevice: () => undefined,
     info: () => ({ name: 'Offcut', version: '1.2.3' }),
     ...over
@@ -148,6 +150,44 @@ describe('SyncServer round-trip', () => {
       expect(bad.status).toBe(400)
     } finally {
       await srv.stop()
+    }
+  })
+
+  it('serves peaks JSON and a range-requested proxy', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'offcut-media-'))
+    const proxy = join(dir, 'p.m4a')
+    writeFileSync(proxy, Buffer.from('ABCDEFGHIJ')) // 10 bytes
+    const srv = new SyncServer(
+      deps({
+        getPeaks: async (id) => (id === 'known' ? { v: 1, trackId: id, peaks: [1, 2, 3] } : null),
+        getProxyPath: async (id) => (id === 'known' ? proxy : null)
+      })
+    )
+    await srv.start(0)
+    const port = srv.port!
+    const auth = { authorization: 'Bearer good' }
+    try {
+      const peaks = await fetch(`http://127.0.0.1:${port}/media/peaks?track=known`, { headers: auth })
+      expect(peaks.status).toBe(200)
+      expect(await peaks.json()).toMatchObject({ trackId: 'known' })
+
+      expect((await fetch(`http://127.0.0.1:${port}/media/peaks?track=ghost`, { headers: auth })).status).toBe(404)
+      expect((await fetch(`http://127.0.0.1:${port}/media/peaks?track=known`)).status).toBe(401)
+
+      const full = await fetch(`http://127.0.0.1:${port}/media/proxy?track=known`, { headers: auth })
+      expect(full.status).toBe(200)
+      expect(full.headers.get('accept-ranges')).toBe('bytes')
+      expect(await full.text()).toBe('ABCDEFGHIJ')
+
+      const partial = await fetch(`http://127.0.0.1:${port}/media/proxy?track=known`, {
+        headers: { ...auth, range: 'bytes=2-5' }
+      })
+      expect(partial.status).toBe(206)
+      expect(partial.headers.get('content-range')).toBe('bytes 2-5/10')
+      expect(await partial.text()).toBe('CDEF')
+    } finally {
+      await srv.stop()
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 })
