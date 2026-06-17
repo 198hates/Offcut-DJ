@@ -12,6 +12,9 @@ export interface LibraryState {
   playlists: Playlist[]
   byId: Map<string, Track>
   refresh: () => Promise<void>
+  /** Merge fields into a track in memory (after a successful push) so the list
+   *  reflects the edit without a full re-pull. */
+  patchTrack: (id: string, fields: Partial<Track>) => void
 }
 
 export function useLibrary(client: SyncClient): LibraryState {
@@ -36,9 +39,20 @@ export function useLibrary(client: SyncClient): LibraryState {
     }
   }, [client])
 
+  const patchTrack = useCallback((id: string, fields: Partial<Track>): void => {
+    setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, ...fields } : t)))
+    setById((prev) => {
+      const cur = prev.get(id)
+      if (!cur) return prev
+      const next = new Map(prev)
+      next.set(id, { ...cur, ...fields })
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     void refresh()
   }, [refresh])
 
-  return { loading, error, tracks, playlists, byId, refresh }
+  return { loading, error, tracks, playlists, byId, refresh, patchTrack }
 }

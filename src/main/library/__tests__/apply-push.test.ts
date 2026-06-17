@@ -41,6 +41,37 @@ describe('applyPush — tracks', () => {
     expect(t.comment).toBe('')
   })
 
+  it('preserves the desktop beatgrid when a phone patch omits it', () => {
+    // The lean mirror strips grids, so the phone never sends them. A prep edit
+    // (rating + hot cues) must NOT wipe the analysed grid the desktop holds.
+    const db = freshDb()
+    const id = insertTrack(db, '2026-01-01T00:00:00Z')
+    const grid = JSON.stringify([{ position: 0, bpm: 128 }])
+    const analysed = JSON.stringify({ bpm: 128, anchorMs: 0, beatPhase: 0 })
+    db.prepare('UPDATE tracks SET beatgrid = ?, analysed_beatgrid = ? WHERE id = ?').run(grid, analysed, id)
+
+    const res = applyPush(db, {
+      tracks: [
+        {
+          id,
+          updatedAt: '2026-02-01T00:00:00Z',
+          rating: 4,
+          cuePoints: [{ index: 0, type: 'hotcue', positionMs: 1000, color: '#e91e63', label: 'A' }]
+        }
+      ]
+    })
+    expect(res.appliedTracks).toBe(1)
+    const row = db.prepare('SELECT beatgrid, analysed_beatgrid FROM tracks WHERE id = ?').get(id) as {
+      beatgrid: string
+      analysed_beatgrid: string
+    }
+    expect(row.beatgrid).toBe(grid) // untouched
+    expect(row.analysed_beatgrid).toBe(analysed) // untouched
+    const t = rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown>)
+    expect(t.rating).toBe(4)
+    expect(t.cuePoints).toHaveLength(1)
+  })
+
   it('skips an edit older than the desktop copy (last-writer-wins)', () => {
     const db = freshDb()
     const id = insertTrack(db, '2026-03-01T00:00:00Z')

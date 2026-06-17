@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio'
 import { Waveform } from './Waveform'
+import { TrackEditor } from './TrackEditor'
 import type { SyncClient } from './syncClient'
 import type { PeaksData, Track } from './sync-types'
 
@@ -17,11 +18,13 @@ function mmss(sec: number): string {
 export function TrackScreen({
   track,
   client,
-  onBack
+  onBack,
+  onPatched
 }: {
   track: Track
   client: SyncClient
   onBack: () => void
+  onPatched: (id: string, fields: Partial<Track>) => void
 }): JSX.Element {
   const [peaks, setPeaks] = useState<PeaksData | null>(null)
   const [peaksErr, setPeaksErr] = useState<string | null>(null)
@@ -86,9 +89,13 @@ export function TrackScreen({
         {!status.isLoaded && <Text style={styles.dim}>buffering…</Text>}
       </View>
 
-      <Text style={styles.note}>
-        Auditioning the desktop's AAC proxy over the LAN. Editing (rating, cues…) comes next.
-      </Text>
+      <TrackEditor
+        track={track}
+        client={client}
+        player={player}
+        playheadSec={status.currentTime}
+        onPatched={onPatched}
+      />
     </ScrollView>
   )
 }

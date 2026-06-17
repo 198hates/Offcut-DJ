@@ -173,7 +173,14 @@ function ConnectedApp({ conn, onDisconnect }: { conn: Connection; onDisconnect: 
   const [selected, setSelected] = useState<Track | null>(null)
 
   if (selected) {
-    return <TrackScreen track={selected} client={client} onBack={() => setSelected(null)} />
+    return (
+      <TrackScreen
+        track={selected}
+        client={client}
+        onBack={() => setSelected(null)}
+        onPatched={lib.patchTrack}
+      />
+    )
   }
   return <LibraryScreen lib={lib} onSelectTrack={setSelected} onDisconnect={onDisconnect} />
 }

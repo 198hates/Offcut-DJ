@@ -82,10 +82,12 @@ export function LibraryScreen({
             }
             renderItem={({ item }) => (
               <Pressable style={styles.row} onPress={() => onSelectTrack(item)}>
+                <View style={[styles.colorBar, item.color ? { backgroundColor: item.color } : null]} />
                 <View style={styles.rowMain}>
                   <Text style={styles.title} numberOfLines={1}>{item.title || '(untitled)'}</Text>
                   <Text style={styles.sub} numberOfLines={1}>{item.artist || '—'}</Text>
                 </View>
+                {item.rating > 0 && <Text style={styles.rowRating}>{'★'.repeat(item.rating)}</Text>}
                 <Text style={styles.meta}>
                   {item.bpm ? `${Math.round(item.bpm)}` : '–'}
                   {item.key ? ` · ${item.key}` : ''}
@@ -159,8 +161,10 @@ const styles = StyleSheet.create({
     gap: 10
   },
   rowMain: { flex: 1 },
+  colorBar: { width: 3, alignSelf: 'stretch', borderRadius: 2, backgroundColor: 'transparent' },
   title: { color: '#ECE3CC', fontSize: 15, flex: 1 },
   sub: { color: '#8c8270', fontSize: 12, marginTop: 1 },
+  rowRating: { color: '#C9A02C', fontSize: 11 },
   meta: { color: '#a59a82', fontSize: 12, fontVariant: ['tabular-nums'] },
   empty: { color: '#7a7264', textAlign: 'center', marginTop: 40 },
   error: { color: '#e0726f', fontSize: 12, textAlign: 'center', padding: 8 }

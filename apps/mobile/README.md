@@ -38,7 +38,11 @@ If the desktop later does **Unpair all**, the token rotates and the app gets
   waveform from `/media/peaks` (plain-view bars), audition the AAC proxy via
   `expo-audio` (token in `?token=`; desktop `/media` accepts it). Offline disk
   cache is slice 5.
-- [ ] 3. Two-way prep — edit rating/energy/mood/tags/comment/colour + hot cues; `POST /sync/push`.
+- [x] **3. Two-way prep** — edit rating/energy/mood/tags/comment/colour + hot cues
+  on the track screen, pushed via `POST /sync/push` (last-writer-wins by
+  `updatedAt`). Hot cues hook the audition player: "set at playhead" captures the
+  current time, tapping a cue seeks to it. The phone never sends beatgrids (the
+  lean mirror omits them), so grids are preserved desktop-side.
 - [ ] 4. Playlists — create/reorder/rename/delete.
 - [ ] 5. Offline — cache proxies + peaks; queue edits and flush on reconnect.
 
