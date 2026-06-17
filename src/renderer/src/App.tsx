@@ -15,6 +15,7 @@ import { SearchPage } from './pages/Search'
 import { LineagePage } from './pages/Lineage'
 import { AssistantPage } from './pages/Assistant'
 import { UsbPage } from './pages/Usb'
+import { PhoneSyncPage } from './pages/PhoneSync'
 import { Sidebar } from './components/Sidebar'
 import { NavRail } from './components/NavRail'
 import type { Section } from './components/NavRail'
@@ -115,7 +116,8 @@ export default function App(): JSX.Element {
             {activePage === 'orders'  && <ErrorBoundary name="orders"><OrdersPage /></ErrorBoundary>}
             {activePage === 'lineage'   && <ErrorBoundary name="lineage"><LineagePage /></ErrorBoundary>}
             {activePage === 'assistant' && <ErrorBoundary name="assistant"><AssistantPage /></ErrorBoundary>}
-            {activePage === 'usb'     && <ErrorBoundary name="usb"><UsbPage /></ErrorBoundary>}
+            {activePage === 'phonesync' && <ErrorBoundary name="phonesync"><PhoneSyncPage /></ErrorBoundary>}
+      {activePage === 'usb'     && <ErrorBoundary name="usb"><UsbPage /></ErrorBoundary>}
             {activePage === 'settings'&& <ErrorBoundary name="settings"><SettingsPage /></ErrorBoundary>}
           </div>
           {activePage === 'library' && detailTrackId && (

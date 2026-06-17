@@ -1,4 +1,4 @@
-export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'orders' | 'search' | 'lineage' | 'assistant' | 'usb' | 'settings'
+export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'orders' | 'search' | 'lineage' | 'assistant' | 'phonesync' | 'usb' | 'settings'
 
 interface Props {
   active: Section
@@ -134,6 +134,20 @@ function AssistantIcon() {
   )
 }
 
+/** Phone Sync — a phone with sync arrows: the LAN companion app */
+function PhoneIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4.5" y="1.75" width="7" height="12.5" rx="1.3" />
+      <line x1="7" y1="12.2" x2="9" y2="12.2" />
+      <path d="M6.4 6.1A2.4 2.4 0 0 1 10 5.4" />
+      <path d="M9.6 7.9A2.4 2.4 0 0 1 6 8.6" />
+      <polyline points="9.7,4.2 10.1,5.4 8.9,5.6" />
+      <polyline points="6.3,9.8 5.9,8.6 7.1,8.4" />
+    </svg>
+  )
+}
+
 function GearIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -173,6 +187,9 @@ export function NavRail({ active, onNavigate }: Props): JSX.Element {
           </button>
         ))}
       </div>
+      <button onClick={() => onNavigate('phonesync')} title="Phone Sync" className={`${cls('phonesync')} mb-1`}>
+        <PhoneIcon />
+      </button>
       <button onClick={() => onNavigate('usb')} title="USB Export" className={`${cls('usb')} mb-1`}>
         <UsbIcon />
       </button>
