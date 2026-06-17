@@ -213,6 +213,30 @@ export interface Track {
   phrases: PhraseSegment[] | null
 }
 
+// ── Library sync (mobile companion / multi-device) ─────────────────────────────
+
+/** One collapsed change from the sync journal: the latest op for an entity. */
+export interface SyncChange {
+  entity: 'track' | 'playlist'
+  entityId: string
+  op: 'upsert' | 'delete'
+  /** Monotonic journal sequence — use as the cursor for the next pull. */
+  seq: number
+}
+
+/**
+ * A delta (or, when pulling from cursor 0, a full snapshot) of everything that
+ * changed in the library since a given cursor. `cursor` is the value to send on
+ * the next pull. Deleted ids let a client drop entities that no longer exist.
+ */
+export interface SyncPull {
+  cursor: number
+  tracks: Track[]
+  playlists: Playlist[]
+  deletedTrackIds: string[]
+  deletedPlaylistIds: string[]
+}
+
 /**
  * USB pre-flight report — capacity, filesystem suitability for CDJs, and a
  * measured speed benchmark used to estimate how long an export will take.
