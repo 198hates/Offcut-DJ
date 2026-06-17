@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "Offcut",
+    "slug": "offcut-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "offcut",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "co.betweenthebridges.offcut.mobile"
+    },
+    "android": {
+      "package": "co.betweenthebridges.offcut.mobile"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        { "cameraPermission": "Offcut uses the camera to scan the desktop pairing QR code." }
+      ]
+    ]
+  }
+}
