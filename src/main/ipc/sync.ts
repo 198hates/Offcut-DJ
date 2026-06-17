@@ -1,6 +1,6 @@
 // IPC + lifecycle for the phone-sync LAN server.
 
-import { ipcMain, app } from 'electron'
+import { ipcMain, app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import QRCode from 'qrcode'
 import { PairingStore } from '../sync/pairing'
@@ -8,8 +8,16 @@ import { SyncServer } from '../sync/server'
 import { getLanAddresses } from '../sync/lan-address'
 import { getLibraryDb } from '../library/db'
 import { pullChanges } from '../library/sync'
+import { applyPush } from '../library/apply-push'
 import { backfillContentHashes } from '../library/content-hash'
 import type { SyncStatus } from '../../shared/types'
+
+/** Tell the renderer windows the library changed underneath them (phone push). */
+function notifyLibraryChanged(): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) w.webContents.send('sync:libraryChanged')
+  }
+}
 
 let pairing: PairingStore | null = null
 let server: SyncServer | null = null
@@ -29,6 +37,11 @@ function getServer(): SyncServer {
         // Make sure recently-added tracks carry a content hash before they sync.
         backfillContentHashes(db, 500)
         return pullChanges(db, cursor)
+      },
+      applyPush: (payload) => {
+        const res = applyPush(getLibraryDb(), payload)
+        if (res.appliedTracks > 0 || res.appliedPlaylists > 0) notifyLibraryChanged()
+        return res
       },
       recordDevice: (id, name) => p.recordDevice(id, name),
       info: () => ({ name: 'Offcut', version: app.getVersion() })

@@ -7,13 +7,18 @@
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http'
 import type { AddressInfo } from 'net'
-import type { SyncPull } from '../../shared/types'
+import type { SyncPull, SyncPushPayload, SyncPushResult } from '../../shared/types'
+
+/** Reject bodies larger than this to avoid a memory-exhaustion vector. */
+const MAX_BODY_BYTES = 64 * 1024 * 1024
 
 export interface RouteDeps {
   /** Validate the request's bearer token. */
   verify: (token: string | null) => boolean
   /** Produce the delta/snapshot for a cursor. */
   pull: (cursor: number) => SyncPull
+  /** Apply edits pushed from the phone. */
+  applyPush: (payload: SyncPushPayload) => SyncPushResult
   /** Note that a device connected (for the desktop's device list). */
   recordDevice: (id: string | null, name: string | null) => void
   /** Public server identity, returned by /health. */
@@ -40,7 +45,8 @@ export function handleSyncRequest(
   path: string,
   query: URLSearchParams,
   headers: Record<string, string | string[] | undefined>,
-  deps: RouteDeps
+  deps: RouteDeps,
+  body?: unknown
 ): RouteResult {
   const header = (k: string): string | undefined => {
     const v = headers[k]
@@ -60,6 +66,12 @@ export function handleSyncRequest(
     if (method === 'GET' && path === '/sync/pull') {
       const cursor = Math.max(0, Math.floor(Number(query.get('cursor') ?? 0)) || 0)
       return { status: 200, json: deps.pull(cursor) }
+    }
+    if (method === 'POST' && path === '/sync/push') {
+      if (typeof body !== 'object' || body === null) {
+        return { status: 400, json: { error: 'invalid body' } }
+      }
+      return { status: 200, json: deps.applyPush(body as SyncPushPayload) }
     }
     return { status: 404, json: { error: 'not found' } }
   }
@@ -109,12 +121,47 @@ export class SyncServer {
 
   private onRequest(req: IncomingMessage, res: ServerResponse): void {
     const url = new URL(req.url ?? '/', 'http://localhost')
-    let result: RouteResult
-    try {
-      result = handleSyncRequest(req.method, url.pathname, url.searchParams, req.headers, this.deps)
-    } catch (e) {
-      result = { status: 500, json: { error: (e as Error).message } }
+    const needsBody = req.method === 'POST' || req.method === 'PUT'
+    if (!needsBody) {
+      this.respond(res, this.route(req, url, undefined))
+      return
     }
+    // Buffer the request body (capped), then route.
+    const chunks: Buffer[] = []
+    let size = 0
+    let aborted = false
+    req.on('data', (c: Buffer) => {
+      size += c.length
+      if (size > MAX_BODY_BYTES) {
+        aborted = true
+        this.respond(res, { status: 413, json: { error: 'payload too large' } })
+        req.destroy()
+        return
+      }
+      chunks.push(c)
+    })
+    req.on('end', () => {
+      if (aborted) return
+      let body: unknown
+      try {
+        body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}
+      } catch {
+        this.respond(res, { status: 400, json: { error: 'invalid json' } })
+        return
+      }
+      this.respond(res, this.route(req, url, body))
+    })
+  }
+
+  private route(req: IncomingMessage, url: URL, body: unknown): RouteResult {
+    try {
+      return handleSyncRequest(req.method, url.pathname, url.searchParams, req.headers, this.deps, body)
+    } catch (e) {
+      return { status: 500, json: { error: (e as Error).message } }
+    }
+  }
+
+  private respond(res: ServerResponse, result: RouteResult): void {
     const body = JSON.stringify(result.json)
     res.writeHead(result.status, {
       'content-type': 'application/json',

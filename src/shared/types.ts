@@ -237,6 +237,57 @@ export interface SyncPull {
   deletedPlaylistIds: string[]
 }
 
+/**
+ * A prep edit pushed from the phone for one track. Only the keys present are
+ * applied (a partial patch); `updatedAt` is when the phone made the edit and
+ * gates a last-writer-wins merge against the desktop's copy. Tracks are matched
+ * by `id`, falling back to `contentHash`. File-level metadata is desktop-owned
+ * and intentionally not patchable from mobile.
+ */
+export interface TrackPatch {
+  id: string
+  contentHash?: string
+  updatedAt: string
+  rating?: number
+  energy?: number | null
+  mood?: number | null
+  comment?: string
+  color?: string
+  tags?: string[]
+  customTags?: Record<string, string>
+  cuePoints?: CuePoint[]
+  beatgrid?: BeatgridMarker[]
+  analysedBeatgrid?: Beatgrid | null
+}
+
+/**
+ * A playlist edit pushed from the phone. Unknown ids create a new playlist;
+ * `deleted` removes it; `trackIds` replaces membership in order. Gated by
+ * last-writer-wins on `updatedAt` (except creation).
+ */
+export interface PlaylistPatch {
+  id: string
+  updatedAt: string
+  deleted?: boolean
+  name?: string
+  color?: string
+  trackIds?: string[]
+}
+
+export interface SyncPushPayload {
+  tracks?: TrackPatch[]
+  playlists?: PlaylistPatch[]
+}
+
+export interface SyncPushResult {
+  appliedTracks: number
+  skippedTracks: number
+  appliedPlaylists: number
+  skippedPlaylists: number
+  /** Cursor after applying, so the phone can fast-forward past its own echo. */
+  cursor: number
+}
+
 /** A phone (or other device) that has paired with this desktop. */
 export interface SyncPairedDevice {
   id: string

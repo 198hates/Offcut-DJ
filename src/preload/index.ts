@@ -171,7 +171,12 @@ const api = {
     pairing: (): Promise<import('../shared/types').SyncPairingInfo> => ipcRenderer.invoke('sync:pairing'),
     unpairAll: (): Promise<import('../shared/types').SyncStatus> => ipcRenderer.invoke('sync:unpairAll'),
     removeDevice: (id: string): Promise<import('../shared/types').SyncStatus> =>
-      ipcRenderer.invoke('sync:removeDevice', id)
+      ipcRenderer.invoke('sync:removeDevice', id),
+    onLibraryChanged: (cb: () => void): (() => void) => {
+      const h = (): void => cb()
+      ipcRenderer.on('sync:libraryChanged', h)
+      return () => ipcRenderer.removeListener('sync:libraryChanged', h)
+    }
   },
   audio: {
     readFile: (filePath: string): Promise<ArrayBuffer> =>

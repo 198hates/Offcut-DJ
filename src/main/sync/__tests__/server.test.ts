@@ -4,14 +4,22 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { handleSyncRequest, SyncServer, type RouteDeps } from '../server'
 import { PairingStore } from '../pairing'
-import type { SyncPull } from '../../../shared/types'
+import type { SyncPull, SyncPushResult } from '../../../shared/types'
 
 const emptyPull: SyncPull = { cursor: 0, tracks: [], playlists: [], deletedTrackIds: [], deletedPlaylistIds: [] }
+const emptyPush: SyncPushResult = {
+  appliedTracks: 0,
+  skippedTracks: 0,
+  appliedPlaylists: 0,
+  skippedPlaylists: 0,
+  cursor: 0
+}
 
 function deps(over: Partial<RouteDeps> = {}): RouteDeps {
   return {
     verify: (t) => t === 'good',
     pull: () => emptyPull,
+    applyPush: () => emptyPush,
     recordDevice: () => undefined,
     info: () => ({ name: 'Offcut', version: '1.2.3' }),
     ...over
@@ -64,6 +72,31 @@ describe('handleSyncRequest', () => {
   it('404s unknown sync routes (still requires auth first)', () => {
     expect(handleSyncRequest('GET', '/sync/bogus', q(), { authorization: 'Bearer good' }, deps()).status).toBe(404)
   })
+
+  it('applies a push and returns the result', () => {
+    let received: unknown = null
+    const r = handleSyncRequest(
+      'POST',
+      '/sync/push',
+      q(),
+      { authorization: 'Bearer good' },
+      deps({ applyPush: (p) => ((received = p), { ...emptyPush, appliedTracks: 1, cursor: 9 }) }),
+      { tracks: [{ id: 't1', updatedAt: '2026-01-01T00:00:00Z', rating: 5 }] }
+    )
+    expect(r.status).toBe(200)
+    expect(r.json).toMatchObject({ appliedTracks: 1, cursor: 9 })
+    expect(received).toMatchObject({ tracks: [{ id: 't1' }] })
+  })
+
+  it('rejects a push with a non-object body', () => {
+    expect(
+      handleSyncRequest('POST', '/sync/push', q(), { authorization: 'Bearer good' }, deps(), 'nope').status
+    ).toBe(400)
+  })
+
+  it('requires auth for push', () => {
+    expect(handleSyncRequest('POST', '/sync/push', q(), {}, deps(), {}).status).toBe(401)
+  })
 })
 
 describe('SyncServer round-trip', () => {
@@ -88,6 +121,34 @@ describe('SyncServer round-trip', () => {
       await srv.stop()
     }
     expect(srv.running).toBe(false)
+  })
+
+  it('reads and applies a POST push body', async () => {
+    let pushed: unknown = null
+    const srv = new SyncServer(
+      deps({ applyPush: (p) => ((pushed = p), { ...emptyPush, appliedTracks: 2, cursor: 5 }) })
+    )
+    await srv.start(0)
+    const port = srv.port!
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/sync/push`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer good', 'content-type': 'application/json' },
+        body: JSON.stringify({ tracks: [{ id: 'a' }, { id: 'b' }] })
+      })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ appliedTracks: 2, cursor: 5 })
+      expect(pushed).toMatchObject({ tracks: [{ id: 'a' }, { id: 'b' }] })
+
+      const bad = await fetch(`http://127.0.0.1:${port}/sync/push`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer good', 'content-type': 'application/json' },
+        body: '{not json'
+      })
+      expect(bad.status).toBe(400)
+    } finally {
+      await srv.stop()
+    }
   })
 })
 

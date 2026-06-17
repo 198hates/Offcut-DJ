@@ -112,6 +112,7 @@ declare global {
         pairing: () => Promise<SyncPairingInfo>
         unpairAll: () => Promise<SyncStatus>
         removeDevice: (id: string) => Promise<SyncStatus>
+        onLibraryChanged: (cb: () => void) => () => void
       }
       audio: {
         readFile: (filePath: string) => Promise<ArrayBuffer>
