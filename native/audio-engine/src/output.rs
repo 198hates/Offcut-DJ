@@ -44,6 +44,7 @@ use crate::eq::{build_bands, Biquad, BiquadState};
 use crate::filter::{knob_to_filter, FilterMode, SvfCoeffs, SvfState};
 use crate::recorder::Recorder;
 use crate::signalsmith::SignalsmithStretcher;
+use crate::tap::StreamTap;
 
 /// `Send`-asserting wrapper around a cpal `Stream`.
 ///
@@ -702,6 +703,7 @@ impl DeckRenderer {
 pub fn build_master_stream(
     active: Arc<ArcSwap<Vec<Arc<DeckEngine>>>>,
     recorder: Arc<Recorder>,
+    tap: Arc<StreamTap>,
     device: &Device,
 ) -> Result<Stream, String> {
     let config = device
@@ -713,7 +715,7 @@ pub fn build_master_stream(
 
     match sample_format {
         SampleFormat::F32 | SampleFormat::I16 | SampleFormat::U16 => {
-            build_master_f32(active, recorder, device, &config)
+            build_master_f32(active, recorder, tap, device, &config)
         }
         _ => Err(format!("Unsupported sample format: {:?}", sample_format)),
     }
@@ -722,6 +724,7 @@ pub fn build_master_stream(
 fn build_master_f32(
     active: Arc<ArcSwap<Vec<Arc<DeckEngine>>>>,
     recorder: Arc<Recorder>,
+    tap: Arc<StreamTap>,
     device: &Device,
     config: &StreamConfig,
 ) -> Result<Stream, String> {
@@ -730,6 +733,8 @@ fn build_master_f32(
 
     recorder.sample_rate.store(config.sample_rate.0, Ordering::Relaxed);
     recorder.channels.store(config.channels as u32, Ordering::Relaxed);
+    tap.sample_rate.store(config.sample_rate.0, Ordering::Relaxed);
+    tap.channels.store(config.channels as u32, Ordering::Relaxed);
 
     // Per-deck renderers, keyed by engine pointer. A new deck costs one Vec
     // push on first sight (decks register at app start, before playback).
@@ -770,6 +775,9 @@ fn build_master_f32(
 
                     if recorder.active.load(Ordering::Relaxed) {
                         recorder.ring.push_slice(out_chunk);
+                    }
+                    if tap.active.load(Ordering::Relaxed) {
+                        tap.ring.push_slice(out_chunk);
                     }
 
                     offset += chunk_len;

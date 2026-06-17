@@ -20,6 +20,7 @@ import { tmpdir, networkInterfaces } from 'node:os'
 import { join, basename } from 'node:path'
 import ffmpegPath from 'ffmpeg-static'
 import type { CastDevice, CastStatus } from '../../shared/types'
+import { startMasterTap, stopMasterTap, drainMasterTap } from '../engine'
 
 // castv2-client ships no types — it's a small callback-style protocol client.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -30,6 +31,8 @@ let _ff: ChildProcess | null = null
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _client: any = null
 let _hlsDir: string | null = null
+let _drain: ReturnType<typeof setInterval> | null = null
+let _master = false
 let _status: CastStatus = { casting: false, device: null, source: null, error: null }
 
 /** A LAN IPv4 the Chromecast can reach back on (not loopback). */
@@ -74,17 +77,33 @@ function waitForFile(file: string, timeoutMs: number): Promise<void> {
   })
 }
 
-/** Encode `sourceFile` to live HLS and serve it; returns the playable URL. */
-async function startHlsServer(sourceFile: string): Promise<string> {
+/** What audio to cast: a file (test) or the live master mix (the real feature). */
+type CastSource = { kind: 'file'; path: string } | { kind: 'master' }
+
+/** Encode `source` to live HLS and serve it; returns the playable URL. */
+async function startHlsServer(source: CastSource): Promise<string> {
   _hlsDir = mkdtempSync(join(tmpdir(), 'offcut-cast-'))
   const playlist = join(_hlsDir, 'stream.m3u8')
 
-  // -re reads the input at native rate (so HLS stays "live"); a small sliding
-  // window with delete_segments keeps disk + latency bounded.
+  // Input args differ by source: a file is read in real time (-re); the live
+  // master arrives as raw f32 PCM on ffmpeg's stdin from the engine tap (it's
+  // already real-time, so no -re).
+  let inputArgs: string[]
+  let pcmFormat: { sampleRate: number; channels: number } | null = null
+  if (source.kind === 'file') {
+    inputArgs = ['-re', '-i', source.path]
+  } else {
+    const fmt = startMasterTap()
+    if (!fmt) throw new Error('native engine not available for master tap')
+    pcmFormat = fmt
+    inputArgs = ['-f', 'f32le', '-ar', String(fmt.sampleRate), '-ac', String(fmt.channels), '-i', 'pipe:0']
+  }
+
+  // A small sliding window with delete_segments keeps disk + latency bounded.
   _ff = spawn(ffmpegPath as unknown as string, [
     '-hide_banner', '-loglevel', 'error',
-    '-re', '-i', sourceFile,
-    '-vn', '-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-ac', '2',
+    ...inputArgs,
+    '-vn', '-c:a', 'aac', '-b:a', '192k',
     '-f', 'hls',
     '-hls_time', '2',
     '-hls_list_size', '6',
@@ -93,6 +112,19 @@ async function startHlsServer(sourceFile: string): Promise<string> {
     playlist
   ])
   _ff.on('error', (e) => { _status.error = `ffmpeg: ${e.message}` })
+  _ff.stdin?.on('error', () => { /* ignore broken-pipe on teardown */ })
+
+  // Live master: pump engine PCM into ffmpeg's stdin until torn down.
+  if (pcmFormat) {
+    const { sampleRate, channels } = pcmFormat
+    _drain = setInterval(() => {
+      if (!_ff?.stdin?.writable) return
+      const pcm = drainMasterTap(sampleRate * channels) // up to ~1s available
+      if (pcm.length > 0) {
+        _ff.stdin.write(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength))
+      }
+    }, 20)
+  }
 
   await waitForFile(playlist, 8000)
 
@@ -116,13 +148,9 @@ async function startHlsServer(sourceFile: string): Promise<string> {
   return `http://${lanIp()}:${port}/stream.m3u8`
 }
 
-/** Start casting `sourceFile` to `device`. Tears down any existing session first. */
-export async function startCast(device: CastDevice, sourceFile: string): Promise<void> {
-  await stopCast()
-  if (!existsSync(sourceFile)) throw new Error('source file not found')
-  const url = await startHlsServer(sourceFile)
-
-  await new Promise<void>((resolve, reject) => {
+/** Connect to `device` and load the HLS `url` as a LIVE stream. */
+function connectAndLoad(device: CastDevice, url: string, title: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const client: any = new Client()
     _client = client
@@ -138,11 +166,10 @@ export async function startCast(device: CastDevice, sourceFile: string): Promise
           contentId: url,
           contentType: 'application/vnd.apple.mpegurl',
           streamType: 'LIVE',
-          metadata: { type: 0, metadataType: 0, title: `Offcut · ${basename(sourceFile)}` }
+          metadata: { type: 0, metadataType: 0, title }
         }
         player.load(media, { autoplay: true }, (err2: Error | null) => {
           if (err2) return reject(err2)
-          _status = { casting: true, device: device.name, source: sourceFile, error: null }
           resolve()
         })
       })
@@ -150,8 +177,28 @@ export async function startCast(device: CastDevice, sourceFile: string): Promise
   })
 }
 
-/** Stop casting and free the encoder, server and temp segments. */
+/** Cast a file to `device` (the test path). */
+export async function startCastFile(device: CastDevice, sourceFile: string): Promise<void> {
+  await stopCast()
+  if (!existsSync(sourceFile)) throw new Error('source file not found')
+  const url = await startHlsServer({ kind: 'file', path: sourceFile })
+  await connectAndLoad(device, url, `Offcut · ${basename(sourceFile)}`)
+  _status = { casting: true, device: device.name, source: basename(sourceFile), error: null }
+}
+
+/** Cast the live master mix to `device` (the audience-PA feature). */
+export async function startCastMaster(device: CastDevice): Promise<void> {
+  await stopCast()
+  _master = true
+  const url = await startHlsServer({ kind: 'master' })
+  await connectAndLoad(device, url, 'Offcut · live mix')
+  _status = { casting: true, device: device.name, source: 'live mix', error: null }
+}
+
+/** Stop casting and free the tap, encoder, server and temp segments. */
 export async function stopCast(): Promise<void> {
+  if (_drain) { clearInterval(_drain); _drain = null }
+  if (_master) { stopMasterTap(); _master = false }
   try { _client?.close?.() } catch { /* ignore */ }
   _client = null
   if (_ff) { _ff.kill('SIGKILL'); _ff = null }
@@ -169,7 +216,8 @@ export function castStatus(): CastStatus {
 
 export function registerCastHandlers(): void {
   ipcMain.handle('cast:discover', () => discover())
-  ipcMain.handle('cast:start', (_e, device: CastDevice, sourceFile: string) => startCast(device, sourceFile))
+  ipcMain.handle('cast:start', (_e, device: CastDevice, sourceFile: string) => startCastFile(device, sourceFile))
+  ipcMain.handle('cast:startMaster', (_e, device: CastDevice) => startCastMaster(device))
   ipcMain.handle('cast:stop', () => stopCast())
   ipcMain.handle('cast:status', () => castStatus())
 }

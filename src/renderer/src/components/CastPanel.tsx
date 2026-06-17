@@ -41,6 +41,14 @@ export function CastPanel(): JSX.Element {
     finally { setBusy(false) }
   }, [deckATrack, refresh])
 
+  const castLive = useCallback(async (d: CastDevice) => {
+    setBusy(true)
+    setError(null)
+    try { await window.api.cast.startMaster(d); await refresh() }
+    catch (e) { setError(String((e as Error).message ?? e)) }
+    finally { setBusy(false) }
+  }, [refresh])
+
   const stop = useCallback(async () => {
     setBusy(true)
     try { await window.api.cast.stop(); await refresh() }
@@ -50,9 +58,9 @@ export function CastPanel(): JSX.Element {
   return (
     <div className="space-y-3">
       <p className="font-mono text-[12px] text-muted">
-        test cast: streams <span className="text-ink">Deck A’s loaded track</span> to a Cast device as live HLS,
-        to confirm discovery + streaming work on your hardware. casting the live master mix (for automix as an
-        audience PA) is the next step. expect a few seconds of latency — fine for audience playback, not for monitoring.
+        cast to a speaker: <span className="text-ink">live mix</span> streams the master output (use it during
+        automix as an audience PA); <span className="text-ink">deck A file</span> streams the loaded track as a
+        quick test. expect a few seconds of latency — fine for audience playback, not for monitoring.
       </p>
 
       <div className="flex items-center gap-2">
@@ -91,14 +99,24 @@ export function CastPanel(): JSX.Element {
                 <p className="font-mono text-[13px] text-ink truncate">{d.name}</p>
                 <p className="font-mono text-[11px] text-muted/60">{d.host}</p>
               </div>
-              <button
-                onClick={() => cast(d)}
-                disabled={busy || !deckATrack}
-                title={deckATrack ? `Cast: ${deckATrack.title}` : 'Load a track on Deck A first'}
-                className="shrink-0 font-mono text-[11px] uppercase tracking-[0.08em] px-2.5 py-1 rounded border border-accent/40 text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
-              >
-                ▶ cast deck A
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => castLive(d)}
+                  disabled={busy}
+                  title="Cast the live master mix (use during automix)"
+                  className="font-mono text-[11px] uppercase tracking-[0.08em] px-2.5 py-1 rounded border border-accent/40 text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
+                >
+                  ▶ live mix
+                </button>
+                <button
+                  onClick={() => cast(d)}
+                  disabled={busy || !deckATrack}
+                  title={deckATrack ? `Cast file: ${deckATrack.title}` : 'Load a track on Deck A first'}
+                  className="font-mono text-[11px] uppercase tracking-[0.08em] px-2.5 py-1 rounded border border-border/40 text-muted hover:text-ink hover:border-border/60 transition-colors disabled:opacity-40"
+                >
+                  deck A file
+                </button>
+              </div>
             </div>
           ))}
         </div>

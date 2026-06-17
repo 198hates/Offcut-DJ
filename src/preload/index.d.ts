@@ -128,6 +128,7 @@ declare global {
       cast: {
         discover: () => Promise<CastDevice[]>
         start: (device: CastDevice, sourceFile: string) => Promise<void>
+        startMaster: (device: CastDevice) => Promise<void>
         stop: () => Promise<void>
         status: () => Promise<CastStatus>
       }

@@ -69,6 +69,29 @@ interface NativeEngineAddon {
   startRecording(path: string): undefined | Error
   stopRecording(): { path: string; seconds: number } | Error
   isRecording(): boolean
+  // Master stream tap (live mix out, e.g. to Cast).
+  startMasterTap(): void
+  stopMasterTap(): void
+  masterTapFormat(): number[] // [sampleRate, channels]
+  drainMasterTap(maxSamples: number): Float32Array
+}
+
+/** Begin tapping the live master mix; returns its [sampleRate, channels], or
+ *  null if the native engine isn't loaded. */
+export function startMasterTap(): { sampleRate: number; channels: number } | null {
+  if (!addon) return null
+  addon.startMasterTap()
+  const [sampleRate, channels] = addon.masterTapFormat()
+  return { sampleRate, channels }
+}
+
+export function stopMasterTap(): void {
+  addon?.stopMasterTap()
+}
+
+/** Drain up to `maxSamples` interleaved f32 samples from the master tap. */
+export function drainMasterTap(maxSamples: number): Float32Array {
+  return addon ? addon.drainMasterTap(maxSamples) : new Float32Array(0)
 }
 
 // ── Singleton state ──────────────────────────────────────────────────────────

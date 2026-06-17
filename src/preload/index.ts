@@ -259,6 +259,8 @@ const api = {
     discover: (): Promise<CastDevice[]> => ipcRenderer.invoke('cast:discover'),
     start: (device: CastDevice, sourceFile: string): Promise<void> =>
       ipcRenderer.invoke('cast:start', device, sourceFile),
+    startMaster: (device: CastDevice): Promise<void> =>
+      ipcRenderer.invoke('cast:startMaster', device),
     stop: (): Promise<void> => ipcRenderer.invoke('cast:stop'),
     status: (): Promise<CastStatus> => ipcRenderer.invoke('cast:status')
   },

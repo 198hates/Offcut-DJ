@@ -17,6 +17,7 @@ mod output;
 mod recorder;
 mod ring;
 mod signalsmith;
+mod tap;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -35,6 +36,7 @@ use deck::{AudioEvent, DeckEngine, StemSet, STEM_COUNT};
 use decoder::{decode_file, compute_peaks, compute_band_peaks};
 use output::{build_master_stream, find_output_device, list_output_devices as list_devices, StreamHandle};
 use recorder::Recorder;
+use tap::StreamTap;
 
 /// Registry of live deck engines keyed by deck id ("A" / "B"), so a deck can be
 /// slaved to another by id (the shared-clock sync). Touched only on
@@ -51,19 +53,22 @@ struct MasterBus {
     active:   Arc<ArcSwap<Vec<Arc<DeckEngine>>>>,
     stream:   Mutex<Option<StreamHandle>>,
     recorder: Arc<Recorder>,
+    tap:      Arc<StreamTap>,
 }
 
 static MASTER: LazyLock<MasterBus> = LazyLock::new(|| MasterBus {
     active:   Arc::new(ArcSwap::new(Arc::new(Vec::new()))),
     stream:   Mutex::new(None),
     recorder: Recorder::new(),
+    tap:      StreamTap::new(),
 });
 
 /// (Re)build the master stream on `device_name` (empty = system default).
 /// Replacing the slot drops the previous stream on this same thread.
 fn rebuild_master_stream(device_name: &str) -> Result<(), String> {
     let device = find_output_device(device_name)?;
-    let stream = build_master_stream(MASTER.active.clone(), MASTER.recorder.clone(), &device)?;
+    let stream = build_master_stream(
+        MASTER.active.clone(), MASTER.recorder.clone(), MASTER.tap.clone(), &device)?;
     *MASTER.stream.lock() = Some(StreamHandle(stream));
     Ok(())
 }
@@ -601,4 +606,39 @@ pub fn stop_recording() -> NapiResult<RecordingResult> {
 #[napi]
 pub fn is_recording() -> bool {
     MASTER.recorder.is_recording()
+}
+
+// ── Master stream tap (live mix out — e.g. to Google Cast) ──────────────────
+
+/// Begin tapping the live master mix. The audio callback pushes the post-mix,
+/// post-limiter block into a ring; the caller polls `drainMasterTap`.
+#[napi]
+pub fn start_master_tap() {
+    MASTER.tap.start();
+}
+
+/// Stop tapping the master mix.
+#[napi]
+pub fn stop_master_tap() {
+    MASTER.tap.stop();
+}
+
+/// `[sampleRate, channels]` of the master stream — the PCM format the tap emits.
+#[napi]
+pub fn master_tap_format() -> Vec<u32> {
+    vec![
+        MASTER.tap.sample_rate.load(std::sync::atomic::Ordering::Relaxed),
+        MASTER.tap.channels.load(std::sync::atomic::Ordering::Relaxed),
+    ]
+}
+
+/// Drain up to `max_samples` interleaved f32 samples from the tap (0 if none
+/// ready). Called repeatedly by the consumer to pump PCM into an encoder.
+#[napi]
+pub fn drain_master_tap(max_samples: u32) -> napi::bindgen_prelude::Float32Array {
+    let cap = (max_samples as usize).clamp(1, 1 << 20);
+    let mut buf = vec![0.0f32; cap];
+    let n = MASTER.tap.drain(&mut buf);
+    buf.truncate(n);
+    napi::bindgen_prelude::Float32Array::from(buf)
 }
