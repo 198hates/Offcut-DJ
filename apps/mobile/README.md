@@ -48,7 +48,13 @@ If the desktop later does **Unpair all**, the token rotates and the app gets
   track. Optimistic local update → `POST /sync/push` (one patch per change),
   rolled back on failure or LWW rejection. Smart playlists / folders are
   read-only.
-- [ ] 5. Offline — cache proxies + peaks; queue edits and flush on reconnect.
+- [x] **5. Offline** — the library snapshot, peaks, and (opt-in) audio are cached
+  to app storage via `expo-file-system`, so the app opens and browses offline.
+  Prep + playlist edits made offline queue to disk and flush automatically on
+  reconnect (a header chip shows online/offline + queued count, tap to sync now).
+  "Save for offline" on a track downloads its proxy so audition works with no LAN.
+  Known limit: after a cold start while still offline, queued edits are safe on
+  disk but the list shows the last-synced values until the queue flushes.
 
 ## Layout
 

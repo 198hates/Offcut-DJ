@@ -23,6 +23,7 @@ import {
 } from './src/pairing'
 import { SyncClient, type HealthInfo } from './src/syncClient'
 import { useLibrary } from './src/useLibrary'
+import { useOutbox } from './src/useOutbox'
 import { usePlaylistActions } from './src/usePlaylists'
 import { LibraryScreen } from './src/LibraryScreen'
 import { TrackScreen } from './src/TrackScreen'
@@ -172,7 +173,8 @@ export default function App(): JSX.Element {
 function ConnectedApp({ conn, onDisconnect }: { conn: Connection; onDisconnect: () => void }): JSX.Element {
   const client = useMemo(() => new SyncClient(conn), [conn])
   const lib = useLibrary(client)
-  const actions = usePlaylistActions(client, lib)
+  const outbox = useOutbox(client, onDisconnect) // a rotated token → re-pair
+  const actions = usePlaylistActions(outbox.push, lib)
   const [selected, setSelected] = useState<Track | null>(null)
   const [managing, setManaging] = useState<string | null>(null)
 
@@ -192,6 +194,7 @@ function ConnectedApp({ conn, onDisconnect }: { conn: Connection; onDisconnect: 
       <TrackScreen
         track={selected}
         client={client}
+        push={outbox.push}
         onBack={() => setSelected(null)}
         onPatched={lib.patchTrack}
         playlists={lib.playlists}
@@ -208,6 +211,10 @@ function ConnectedApp({ conn, onDisconnect }: { conn: Connection; onDisconnect: 
         void actions.create(name)
       }}
       onManagePlaylist={(p: Playlist) => setManaging(p.id)}
+      online={outbox.online}
+      pending={outbox.pending}
+      flushing={outbox.flushing}
+      onSync={() => void outbox.flush()}
     />
   )
 }

@@ -1,9 +1,11 @@
-// Pull the desktop library into memory (slice 2: read-only mirror). Offline
-// disk caching + delta cursors are slice 5 — this just does a full /sync/pull.
+// Pull the desktop library into memory, backed by an on-disk snapshot (slice 5):
+// the cached snapshot loads instantly on launch (and is all you get offline),
+// then a live /sync/pull refreshes and re-caches it when the desktop is reachable.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { loadSnapshot, saveSnapshot } from './offline'
 import type { SyncClient } from './syncClient'
-import type { Playlist, Track } from './sync-types'
+import type { Playlist, SyncPull, Track } from './sync-types'
 
 export interface LibraryState {
   loading: boolean
@@ -27,21 +29,30 @@ export function useLibrary(client: SyncClient): LibraryState {
   const [tracks, setTracks] = useState<Track[]>([])
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [byId, setById] = useState<Map<string, Track>>(new Map())
+  const hasData = useRef(false)
+
+  const apply = useCallback((snap: SyncPull): void => {
+    setTracks(snap.tracks)
+    setPlaylists(snap.playlists)
+    setById(new Map(snap.tracks.map((t) => [t.id, t])))
+    hasData.current = true
+  }, [])
 
   const refresh = useCallback(async (): Promise<void> => {
     setLoading(true)
     setError(null)
     try {
       const snap = await client.pull(0) // full snapshot
-      setTracks(snap.tracks)
-      setPlaylists(snap.playlists)
-      setById(new Map(snap.tracks.map((t) => [t.id, t])))
+      apply(snap)
+      void saveSnapshot(snap) // cache for offline / next launch
     } catch (e) {
-      setError((e as Error).message)
+      // Offline (or desktop down): keep whatever cached data we already have;
+      // only surface an error when we have nothing to show.
+      if (!hasData.current) setError((e as Error).message)
     } finally {
       setLoading(false)
     }
-  }, [client])
+  }, [client, apply])
 
   const patchTrack = useCallback((id: string, fields: Partial<Track>): void => {
     setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, ...fields } : t)))
@@ -69,8 +80,15 @@ export function useLibrary(client: SyncClient): LibraryState {
   }, [])
 
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    void (async () => {
+      const cached = await loadSnapshot()
+      if (cached) {
+        apply(cached) // instant paint from disk
+        setLoading(false)
+      }
+      await refresh() // then go to the network
+    })()
+  }, [refresh, apply])
 
   return { loading, error, tracks, playlists, byId, refresh, patchTrack, upsertPlaylist, removePlaylist }
 }

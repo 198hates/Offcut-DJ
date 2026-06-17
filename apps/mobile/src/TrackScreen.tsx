@@ -1,5 +1,6 @@
-// Track detail — metadata, waveform from /media/peaks, and audition of the AAC
-// proxy via expo-audio. Read-only (slice 2).
+// Track detail — metadata, waveform from /media/peaks (cached), audition of the
+// AAC proxy, prep editing, and "save for offline". Peaks/snapshot are cached so
+// this works offline; audio plays from a downloaded file when saved offline.
 
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
@@ -7,8 +8,11 @@ import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-au
 import { Waveform } from './Waveform'
 import { TrackEditor } from './TrackEditor'
 import { isEditable } from './playlists'
+import { getCachedPeaks, cachePeaks, cachedAudioUri, saveAudioOffline, removeAudioOffline } from './offline'
 import type { SyncClient } from './syncClient'
-import type { PeaksData, Playlist, Track } from './sync-types'
+import type { PeaksData, Playlist, Track, SyncPushPayload, SyncPushResult } from './sync-types'
+
+type Push = (payload: SyncPushPayload) => Promise<SyncPushResult | null>
 
 function mmss(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00'
@@ -19,6 +23,7 @@ function mmss(sec: number): string {
 export function TrackScreen({
   track,
   client,
+  push,
   onBack,
   onPatched,
   playlists,
@@ -26,6 +31,7 @@ export function TrackScreen({
 }: {
   track: Track
   client: SyncClient
+  push: Push
   onBack: () => void
   onPatched: (id: string, fields: Partial<Track>) => void
   playlists: Playlist[]
@@ -33,6 +39,8 @@ export function TrackScreen({
 }): JSX.Element {
   const [peaks, setPeaks] = useState<PeaksData | null>(null)
   const [peaksErr, setPeaksErr] = useState<string | null>(null)
+  const [offlineUri, setOfflineUri] = useState<string | null>(null)
+  const [savingOffline, setSavingOffline] = useState(false)
 
   const player = useAudioPlayer({ uri: client.proxyUrl(track.id) })
   const status = useAudioPlayerStatus(player)
@@ -42,20 +50,60 @@ export function TrackScreen({
     void setAudioModeAsync({ playsInSilentMode: true })
   }, [])
 
+  // Peaks: paint from cache instantly, then refresh from the desktop if reachable.
   useEffect(() => {
     let cancelled = false
     setPeaks(null)
     setPeaksErr(null)
-    client
-      .peaks(track.id)
-      .then((p) => { if (!cancelled) setPeaks(p) })
-      .catch((e) => { if (!cancelled) setPeaksErr((e as Error).message) })
+    void (async () => {
+      const cached = await getCachedPeaks(track.id)
+      if (cached && !cancelled) setPeaks(cached)
+      try {
+        const fresh = await client.peaks(track.id)
+        if (cancelled) return
+        setPeaks(fresh)
+        void cachePeaks(track.id, fresh)
+      } catch (e) {
+        if (!cancelled && !cached) setPeaksErr((e as Error).message)
+      }
+    })()
     return () => { cancelled = true }
   }, [client, track.id])
+
+  // If this track was saved offline, play the local file instead of streaming.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const uri = await cachedAudioUri(track.id)
+      if (cancelled) return
+      setOfflineUri(uri)
+      if (uri) player.replace({ uri })
+    })()
+    return () => { cancelled = true }
+  }, [track.id, player])
 
   const toggle = (): void => {
     if (status.playing) player.pause()
     else player.play()
+  }
+
+  const toggleOffline = async (): Promise<void> => {
+    setSavingOffline(true)
+    try {
+      if (offlineUri) {
+        await removeAudioOffline(track.id)
+        setOfflineUri(null)
+        player.replace({ uri: client.proxyUrl(track.id) }) // back to streaming
+      } else {
+        const uri = await saveAudioOffline(track.id, client.proxyUrl(track.id))
+        setOfflineUri(uri)
+        player.replace({ uri })
+      }
+    } catch {
+      /* leave state as-is; a failed download just means not-saved */
+    } finally {
+      setSavingOffline(false)
+    }
   }
 
   return (
@@ -94,11 +142,17 @@ export function TrackScreen({
         {!status.isLoaded && <Text style={styles.dim}>buffering…</Text>}
       </View>
 
+      <Pressable style={styles.offlineBtn} onPress={() => void toggleOffline()} disabled={savingOffline}>
+        <Text style={[styles.offlineTxt, offlineUri && styles.offlineTxtOn]}>
+          {savingOffline ? 'Saving…' : offlineUri ? '✓ Saved offline — tap to remove' : '⤓ Save for offline'}
+        </Text>
+      </Pressable>
+
       <AddToPlaylist playlists={playlists} track={track} onAdd={onAddToPlaylist} />
 
       <TrackEditor
         track={track}
-        client={client}
+        push={push}
         player={player}
         playheadSec={status.currentTime}
         onPatched={onPatched}
@@ -171,6 +225,9 @@ const styles = StyleSheet.create({
   metaValue: { color: '#ECE3CC', fontSize: 16, fontVariant: ['tabular-nums'] },
   waveBox: { minHeight: 96, justifyContent: 'center', backgroundColor: '#0e0d09', borderRadius: 8, padding: 8, marginBottom: 18 },
   dim: { color: '#7a7264', fontSize: 12, textAlign: 'center' },
+  offlineBtn: { marginTop: 14, borderWidth: 1, borderColor: '#3a352b', borderRadius: 8, paddingVertical: 9, alignItems: 'center' },
+  offlineTxt: { color: '#a59a82', fontSize: 12, fontWeight: '600' },
+  offlineTxtOn: { color: '#6E8059' },
   addWrap: { marginTop: 18, gap: 8 },
   addBtn: { borderWidth: 1, borderColor: '#3a352b', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
   addBtnTxt: { color: '#D86A4A', fontSize: 13, fontWeight: '600' },

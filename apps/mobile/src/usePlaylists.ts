@@ -4,11 +4,13 @@
 
 import { useMemo } from 'react'
 import { newLocalPlaylist, withTrack } from './playlists'
-import type { SyncClient } from './syncClient'
 import type { LibraryState } from './useLibrary'
-import type { Playlist } from './sync-types'
+import type { Playlist, SyncPushPayload, SyncPushResult } from './sync-types'
 
 const STALE = 'Desktop has newer changes — pull to refresh.'
+
+/** Push, or queue offline (null result). Provided by the outbox. */
+type Push = (payload: SyncPushPayload) => Promise<SyncPushResult | null>
 
 /** The fields of a playlist the phone may change in one patch. */
 export interface PlaylistEdit {
@@ -24,7 +26,7 @@ export interface PlaylistActions {
   addTrack: (p: Playlist, trackId: string) => Promise<void>
 }
 
-export function usePlaylistActions(client: SyncClient, lib: LibraryState): PlaylistActions {
+export function usePlaylistActions(push: Push, lib: LibraryState): PlaylistActions {
   return useMemo<PlaylistActions>(() => {
     const now = (): string => new Date().toISOString()
 
@@ -32,12 +34,11 @@ export function usePlaylistActions(client: SyncClient, lib: LibraryState): Playl
       const p = newLocalPlaylist(name)
       lib.upsertPlaylist(p) // optimistic
       try {
-        await client.push({
-          playlists: [{ id: p.id, updatedAt: now(), name: p.name, color: p.color, trackIds: [] }]
-        })
+        // null = queued offline; that's fine, the create rides along when we reconnect.
+        await push({ playlists: [{ id: p.id, updatedAt: now(), name: p.name, color: p.color, trackIds: [] }] })
         return p
       } catch (e) {
-        lib.removePlaylist(p.id) // roll back
+        lib.removePlaylist(p.id) // roll back on a hard failure (e.g. auth)
         throw e
       }
     }
@@ -45,9 +46,9 @@ export function usePlaylistActions(client: SyncClient, lib: LibraryState): Playl
     const update = async (p: Playlist, edit: PlaylistEdit): Promise<void> => {
       lib.upsertPlaylist({ ...p, ...edit }) // optimistic
       try {
-        const res = await client.push({ playlists: [{ id: p.id, updatedAt: now(), ...edit }] })
-        if (res.appliedPlaylists === 0) {
-          lib.upsertPlaylist(p)
+        const res = await push({ playlists: [{ id: p.id, updatedAt: now(), ...edit }] })
+        if (res && res.appliedPlaylists === 0) {
+          lib.upsertPlaylist(p) // desktop had a newer copy (only knowable online)
           throw new Error(STALE)
         }
       } catch (e) {
@@ -59,8 +60,8 @@ export function usePlaylistActions(client: SyncClient, lib: LibraryState): Playl
     const remove = async (p: Playlist): Promise<void> => {
       lib.removePlaylist(p.id) // optimistic
       try {
-        const res = await client.push({ playlists: [{ id: p.id, updatedAt: now(), deleted: true }] })
-        if (res.appliedPlaylists === 0) {
+        const res = await push({ playlists: [{ id: p.id, updatedAt: now(), deleted: true }] })
+        if (res && res.appliedPlaylists === 0) {
           lib.upsertPlaylist(p)
           throw new Error(STALE)
         }
@@ -74,5 +75,5 @@ export function usePlaylistActions(client: SyncClient, lib: LibraryState): Playl
       update(p, { trackIds: withTrack(p.trackIds, trackId) })
 
     return { create, update, remove, addTrack }
-  }, [client, lib])
+  }, [push, lib])
 }

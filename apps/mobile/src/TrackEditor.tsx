@@ -17,8 +17,9 @@ import {
   removeHotCue,
   type Draft
 } from './edits'
-import type { SyncClient } from './syncClient'
-import type { Track } from './sync-types'
+import type { Track, SyncPushPayload, SyncPushResult } from './sync-types'
+
+type Push = (payload: SyncPushPayload) => Promise<SyncPushResult | null>
 
 function mmss(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00'
@@ -30,13 +31,13 @@ const MOOD_LABELS: Record<string, string> = { '-1': 'dark', '-0.5': '', '0': 'ne
 
 export function TrackEditor({
   track,
-  client,
+  push,
   player,
   playheadSec,
   onPatched
 }: {
   track: Track
-  client: SyncClient
+  push: Push
   player: AudioPlayer
   playheadSec: number
   onPatched: (id: string, fields: Partial<Track>) => void
@@ -68,11 +69,17 @@ export function TrackEditor({
     setSaving(true)
     setMsg(null)
     try {
-      const res = await client.push({ tracks: [p] })
-      if (res.appliedTracks > 0) {
+      const res = await push({ tracks: [p] })
+      const applyLocal = (): void => {
         const fields = patchAsTrackFields(p)
         onPatched(track.id, fields)
         setBaseline((b) => ({ ...b, ...fields }))
+      }
+      if (res === null) {
+        applyLocal() // queued offline — keep the edit; it'll sync on reconnect
+        setMsg('Saved offline — will sync when reconnected ✓')
+      } else if (res.appliedTracks > 0) {
+        applyLocal()
         setMsg('Saved to desktop ✓')
       } else {
         setMsg('Desktop has newer changes — go back and pull to refresh.')

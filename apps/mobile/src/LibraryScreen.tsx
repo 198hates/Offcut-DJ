@@ -14,13 +14,21 @@ export function LibraryScreen({
   onSelectTrack,
   onDisconnect,
   onCreatePlaylist,
-  onManagePlaylist
+  onManagePlaylist,
+  online,
+  pending,
+  flushing,
+  onSync
 }: {
   lib: LibraryState
   onSelectTrack: (t: Track) => void
   onDisconnect: () => void
   onCreatePlaylist: (name: string) => void
   onManagePlaylist: (p: Playlist) => void
+  online: boolean
+  pending: number
+  flushing: boolean
+  onSync: () => void
 }): JSX.Element {
   const [tab, setTab] = useState<Tab>('tracks')
   const [query, setQuery] = useState('')
@@ -47,6 +55,21 @@ export function LibraryScreen({
           <Text style={styles.link}>disconnect</Text>
         </Pressable>
       </View>
+
+      <Pressable style={styles.syncRow} onPress={onSync} disabled={flushing} hitSlop={6}>
+        <View style={[styles.dot, { backgroundColor: online ? '#6E8059' : '#8c8270' }]} />
+        <Text style={styles.syncTxt}>
+          {flushing
+            ? 'syncing…'
+            : online
+              ? pending > 0
+                ? `online · ${pending} queued — tap to sync`
+                : 'online · synced'
+              : pending > 0
+                ? `offline · ${pending} queued`
+                : 'offline'}
+        </Text>
+      </Pressable>
 
       <View style={styles.tabs}>
         {(['tracks', 'playlists'] as Tab[]).map((t) => (
@@ -177,6 +200,9 @@ const styles = StyleSheet.create({
   brand: { color: '#ECE3CC', fontSize: 16, fontWeight: '800', letterSpacing: 3 },
   count: { color: '#a59a82', fontSize: 12, flex: 1 },
   link: { color: '#D86A4A', fontSize: 12 },
+  syncRow: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 16, paddingBottom: 8 },
+  dot: { width: 7, height: 7, borderRadius: 4 },
+  syncTxt: { color: '#7a7264', fontSize: 11 },
   tabs: { flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginBottom: 8 },
   tab: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 6, borderWidth: 1, borderColor: '#3a352b' },
   tabActive: { backgroundColor: '#D86A4A22', borderColor: '#D86A4A' },
