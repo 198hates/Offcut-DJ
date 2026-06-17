@@ -13,6 +13,7 @@ import {
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { CameraView, useCameraPermissions } from 'expo-camera'
+import { useFonts, JetBrainsMono_400Regular, JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono'
 import {
   clearConnection,
   loadConnection,
@@ -33,6 +34,7 @@ import type { Playlist, Track } from './src/sync-types'
 type Phase = 'loading' | 'unpaired' | 'connecting' | 'connected' | 'error'
 
 export default function App(): JSX.Element {
+  const [fontsLoaded] = useFonts({ JetBrainsMono_400Regular, JetBrainsMono_700Bold })
   const [phase, setPhase] = useState<Phase>('loading')
   const [conn, setConn] = useState<Connection | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -104,6 +106,17 @@ export default function App(): JSX.Element {
     setManual('')
     setPhase('unpaired')
   }, [])
+
+  // Hold the first paint until the mono font is ready, so nothing flashes in a
+  // fallback typeface.
+  if (!fontsLoaded) {
+    return (
+      <View style={[styles.fill, styles.center]}>
+        <StatusBar style="light" />
+        <ActivityIndicator color="#D86A4A" />
+      </View>
+    )
+  }
 
   // Connected → the library lives in its own component so its hooks (pull,
   // audio player) mount only once we actually have a connection.

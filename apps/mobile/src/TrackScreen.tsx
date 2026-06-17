@@ -9,6 +9,7 @@ import { Waveform } from './Waveform'
 import { TrackEditor } from './TrackEditor'
 import { isEditable } from './playlists'
 import { getCachedPeaks, cachePeaks, cachedAudioUri, saveAudioOffline, removeAudioOffline } from './offline'
+import { C, MONO, MONO_BOLD } from './theme'
 import type { SyncClient } from './syncClient'
 import type { PeaksData, Playlist, Track, SyncPushPayload, SyncPushResult } from './sync-types'
 
@@ -116,8 +117,8 @@ export function TrackScreen({
       <Text style={styles.artist}>{track.artist || '—'}</Text>
 
       <View style={styles.metaRow}>
-        {track.bpm != null && <Meta label="BPM" value={`${Math.round(track.bpm)}`} />}
-        {track.key && <Meta label="KEY" value={track.key} />}
+        {track.bpm != null && <Meta label="BPM" value={`${Math.round(track.bpm)}`} accent />}
+        {track.key && <Meta label="KEY" value={track.key} accent />}
         {track.energy != null && <Meta label="ENERGY" value={`${track.energy}`} />}
         {track.durationSeconds != null && <Meta label="LEN" value={mmss(track.durationSeconds)} />}
       </View>
@@ -161,11 +162,11 @@ export function TrackScreen({
   )
 }
 
-function Meta({ label, value }: { label: string; value: string }): JSX.Element {
+function Meta({ label, value, accent }: { label: string; value: string; accent?: boolean }): JSX.Element {
   return (
     <View style={styles.meta}>
       <Text style={styles.metaLabel}>{label}</Text>
-      <Text style={styles.metaValue}>{value}</Text>
+      <Text style={[styles.metaValue, accent && styles.metaValueAccent]}>{value}</Text>
     </View>
   )
 }
@@ -214,31 +215,31 @@ function AddToPlaylist({
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: '#17150f' },
+  fill: { flex: 1, backgroundColor: C.bg },
   content: { padding: 20, paddingTop: 60, gap: 6 },
-  back: { color: '#D86A4A', fontSize: 14, marginBottom: 12 },
-  title: { color: '#ECE3CC', fontSize: 22, fontWeight: '700' },
-  artist: { color: '#a59a82', fontSize: 16, marginBottom: 12 },
-  metaRow: { flexDirection: 'row', gap: 18, marginBottom: 18, flexWrap: 'wrap' },
-  meta: { gap: 2 },
-  metaLabel: { color: '#7a7264', fontSize: 10, letterSpacing: 1 },
-  metaValue: { color: '#ECE3CC', fontSize: 16, fontVariant: ['tabular-nums'] },
-  waveBox: { minHeight: 96, justifyContent: 'center', backgroundColor: '#0e0d09', borderRadius: 8, padding: 8, marginBottom: 18 },
-  dim: { color: '#7a7264', fontSize: 12, textAlign: 'center' },
-  offlineBtn: { marginTop: 14, borderWidth: 1, borderColor: '#3a352b', borderRadius: 8, paddingVertical: 9, alignItems: 'center' },
-  offlineTxt: { color: '#a59a82', fontSize: 12, fontWeight: '600' },
+  back: { color: C.accent, fontFamily: MONO, fontSize: 12, letterSpacing: 0.5, marginBottom: 12 },
+  title: { color: C.ink, fontFamily: MONO_BOLD, fontSize: 20 },
+  artist: { color: C.muted, fontFamily: MONO, fontSize: 14, marginBottom: 14 },
+  metaRow: { flexDirection: 'row', gap: 22, marginBottom: 18, flexWrap: 'wrap' },
+  meta: { gap: 3 },
+  metaLabel: { color: C.muted, fontFamily: MONO, fontSize: 9, letterSpacing: 1.6 },
+  metaValue: { color: C.ink, fontFamily: MONO_BOLD, fontSize: 15, fontVariant: ['tabular-nums'] },
+  metaValueAccent: { color: C.accent },
+  waveBox: { minHeight: 96, justifyContent: 'center', backgroundColor: C.deckPanel, borderRadius: 6, padding: 8, marginBottom: 18 },
+  dim: { color: C.muted, fontFamily: MONO, fontSize: 12, textAlign: 'center' },
+  offlineBtn: { marginTop: 14, borderWidth: 1, borderColor: 'rgba(42,36,28,0.8)', borderRadius: 4, paddingVertical: 9, alignItems: 'center' },
+  offlineTxt: { color: C.muted, fontFamily: MONO, fontSize: 11, letterSpacing: 0.5 },
   offlineTxtOn: { color: '#6E8059' },
   addWrap: { marginTop: 18, gap: 8 },
-  addBtn: { borderWidth: 1, borderColor: '#3a352b', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
-  addBtnTxt: { color: '#D86A4A', fontSize: 13, fontWeight: '600' },
-  addList: { borderWidth: 1, borderColor: '#2a261d', borderRadius: 8, overflow: 'hidden' },
-  addRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2a261d' },
-  addRowTxt: { color: '#ECE3CC', fontSize: 14, flex: 1 },
-  addRowCount: { color: '#7a7264', fontSize: 12, marginLeft: 10 },
-  addMsg: { color: '#a59a82', fontSize: 12, textAlign: 'center' },
+  addBtn: { borderWidth: 1, borderColor: 'rgba(42,36,28,0.8)', borderRadius: 4, paddingVertical: 10, alignItems: 'center' },
+  addBtnTxt: { color: C.accent, fontFamily: MONO, fontSize: 12, letterSpacing: 0.5 },
+  addList: { borderWidth: 1, borderColor: C.border, borderRadius: 4, overflow: 'hidden' },
+  addRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border },
+  addRowTxt: { color: C.ink, fontFamily: MONO, fontSize: 13, flex: 1 },
+  addRowCount: { color: C.muted, fontFamily: MONO, fontSize: 12, marginLeft: 10 },
+  addMsg: { color: C.muted, fontFamily: MONO, fontSize: 11, textAlign: 'center' },
   transport: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  playBtn: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#D86A4A', alignItems: 'center', justifyContent: 'center' },
-  playIcon: { color: '#17150f', fontSize: 20, fontWeight: '800' },
-  time: { color: '#ECE3CC', fontSize: 15, fontVariant: ['tabular-nums'] },
-  note: { color: '#7a7264', fontSize: 12, marginTop: 24, lineHeight: 18 }
+  playBtn: { width: 52, height: 52, borderRadius: 26, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
+  playIcon: { color: C.bg, fontSize: 18, fontWeight: '800' },
+  time: { color: C.ink, fontFamily: MONO, fontSize: 14, fontVariant: ['tabular-nums'] }
 })

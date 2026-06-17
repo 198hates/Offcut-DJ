@@ -1,14 +1,12 @@
-// Prep-edit panel (slice 3): rating, energy, mood, colour, tags, comment and
-// hot cues — pushed to the desktop via /sync/push (last-writer-wins). Hot cues
-// hook into the audition player: "set at playhead" captures the current time,
-// tapping a cue seeks there.
+// Prep-edit panel (slice 3), styled to match the desktop TrackDetail editor:
+// JetBrains Mono labels, terracotta accent, energy ramp cells, a mood gradient
+// slider, accent tag chips and cue rows. Pushes to the desktop via /sync/push.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { LayoutChangeEvent, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import type { AudioPlayer } from 'expo-audio'
 import {
-  TRACK_COLORS,
-  MOOD_STEPS,
   draftFromTrack,
   buildPatch,
   patchAsTrackFields,
@@ -17,6 +15,7 @@ import {
   removeHotCue,
   type Draft
 } from './edits'
+import { C, MONO, MONO_BOLD, TRACK_COLORS, MOOD_GRADIENT, MOOD_LABELS, energyFill } from './theme'
 import type { Track, SyncPushPayload, SyncPushResult } from './sync-types'
 
 type Push = (payload: SyncPushPayload) => Promise<SyncPushResult | null>
@@ -26,8 +25,6 @@ function mmss(sec: number): string {
   const s = Math.floor(sec)
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
-
-const MOOD_LABELS: Record<string, string> = { '-1': 'dark', '-0.5': '', '0': 'neutral', '0.5': '', '1': 'uplift' }
 
 export function TrackEditor({
   track,
@@ -42,13 +39,11 @@ export function TrackEditor({
   playheadSec: number
   onPatched: (id: string, fields: Partial<Track>) => void
 }): JSX.Element {
-  // `baseline` is what the desktop last confirmed; `draft` is the live edit.
   const [baseline, setBaseline] = useState<Track>(track)
   const [draft, setDraft] = useState<Draft>(() => draftFromTrack(track))
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
-  // New track selected → reset both.
   useEffect(() => {
     setBaseline(track)
     setDraft(draftFromTrack(track))
@@ -76,16 +71,16 @@ export function TrackEditor({
         setBaseline((b) => ({ ...b, ...fields }))
       }
       if (res === null) {
-        applyLocal() // queued offline — keep the edit; it'll sync on reconnect
-        setMsg('Saved offline — will sync when reconnected ✓')
+        applyLocal()
+        setMsg('SAVED OFFLINE — WILL SYNC')
       } else if (res.appliedTracks > 0) {
         applyLocal()
-        setMsg('Saved to desktop ✓')
+        setMsg('SAVED TO DESKTOP')
       } else {
-        setMsg('Desktop has newer changes — go back and pull to refresh.')
+        setMsg('DESKTOP HAS NEWER — PULL TO REFRESH')
       }
     } catch (e) {
-      setMsg(`Couldn't save — ${(e as Error).message}`)
+      setMsg(`COULDN'T SAVE — ${(e as Error).message}`)
     } finally {
       setSaving(false)
     }
@@ -95,106 +90,83 @@ export function TrackEditor({
 
   return (
     <View style={styles.wrap}>
-      {/* Rating */}
       <Field label="RATING">
         <View style={styles.row}>
           {[1, 2, 3, 4, 5].map((n) => (
             <Pressable key={n} hitSlop={6} onPress={() => set('rating', draft.rating === n ? 0 : n)}>
-              <Text style={[styles.star, n <= draft.rating && styles.starOn]}>★</Text>
+              <Text style={[styles.star, n <= draft.rating ? styles.starOn : styles.starOff]}>★</Text>
             </Pressable>
           ))}
         </View>
       </Field>
 
-      {/* Energy 1–10 */}
-      <Field label="ENERGY">
+      <Field label="ENERGY" value={draft.energy != null ? String(draft.energy) : '—'}>
         <View style={styles.cells}>
-          {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-            <Pressable
-              key={n}
-              style={[styles.cell, draft.energy === n && styles.cellOn]}
-              onPress={() => set('energy', draft.energy === n ? null : n)}
-            >
-              <Text style={[styles.cellTxt, draft.energy === n && styles.cellTxtOn]}>{n}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </Field>
-
-      {/* Mood −1 → +1 */}
-      <Field label="MOOD">
-        <View style={styles.row}>
-          {MOOD_STEPS.map((m) => {
-            const on = draft.mood !== null && Math.abs(draft.mood - m) < 0.01
+          {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
+            const on = draft.energy != null && n <= draft.energy
             return (
               <Pressable
-                key={m}
-                style={[styles.moodCell, on && styles.cellOn]}
-                onPress={() => set('mood', on ? null : m)}
-              >
-                <Text style={[styles.cellTxt, on && styles.cellTxtOn]}>
-                  {MOOD_LABELS[String(m)] || (m > 0 ? '+' : '−')}
-                </Text>
-              </Pressable>
+                key={n}
+                style={[styles.cell, { backgroundColor: on ? energyFill(n) : 'rgba(42,36,28,0.4)' }]}
+                onPress={() => set('energy', draft.energy === n ? null : n)}
+              />
             )
           })}
         </View>
       </Field>
 
-      {/* Colour */}
+      <Field
+        label="MOOD"
+        value={draft.mood != null ? moodLabel(draft.mood) : '—'}
+        onClear={draft.mood != null ? () => set('mood', null) : undefined}
+      >
+        <MoodBar value={draft.mood} onChange={(m) => set('mood', m)} />
+      </Field>
+
       <Field label="COLOUR">
         <View style={styles.row}>
           <Pressable
             style={[styles.swatch, styles.swatchNone, draft.color === '' && styles.swatchOn]}
             onPress={() => set('color', '')}
           >
-            <Text style={styles.noneX}>✕</Text>
+            <Text style={styles.noneX}>—</Text>
           </Pressable>
           {TRACK_COLORS.map((c) => (
-            <Pressable
-              key={c}
-              style={[styles.swatch, { backgroundColor: c }, draft.color === c && styles.swatchOn]}
-              onPress={() => set('color', c)}
-            />
+            <Pressable key={c} hitSlop={4} onPress={() => set('color', c)}>
+              <View style={[styles.swatch, { backgroundColor: c }, draft.color === c && styles.swatchOn]} />
+            </Pressable>
           ))}
         </View>
       </Field>
 
-      {/* Tags */}
       <Field label="TAGS">
         <TagEditor tags={draft.tags} onChange={(t) => set('tags', t)} />
       </Field>
 
-      {/* Comment */}
       <Field label="COMMENT">
         <TextInput
           style={styles.comment}
-          placeholder="Notes for this track…"
-          placeholderTextColor="#6a6253"
+          placeholder="notes…"
+          placeholderTextColor={C.muted}
           multiline
           value={draft.comment}
           onChangeText={(t) => set('comment', t)}
         />
       </Field>
 
-      {/* Hot cues */}
       <Field label="HOT CUES">
-        <View style={{ gap: 6 }}>
-          {cues.length === 0 && <Text style={styles.dim}>No hot cues yet.</Text>}
+        <View style={{ gap: 2 }}>
+          {cues.length === 0 && <Text style={styles.dim}>no hot cues yet</Text>}
           {cues.map((c) => (
             <View key={c.index} style={styles.cueRow}>
-              <Pressable
-                style={styles.cueMain}
-                onPress={() => void player.seekTo(c.positionMs / 1000)}
-              >
-                <View style={[styles.cueDot, { backgroundColor: c.color || '#D86A4A' }]}>
-                  <Text style={styles.cueLabel}>{c.label}</Text>
-                </View>
+              <Pressable style={styles.cueMain} onPress={() => void player.seekTo(c.positionMs / 1000)}>
+                <View style={[styles.cueDot, { backgroundColor: c.color || C.accent }]} />
+                <Text style={styles.cueTag}>H{c.index + 1}</Text>
                 <Text style={styles.cueTime}>{mmss(c.positionMs / 1000)}</Text>
                 <Text style={styles.cueGo}>tap to jump</Text>
               </Pressable>
               <Pressable hitSlop={8} onPress={() => set('cuePoints', removeHotCue(draft.cuePoints, c.index))}>
-                <Text style={styles.cueDel}>✕</Text>
+                <Text style={styles.cueDel}>×</Text>
               </Pressable>
             </View>
           ))}
@@ -203,30 +175,84 @@ export function TrackEditor({
               style={styles.setCue}
               onPress={() => set('cuePoints', addHotCue(draft.cuePoints, playheadSec * 1000))}
             >
-              <Text style={styles.setCueTxt}>＋ Set cue at {mmss(playheadSec)}</Text>
+              <Text style={styles.setCueTxt}>+ SET CUE AT {mmss(playheadSec)}</Text>
             </Pressable>
           )}
         </View>
       </Field>
 
-      {/* Save */}
       <Pressable
-        style={[styles.save, (!dirty || saving) && styles.saveDisabled]}
+        style={[styles.save, (!dirty || saving) && styles.saveOff]}
         disabled={!dirty || saving}
         onPress={save}
       >
-        <Text style={styles.saveTxt}>{saving ? 'Saving…' : 'Save to desktop'}</Text>
+        <Text style={styles.saveTxt}>{saving ? 'SAVING…' : 'SAVE TO DESKTOP'}</Text>
       </Pressable>
       {msg && <Text style={styles.msg}>{msg}</Text>}
     </View>
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
+function moodLabel(m: number): string {
+  return MOOD_LABELS[Math.round(((m + 1) / 2) * (MOOD_LABELS.length - 1))]
+}
+
+function Field({
+  label,
+  value,
+  onClear,
+  children
+}: {
+  label: string
+  value?: string
+  onClear?: () => void
+  children: React.ReactNode
+}): JSX.Element {
   return (
     <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.fieldHead}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        {value !== undefined && <Text style={styles.fieldValue}>{value}</Text>}
+        {onClear && (
+          <Pressable hitSlop={8} onPress={onClear}>
+            <Text style={styles.clear}>clear</Text>
+          </Pressable>
+        )}
+      </View>
       {children}
+    </View>
+  )
+}
+
+function MoodBar({ value, onChange }: { value: number | null; onChange: (m: number) => void }): JSX.Element {
+  const [width, setWidth] = useState(0)
+  const onLayout = (e: LayoutChangeEvent): void => setWidth(e.nativeEvent.layout.width)
+  const pct = value != null ? ((value + 1) / 2) * 100 : 50
+  return (
+    <View>
+      <Pressable
+        onLayout={onLayout}
+        onPress={(e) => {
+          if (width <= 0) return
+          const x = Math.max(0, Math.min(width, e.nativeEvent.locationX))
+          onChange(+((x / width) * 2 - 1).toFixed(2)) // −1 … +1
+        }}
+        style={styles.moodTrack}
+      >
+        <LinearGradient
+          colors={MOOD_GRADIENT as unknown as [string, string, ...string[]]}
+          locations={[0, 0.2, 0.45, 0.7, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+        />
+        {value != null && <View style={[styles.moodThumb, { left: `${pct}%` }]} />}
+      </Pressable>
+      <View style={styles.moodLabels}>
+        {MOOD_LABELS.map((l) => (
+          <Text key={l} style={styles.moodLabel}>{l}</Text>
+        ))}
+      </View>
     </View>
   )
 }
@@ -234,27 +260,26 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function TagEditor({ tags, onChange }: { tags: string[]; onChange: (t: string[]) => void }): JSX.Element {
   const [entry, setEntry] = useState('')
   const add = (): void => {
-    const fresh = entry
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s && !tags.includes(s))
+    const fresh = entry.split(',').map((s) => s.trim()).filter((s) => s && !tags.includes(s))
     if (fresh.length) onChange([...tags, ...fresh])
     setEntry('')
   }
   return (
     <View>
-      <View style={styles.chips}>
-        {tags.map((t) => (
-          <Pressable key={t} style={styles.chip} onPress={() => onChange(tags.filter((x) => x !== t))}>
-            <Text style={styles.chipTxt}>{t} ✕</Text>
-          </Pressable>
-        ))}
-      </View>
+      {tags.length > 0 && (
+        <View style={styles.chips}>
+          {tags.map((t) => (
+            <Pressable key={t} style={styles.chip} onPress={() => onChange(tags.filter((x) => x !== t))}>
+              <Text style={styles.chipTxt}>{t} ×</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
       <View style={styles.tagAddRow}>
         <TextInput
           style={styles.tagInput}
-          placeholder="Add a tag"
-          placeholderTextColor="#6a6253"
+          placeholder="add tag, press enter…"
+          placeholderTextColor={C.muted}
           autoCapitalize="none"
           autoCorrect={false}
           value={entry}
@@ -262,61 +287,64 @@ function TagEditor({ tags, onChange }: { tags: string[]; onChange: (t: string[])
           onSubmitEditing={add}
           returnKeyType="done"
         />
-        <Pressable style={styles.tagAdd} onPress={add}>
-          <Text style={styles.tagAddTxt}>Add</Text>
-        </Pressable>
       </View>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: 16, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#2a261d', paddingTop: 18 },
-  field: { gap: 8 },
-  fieldLabel: { color: '#7a7264', fontSize: 10, letterSpacing: 1.5 },
+  wrap: { gap: 18, marginTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border, paddingTop: 18 },
+  field: { gap: 9 },
+  fieldHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  fieldLabel: { color: C.muted, fontFamily: MONO, fontSize: 9, letterSpacing: 1.6, flex: 1 },
+  fieldValue: { color: C.accent, fontFamily: MONO_BOLD, fontSize: 11 },
+  clear: { color: C.muted, fontFamily: MONO, fontSize: 10 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  star: { color: '#3a352b', fontSize: 28 },
-  starOn: { color: '#C9A02C' },
-  cells: { flexDirection: 'row', gap: 4, flexWrap: 'wrap' },
-  cell: { width: 30, height: 34, borderRadius: 6, borderWidth: 1, borderColor: '#3a352b', alignItems: 'center', justifyContent: 'center' },
-  moodCell: { paddingHorizontal: 12, height: 34, borderRadius: 6, borderWidth: 1, borderColor: '#3a352b', alignItems: 'center', justifyContent: 'center' },
-  cellOn: { backgroundColor: '#D86A4A22', borderColor: '#D86A4A' },
-  cellTxt: { color: '#a59a82', fontSize: 13 },
-  cellTxtOn: { color: '#D86A4A', fontWeight: '700' },
-  swatch: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'transparent' },
-  swatchNone: { backgroundColor: '#1f1c15', alignItems: 'center', justifyContent: 'center' },
-  swatchOn: { borderColor: '#ECE3CC' },
-  noneX: { color: '#7a7264', fontSize: 13 },
+  // rating
+  star: { fontSize: 22, marginRight: 2 },
+  starOn: { color: C.accent },
+  starOff: { color: C.border },
+  // energy
+  cells: { flexDirection: 'row', gap: 2 },
+  cell: { flex: 1, height: 20, borderRadius: 2 },
+  // mood
+  moodTrack: { height: 8, borderRadius: 4, overflow: 'hidden', justifyContent: 'center' },
+  moodThumb: { position: 'absolute', width: 3, top: -3, bottom: -3, marginLeft: -1.5, backgroundColor: '#fff', borderRadius: 2 },
+  moodLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 },
+  moodLabel: { color: 'rgba(163,152,130,0.5)', fontFamily: MONO, fontSize: 8.5 },
+  // colour
+  swatch: { width: 22, height: 22, borderRadius: 3, borderWidth: 2, borderColor: 'transparent' },
+  swatchNone: { backgroundColor: 'rgba(42,36,28,0.5)', alignItems: 'center', justifyContent: 'center' },
+  swatchOn: { borderColor: C.ink },
+  noneX: { color: C.muted, fontFamily: MONO, fontSize: 11 },
+  // comment
   comment: {
-    minHeight: 60,
-    borderWidth: 1,
-    borderColor: '#3a352b',
-    borderRadius: 8,
-    color: '#ECE3CC',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    textAlignVertical: 'top'
+    minHeight: 52, borderWidth: 1, borderColor: 'rgba(42,36,28,0.6)', borderRadius: 4, backgroundColor: C.paper,
+    color: C.ink, fontFamily: MONO, fontSize: 13, paddingHorizontal: 10, paddingVertical: 8, textAlignVertical: 'top'
   },
+  // tags
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
-  chip: { backgroundColor: '#2a261d', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },
-  chipTxt: { color: '#ECE3CC', fontSize: 12 },
+  chip: { backgroundColor: 'rgba(216,106,74,0.15)', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2 },
+  chipTxt: { color: C.accent, fontFamily: MONO, fontSize: 12 },
   tagAddRow: { flexDirection: 'row', gap: 8 },
-  tagInput: { flex: 1, borderWidth: 1, borderColor: '#3a352b', borderRadius: 8, color: '#ECE3CC', paddingHorizontal: 12, paddingVertical: 8, fontSize: 14 },
-  tagAdd: { backgroundColor: '#2a261d', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' },
-  tagAddTxt: { color: '#ECE3CC', fontSize: 13, fontWeight: '600' },
-  dim: { color: '#7a7264', fontSize: 12 },
-  cueRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  cueMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  cueDot: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  cueLabel: { color: '#17150f', fontSize: 12, fontWeight: '800' },
-  cueTime: { color: '#ECE3CC', fontSize: 14, fontVariant: ['tabular-nums'] },
-  cueGo: { color: '#7a7264', fontSize: 11 },
-  cueDel: { color: '#8c8270', fontSize: 16, paddingHorizontal: 4 },
-  setCue: { borderWidth: 1, borderColor: '#3a352b', borderRadius: 8, paddingVertical: 10, alignItems: 'center', marginTop: 2 },
-  setCueTxt: { color: '#D86A4A', fontSize: 13, fontWeight: '600' },
-  save: { backgroundColor: '#D86A4A', borderRadius: 8, paddingVertical: 13, alignItems: 'center', marginTop: 6 },
-  saveDisabled: { backgroundColor: '#2a261d' },
-  saveTxt: { color: '#17150f', fontSize: 15, fontWeight: '700' },
-  msg: { color: '#a59a82', fontSize: 12, textAlign: 'center' }
+  tagInput: {
+    flex: 1, borderWidth: 1, borderColor: 'rgba(42,36,28,0.6)', borderRadius: 4, backgroundColor: C.paper,
+    color: C.ink, fontFamily: MONO, fontSize: 13, paddingHorizontal: 10, paddingVertical: 7
+  },
+  dim: { color: C.muted, fontFamily: MONO, fontSize: 12 },
+  // cues
+  cueRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(42,36,28,0.5)' },
+  cueMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cueDot: { width: 10, height: 10, borderRadius: 2 },
+  cueTag: { color: C.muted, fontFamily: MONO, fontSize: 12, width: 24 },
+  cueTime: { color: C.ink, fontFamily: MONO, fontSize: 13, width: 48 },
+  cueGo: { color: C.muted, fontFamily: MONO, fontSize: 10 },
+  cueDel: { color: C.inkSoft, fontSize: 16, paddingHorizontal: 4 },
+  setCue: { borderWidth: 1, borderColor: 'rgba(42,36,28,0.8)', borderRadius: 4, paddingVertical: 9, alignItems: 'center', marginTop: 6 },
+  setCueTxt: { color: C.accent, fontFamily: MONO, fontSize: 11, letterSpacing: 0.5 },
+  // save
+  save: { backgroundColor: C.accent, borderRadius: 4, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  saveOff: { backgroundColor: 'rgba(42,36,28,0.8)' },
+  saveTxt: { color: C.bg, fontFamily: MONO_BOLD, fontSize: 13, letterSpacing: 1 },
+  msg: { color: C.muted, fontFamily: MONO, fontSize: 11, textAlign: 'center', letterSpacing: 0.5 }
 })
