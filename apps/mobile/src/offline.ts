@@ -14,10 +14,13 @@ const ROOT = (FS.documentDirectory ?? '') + 'offcut/'
 const SNAPSHOT = ROOT + 'snapshot.json'
 const QUEUE = ROOT + 'queue.json'
 const PEAKS_DIR = ROOT + 'peaks/'
-const AUDIO_DIR = ROOT + 'audio/'
+const AUDIO_DIR = ROOT + 'audio/' // explicit "save for offline" (persistent, user-curated)
+const PLAY_DIR = ROOT + 'playcache/' // transient auto-cache so audition seeks/loops are local & snappy
 
 /** Cap on offline-saved audio files (oldest evicted). Each AAC proxy is a few MB. */
 const AUDIO_LRU = 40
+/** Cap on the transient playback cache. */
+const PLAY_LRU = 30
 
 /** Filesystem-safe key for an arbitrary track id. */
 function key(id: string): string {
@@ -81,7 +84,7 @@ export async function saveAudioOffline(trackId: string, remoteUrl: string): Prom
   await ensureDir(AUDIO_DIR)
   const uri = audioUri(trackId)
   await FS.downloadAsync(remoteUrl, uri)
-  await evictAudioBeyond(AUDIO_LRU)
+  await evictDir(AUDIO_DIR, AUDIO_LRU)
   return uri
 }
 
@@ -89,20 +92,44 @@ export async function removeAudioOffline(trackId: string): Promise<void> {
   await FS.deleteAsync(audioUri(trackId), { idempotent: true })
 }
 
-/** Evict oldest audio files beyond `keep` (best-effort LRU by mtime). */
-async function evictAudioBeyond(keep: number): Promise<void> {
+// ── Transient playback cache ──────────────────────────────────────────────────
+// Auto-caching the proxy to a local file on load makes seeks/loops/cue-jumps
+// near-instant (no LAN re-buffering on every seek). LRU-bounded; not user-curated.
+
+function playUri(trackId: string): string {
+  return PLAY_DIR + key(trackId) + '.m4a'
+}
+
+/** Local uri if this track is already in the playback cache, else null. */
+export async function playbackCachedUri(trackId: string): Promise<string | null> {
+  const uri = playUri(trackId)
+  return (await FS.getInfoAsync(uri)).exists ? uri : null
+}
+
+/** Ensure the proxy is cached locally for snappy audition; returns the local uri. */
+export async function ensurePlaybackCache(trackId: string, remoteUrl: string): Promise<string> {
+  const uri = playUri(trackId)
+  if ((await FS.getInfoAsync(uri)).exists) return uri
+  await ensureDir(PLAY_DIR)
+  await FS.downloadAsync(remoteUrl, uri)
+  await evictDir(PLAY_DIR, PLAY_LRU)
+  return uri
+}
+
+/** Evict oldest files in `dir` beyond `keep` (best-effort LRU by mtime). */
+async function evictDir(dir: string, keep: number): Promise<void> {
   try {
-    const names = await FS.readDirectoryAsync(AUDIO_DIR)
+    const names = await FS.readDirectoryAsync(dir)
     if (names.length <= keep) return
     const stamped = await Promise.all(
       names.map(async (n) => {
-        const info = await FS.getInfoAsync(AUDIO_DIR + n)
+        const info = await FS.getInfoAsync(dir + n)
         return { n, t: info.exists ? info.modificationTime ?? 0 : 0 }
       })
     )
     stamped.sort((a, b) => a.t - b.t) // oldest first
     for (const { n } of stamped.slice(0, stamped.length - keep)) {
-      await FS.deleteAsync(AUDIO_DIR + n, { idempotent: true })
+      await FS.deleteAsync(dir + n, { idempotent: true })
     }
   } catch {
     /* eviction is best-effort */
@@ -126,6 +153,7 @@ export async function audioCacheStats(): Promise<{ count: number; bytes: number 
 
 export async function clearAudioCache(): Promise<void> {
   await FS.deleteAsync(AUDIO_DIR, { idempotent: true })
+  await FS.deleteAsync(PLAY_DIR, { idempotent: true })
 }
 
 // ── Outbound edit queue ───────────────────────────────────────────────────────

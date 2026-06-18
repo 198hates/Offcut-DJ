@@ -9,7 +9,7 @@ import { DeckWaveform } from './DeckWaveform'
 import { TransportControls } from './TransportControls'
 import { TrackEditor } from './TrackEditor'
 import { isEditable } from './playlists'
-import { getCachedPeaks, cachePeaks, cachedAudioUri, saveAudioOffline, removeAudioOffline } from './offline'
+import { getCachedPeaks, cachePeaks, cachedAudioUri, saveAudioOffline, removeAudioOffline, playbackCachedUri, ensurePlaybackCache } from './offline'
 import { C, MONO, MONO_BOLD } from './theme'
 import type { SyncClient } from './syncClient'
 import type { CuePoint, PeaksData, Playlist, Track, SyncPushPayload, SyncPushResult } from './sync-types'
@@ -84,17 +84,41 @@ export function TrackScreen({
     return () => { cancelled = true }
   }, [client, track.id])
 
-  // If this track was saved offline, play the local file instead of streaming.
+  // Audio source: play from a LOCAL FILE whenever possible so seeks/loops/cue-jumps
+  // are instant (streaming re-buffers on every seek → the loop "pause" + slow cues).
+  // Prefer an explicit offline save, else the transient playback cache; otherwise
+  // stream immediately and swap to a freshly-downloaded local file when it's ready.
   useEffect(() => {
     let cancelled = false
-    void (async () => {
-      const uri = await cachedAudioUri(track.id)
+    const swapTo = (uri: string): void => {
       if (cancelled) return
-      setOfflineUri(uri)
-      if (uri) player.replace({ uri })
+      const pos = player.currentTime
+      const wasPlaying = player.playing
+      player.replace({ uri })
+      if (pos > 0.25) void player.seekTo(pos)
+      if (wasPlaying) player.play()
+    }
+    void (async () => {
+      const saved = await cachedAudioUri(track.id)
+      if (cancelled) return
+      setOfflineUri(saved)
+      if (saved) { swapTo(saved); return } // explicit offline save
+
+      const cached = await playbackCachedUri(track.id)
+      if (cancelled) return
+      if (cached) { swapTo(cached); return } // already auto-cached
+
+      // Streaming now (player was created with proxyUrl). Cache in the background,
+      // then swap onto the local file for snappy seeking.
+      try {
+        const uri = await ensurePlaybackCache(track.id, client.proxyUrl(track.id))
+        swapTo(uri)
+      } catch {
+        /* offline / download failed — keep streaming */
+      }
     })()
     return () => { cancelled = true }
-  }, [track.id, player])
+  }, [track.id, player, client])
 
   const toggleOffline = async (): Promise<void> => {
     setSavingOffline(true)
