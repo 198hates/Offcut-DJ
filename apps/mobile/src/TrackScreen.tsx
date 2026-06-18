@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio'
-import { Waveform } from './Waveform'
+import { DeckWaveform } from './DeckWaveform'
 import { TrackEditor } from './TrackEditor'
 import { isEditable } from './playlists'
 import { getCachedPeaks, cachePeaks, cachedAudioUri, saveAudioOffline, removeAudioOffline } from './offline'
@@ -125,7 +125,14 @@ export function TrackScreen({
 
       <View style={styles.waveBox}>
         {peaks ? (
-          <Waveform data={peaks} />
+          <DeckWaveform
+            data={peaks}
+            currentTime={status.currentTime}
+            duration={status.duration || track.durationSeconds || peaks.durationSec}
+            playing={status.playing}
+            cues={track.cuePoints}
+            onSeek={(s) => void player.seekTo(s)}
+          />
         ) : peaksErr ? (
           <Text style={styles.dim}>waveform unavailable</Text>
         ) : (
@@ -225,7 +232,7 @@ const styles = StyleSheet.create({
   metaLabel: { color: C.muted, fontFamily: MONO, fontSize: 9, letterSpacing: 1.6 },
   metaValue: { color: C.ink, fontFamily: MONO_BOLD, fontSize: 15, fontVariant: ['tabular-nums'] },
   metaValueAccent: { color: C.accent },
-  waveBox: { minHeight: 96, justifyContent: 'center', backgroundColor: C.deckPanel, borderRadius: 6, padding: 8, marginBottom: 18 },
+  waveBox: { minHeight: 112, justifyContent: 'center', backgroundColor: C.deckPanel, borderRadius: 6, overflow: 'hidden', paddingHorizontal: 6, marginBottom: 18 },
   dim: { color: C.muted, fontFamily: MONO, fontSize: 12, textAlign: 'center' },
   offlineBtn: { marginTop: 14, borderWidth: 1, borderColor: 'rgba(42,36,28,0.8)', borderRadius: 4, paddingVertical: 9, alignItems: 'center' },
   offlineTxt: { color: C.muted, fontFamily: MONO, fontSize: 11, letterSpacing: 0.5 },
