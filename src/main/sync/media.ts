@@ -15,6 +15,14 @@ import type { Database } from 'better-sqlite3'
 import { decodeAudioToPcm } from '../integrations/beat-analysis/audio-decode'
 import { computeWaveformBands } from '../integrations/rekordbox-usb/waveform'
 
+/** Compact beat reference for the phone: enough to draw beat/downbeat lines and
+ *  snap (quantise) to the beat, without the full per-beat array. */
+export interface CompactGrid {
+  bpm: number
+  firstBeatMs: number
+  downbeats: number[]
+}
+
 /** Compact, phone-ready waveform overview. Bands are quantised to 0..255. */
 export interface PeaksData {
   v: 1
@@ -26,6 +34,8 @@ export interface PeaksData {
   low: number[]
   mid: number[]
   high: number[]
+  /** Beat reference, when the track has an analysed v2 grid; null otherwise. */
+  grid?: CompactGrid | null
 }
 
 interface TrackFile {
@@ -134,25 +144,47 @@ async function generatePeaks(info: TrackFile): Promise<PeaksData | null> {
 }
 
 /** Peaks for a track (cached). Null if the track is unknown or won't decode. */
+/** Derive the compact beat reference from a track's analysed v2 grid, or null. */
+function compactGrid(db: Database, trackId: string): CompactGrid | null {
+  const row = db.prepare('SELECT analysed_beatgrid FROM tracks WHERE id = ?').get(trackId) as
+    | { analysed_beatgrid: string | null }
+    | undefined
+  if (!row?.analysed_beatgrid) return null
+  try {
+    const g = JSON.parse(row.analysed_beatgrid) as { medianBpm?: number; firstBeatMs?: number; downbeats?: number[] }
+    // A bpm of 0 means a degenerate/empty grid — not worth shipping.
+    if (typeof g?.medianBpm !== 'number' || g.medianBpm <= 0 || typeof g?.firstBeatMs !== 'number') return null
+    return { bpm: g.medianBpm, firstBeatMs: g.firstBeatMs, downbeats: Array.isArray(g.downbeats) ? g.downbeats : [] }
+  } catch {
+    return null
+  }
+}
+
 export async function getPeaks(db: Database, cacheDir: string, trackId: string): Promise<PeaksData | null> {
   const info = resolveTrackFile(db, trackId)
   if (!info) return null
   const file = peaksCachePath(cacheDir, info)
+
+  let data: PeaksData | null = null
   if (existsSync(file)) {
     try {
-      return JSON.parse(readFileSync(file, 'utf8')) as PeaksData
+      data = JSON.parse(readFileSync(file, 'utf8')) as PeaksData
     } catch {
       /* corrupt cache — regenerate below */
     }
   }
-  const data = await generatePeaks(info)
-  if (!data) return null
-  try {
-    mkdirSync(dirname(file), { recursive: true })
-    writeFileSync(file, JSON.stringify(data))
-  } catch {
-    /* serving still works without the cache write */
+  if (!data) {
+    data = await generatePeaks(info)
+    if (!data) return null
+    try {
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, JSON.stringify(data)) // cache the heavy bands only…
+    } catch {
+      /* serving still works without the cache write */
+    }
   }
+  // …attach the grid fresh each request (cheap; stays correct if the grid is edited).
+  data.grid = compactGrid(db, info.trackId)
   return data
 }
 

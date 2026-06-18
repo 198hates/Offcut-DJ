@@ -8,7 +8,7 @@ import { LayoutChangeEvent, PanResponder, Pressable, StyleSheet, Text, View } fr
 import type { AudioPlayer } from 'expo-audio'
 import { C, MONO, MONO_BOLD } from './theme'
 import { hotCueAt, setHotCue, removeHotCue } from './edits'
-import type { CuePoint, Track } from './sync-types'
+import type { CompactGrid, CuePoint, Track } from './sync-types'
 
 interface Status {
   playing: boolean
@@ -30,17 +30,28 @@ export function TransportControls({
   player,
   status,
   cues,
-  onCommitCues
+  onCommitCues,
+  grid
 }: {
   track: Track
   player: AudioPlayer
   status: Status
   cues: CuePoint[]
   onCommitCues: (next: CuePoint[]) => void
+  grid?: CompactGrid | null
 }): JSX.Element {
   const dur = status.duration || track.durationSeconds || 0
   const beatLen = track.bpm && track.bpm > 0 ? 60 / track.bpm : 0
   const seek = (t: number): void => void player.seekTo(Math.max(0, Math.min(dur || t, t)))
+
+  // ── quantize (snap to the nearest beat; needs the grid) ──
+  const [quantize, setQuantize] = useState(false)
+  const snap = (sec: number): number => {
+    if (!quantize || !grid || grid.bpm <= 0) return sec
+    const beatSec = 60 / grid.bpm
+    const first = grid.firstBeatMs / 1000
+    return Math.max(0, first + Math.round((sec - first) / beatSec) * beatSec)
+  }
 
   // ── main cue (ephemeral) ──
   const [mainCue, setMainCue] = useState<number | null>(null)
@@ -74,17 +85,17 @@ export function TransportControls({
   }) // runs each status tick
   const beatLoop = (bars: number): void => {
     if (!beatLen) return
-    const s = status.currentTime
+    const s = snap(status.currentTime)
     setLoop({ s, e: s + bars * beatLen * 4 })
   }
-  const loopIn = (): void => setLoop((l) => ({ s: status.currentTime, e: l?.e ?? status.currentTime + beatLen * 4 }))
+  const loopIn = (): void => setLoop((l) => ({ s: snap(status.currentTime), e: l?.e ?? snap(status.currentTime) + beatLen * 4 }))
   const loopOut = (): void => setLoop((l) => (l ? { ...l, e: status.currentTime } : null))
 
   // ── hot cues ──
   const onPad = (i: number): void => {
     const c = hotCueAt(cues, i)
     if (c) seek(c.positionMs / 1000)
-    else onCommitCues(setHotCue(cues, i, status.currentTime * 1000))
+    else onCommitCues(setHotCue(cues, i, snap(status.currentTime) * 1000))
   }
   const onPadLong = (i: number): void => {
     if (hotCueAt(cues, i)) onCommitCues(removeHotCue(cues, i))
@@ -105,7 +116,14 @@ export function TransportControls({
           <Text style={styles.playIcon}>{status.playing ? '❚❚' : '▶'}</Text>
         </Pressable>
         <Text style={styles.time}>{mmss(status.currentTime)} / {mmss(dur)}</Text>
-        {!status.isLoaded && <Text style={styles.dim}>buffering…</Text>}
+        <View style={{ flex: 1 }} />
+        <Pressable
+          style={[styles.miniBtn, quantize && styles.miniOn, !grid && styles.faded]}
+          disabled={!grid}
+          onPress={() => setQuantize((q) => !q)}
+        >
+          <Text style={[styles.miniTxt, quantize && styles.miniTxtOn]}>QUANT</Text>
+        </Pressable>
       </View>
 
       {/* hot-cue pads A–H */}

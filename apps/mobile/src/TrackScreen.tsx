@@ -148,7 +148,7 @@ export function TrackScreen({
         )}
       </View>
 
-      <TransportControls track={track} player={player} status={status} cues={cues} onCommitCues={commitCues} />
+      <TransportControls track={track} player={player} status={status} cues={cues} onCommitCues={commitCues} grid={peaks?.grid ?? null} />
 
       <Pressable style={styles.offlineBtn} onPress={() => void toggleOffline()} disabled={savingOffline}>
         <Text style={[styles.offlineTxt, offlineUri && styles.offlineTxtOn]}>

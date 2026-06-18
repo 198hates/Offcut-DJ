@@ -75,7 +75,21 @@ describe('media cache resolution', () => {
     }
     writeFileSync(join(cache, 'hashA.peaks.json'), JSON.stringify(cached))
     // The source file is missing, so a cache miss would fail — a hit must win.
-    expect(await getPeaks(db, cache, 't1')).toEqual(cached)
+    // The grid is attached fresh per request (null here — no analysed_beatgrid).
+    expect(await getPeaks(db, cache, 't1')).toEqual({ ...cached, grid: null })
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('attaches the compact grid from the analysed v2 beatgrid', async () => {
+    insertTrack('tg', 'hashG', join(dir, 'nope.mp3'))
+    db.prepare('UPDATE tracks SET analysed_beatgrid = ? WHERE id = ?').run(
+      JSON.stringify({ medianBpm: 128, firstBeatMs: 250, downbeats: [250, 2125, 4000], isConstantTempo: true }),
+      'tg'
+    )
+    const cached: PeaksData = { v: 1, trackId: 'tg', contentHash: 'hashG', buckets: 1, durationSec: 180, peaks: [1], low: [], mid: [], high: [] }
+    writeFileSync(join(cache, 'hashG.peaks.json'), JSON.stringify(cached))
+    const out = await getPeaks(db, cache, 'tg')
+    expect(out?.grid).toEqual({ bpm: 128, firstBeatMs: 250, downbeats: [250, 2125, 4000] })
     rmSync(dir, { recursive: true, force: true })
   })
 

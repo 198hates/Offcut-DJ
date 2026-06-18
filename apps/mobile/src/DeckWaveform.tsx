@@ -3,14 +3,14 @@
 // that scrolls under a fixed centre playhead, bright ahead / dimmed behind, with
 // hot-cue markers. Tap to seek.
 //
-// Data is PeaksData (0–255 band arrays). Beat-grid lines are a follow-up (the
-// phone's lean sync doesn't carry the grid yet).
+// Data is PeaksData (0–255 band arrays) + an optional compact grid (bpm +
+// firstBeatMs + downbeats) so we can draw beat / downbeat lines like the desktop.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LayoutChangeEvent, Pressable, View } from 'react-native'
 import { Canvas, Group, Path, Rect, Skia, rect, type SkPath } from '@shopify/react-native-skia'
 import { WAVE } from './theme'
-import type { CuePoint, PeaksData } from './sync-types'
+import type { CompactGrid, CuePoint, PeaksData } from './sync-types'
 
 const BAR_W = 3 // px per bucket (≈90 px/s at ~30 buckets/s → ~a few seconds visible)
 const SCALE = 0.92 // matches the desktop peak scaling
@@ -24,6 +24,22 @@ function buildBandPath(band: number[], n: number, half: number): SkPath {
     p.addRect(rect(i * BAR_W, half - h, BAR_W, h * 2)) // mirrored around centre
   }
   return p
+}
+
+/** Vertical beat + downbeat lines in track space (1px each). */
+function buildGridPaths(grid: CompactGrid, bucketDur: number, durSec: number, height: number): { beat: SkPath; down: SkPath } {
+  const beat = Skia.Path.Make()
+  const down = Skia.Path.Make()
+  const xOf = (ms: number): number => (ms / 1000 / bucketDur) * BAR_W
+  const beatMs = grid.bpm > 0 ? 60000 / grid.bpm : 0
+  if (beatMs > 0) {
+    const count = Math.floor((durSec * 1000 - grid.firstBeatMs) / beatMs)
+    if (count > 0 && count <= 6000) {
+      for (let k = 0; k <= count; k++) beat.addRect(rect(xOf(grid.firstBeatMs + k * beatMs) - 0.5, 0, 1, height))
+    }
+  }
+  for (const ms of grid.downbeats) down.addRect(rect(xOf(ms) - 0.5, 0, 1, height))
+  return { beat, down }
 }
 
 export function DeckWaveform({
@@ -60,6 +76,11 @@ export function DeckWaveform({
       high: buildBandPath(data.high, n, half)
     }),
     [data, n, half]
+  )
+
+  const grid = useMemo(
+    () => (data.grid ? buildGridPaths(data.grid, bucketDur, dur, height) : null),
+    [data.grid, bucketDur, dur, height]
   )
 
   // Smooth playhead: estimate time between status updates with a RAF clock.
@@ -115,6 +136,14 @@ export function DeckWaveform({
                 <Path path={paths.high} color={WAVE.future.high} />
               </Group>
             </Group>
+
+            {/* beat / downbeat lines (scroll with the waveform) */}
+            {grid && (
+              <Group transform={scroll}>
+                <Path path={grid.beat} color="rgba(255,255,255,0.13)" />
+                <Path path={grid.down} color="rgba(255,255,255,0.5)" />
+              </Group>
+            )}
 
             {/* hot-cue markers (scroll with the waveform) */}
             <Group transform={scroll}>

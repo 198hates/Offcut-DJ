@@ -153,6 +153,11 @@ export interface SyncPushResult {
 }
 
 /** GET /media/peaks — bands are 0..255 (divide by 255). */
+export interface CompactGrid {
+  bpm: number
+  firstBeatMs: number
+  downbeats: number[]
+}
 export interface PeaksData {
   v: 1
   trackId: string
@@ -163,4 +168,5 @@ export interface PeaksData {
   low: number[]
   mid: number[]
   high: number[]
+  grid?: CompactGrid | null
 }
