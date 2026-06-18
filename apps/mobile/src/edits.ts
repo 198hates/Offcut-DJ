@@ -23,7 +23,8 @@ export const HOT_CUE_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 /** Mood is a −1 (dark) → +1 (uplifting) float; the phone edits it in steps. */
 export const MOOD_STEPS = [-1, -0.5, 0, 0.5, 1]
 
-/** The slice-3 editable surface — a local draft of a track's prep fields. */
+// Prep metadata is edited as a draft (Save). Hot cues are NOT here — like the
+// desktop, they persist immediately from the transport pads (see TrackScreen).
 export interface Draft {
   rating: number
   energy: number | null
@@ -31,7 +32,6 @@ export interface Draft {
   color: string
   comment: string
   tags: string[]
-  cuePoints: CuePoint[]
 }
 
 export function draftFromTrack(t: Track): Draft {
@@ -41,8 +41,7 @@ export function draftFromTrack(t: Track): Draft {
     mood: t.mood ?? null,
     color: t.color ?? '',
     comment: t.comment ?? '',
-    tags: [...(t.tags ?? [])],
-    cuePoints: (t.cuePoints ?? []).map((c) => ({ ...c }))
+    tags: [...(t.tags ?? [])]
   }
 }
 
@@ -64,10 +63,6 @@ export function buildPatch(track: Track, draft: Draft, nowIso: string): TrackPat
   if (draft.color !== (track.color ?? '')) { patch.color = draft.color; changed = true }
   if (draft.comment !== (track.comment ?? '')) { patch.comment = draft.comment; changed = true }
   if (!tagsEqual(draft.tags, track.tags ?? [])) { patch.tags = draft.tags; changed = true }
-  if (JSON.stringify(draft.cuePoints) !== JSON.stringify(track.cuePoints ?? [])) {
-    patch.cuePoints = draft.cuePoints
-    changed = true
-  }
   // contentHash lets the desktop reconcile if ids ever diverge; harmless to omit.
   return changed ? patch : null
 }
@@ -82,25 +77,21 @@ export function hotCues(cues: CuePoint[]): CuePoint[] {
   return cues.filter((c) => c.type === 'hotcue').sort((a, b) => a.index - b.index)
 }
 
-/** Lowest free hot-cue slot 0..7, or -1 when all eight are taken. */
-function freeHotCueSlot(cues: CuePoint[]): number {
-  const used = new Set(hotCues(cues).map((c) => c.index))
-  for (let i = 0; i < HOT_CUE_LABELS.length; i++) if (!used.has(i)) return i
-  return -1
+/** The hot cue occupying a given pad slot (0..7), or undefined. */
+export function hotCueAt(cues: CuePoint[], index: number): CuePoint | undefined {
+  return cues.find((c) => c.type === 'hotcue' && c.index === index)
 }
 
-/** Add a hot cue at positionMs using the next free slot. No-op if all taken. */
-export function addHotCue(cues: CuePoint[], positionMs: number): CuePoint[] {
-  const slot = freeHotCueSlot(cues)
-  if (slot < 0) return cues
+/** Set/replace the hot cue in a specific pad slot at positionMs. */
+export function setHotCue(cues: CuePoint[], index: number, positionMs: number): CuePoint[] {
   const cue: CuePoint = {
-    index: slot,
+    index,
     type: 'hotcue',
     positionMs: Math.max(0, Math.round(positionMs)),
-    color: HOT_CUE_COLORS[slot % HOT_CUE_COLORS.length],
-    label: HOT_CUE_LABELS[slot]
+    color: HOT_CUE_COLORS[index % HOT_CUE_COLORS.length],
+    label: HOT_CUE_LABELS[index]
   }
-  return [...cues, cue].sort((a, b) => a.positionMs - b.positionMs)
+  return [...removeHotCue(cues, index), cue].sort((a, b) => a.positionMs - b.positionMs)
 }
 
 /** Remove the hot cue in a given slot. */

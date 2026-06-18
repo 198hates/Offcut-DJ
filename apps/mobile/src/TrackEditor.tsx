@@ -1,42 +1,24 @@
-// Prep-edit panel (slice 3), styled to match the desktop TrackDetail editor:
+// Prep-metadata editor, styled to match the desktop TrackDetail inspector:
 // JetBrains Mono labels, terracotta accent, energy ramp cells, a mood gradient
-// slider, accent tag chips and cue rows. Pushes to the desktop via /sync/push.
+// slider, accent tag chips. Pushes to the desktop via /sync/push. Hot cues live
+// in the transport (see TransportControls), not here.
 
 import { useEffect, useMemo, useState } from 'react'
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
-import type { AudioPlayer } from 'expo-audio'
-import {
-  draftFromTrack,
-  buildPatch,
-  patchAsTrackFields,
-  hotCues,
-  addHotCue,
-  removeHotCue,
-  type Draft
-} from './edits'
+import { draftFromTrack, buildPatch, patchAsTrackFields, type Draft } from './edits'
 import { C, MONO, MONO_BOLD, TRACK_COLORS, MOOD_GRADIENT, MOOD_LABELS, energyFill } from './theme'
 import type { Track, SyncPushPayload, SyncPushResult } from './sync-types'
 
 type Push = (payload: SyncPushPayload) => Promise<SyncPushResult | null>
 
-function mmss(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) return '0:00'
-  const s = Math.floor(sec)
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-}
-
 export function TrackEditor({
   track,
   push,
-  player,
-  playheadSec,
   onPatched
 }: {
   track: Track
   push: Push
-  player: AudioPlayer
-  playheadSec: number
   onPatched: (id: string, fields: Partial<Track>) => void
 }): JSX.Element {
   const [baseline, setBaseline] = useState<Track>(track)
@@ -85,8 +67,6 @@ export function TrackEditor({
       setSaving(false)
     }
   }
-
-  const cues = hotCues(draft.cuePoints)
 
   return (
     <View style={styles.wrap}>
@@ -152,33 +132,6 @@ export function TrackEditor({
           value={draft.comment}
           onChangeText={(t) => set('comment', t)}
         />
-      </Field>
-
-      <Field label="HOT CUES">
-        <View style={{ gap: 2 }}>
-          {cues.length === 0 && <Text style={styles.dim}>no hot cues yet</Text>}
-          {cues.map((c) => (
-            <View key={c.index} style={styles.cueRow}>
-              <Pressable style={styles.cueMain} onPress={() => void player.seekTo(c.positionMs / 1000)}>
-                <View style={[styles.cueDot, { backgroundColor: c.color || C.accent }]} />
-                <Text style={styles.cueTag}>H{c.index + 1}</Text>
-                <Text style={styles.cueTime}>{mmss(c.positionMs / 1000)}</Text>
-                <Text style={styles.cueGo}>tap to jump</Text>
-              </Pressable>
-              <Pressable hitSlop={8} onPress={() => set('cuePoints', removeHotCue(draft.cuePoints, c.index))}>
-                <Text style={styles.cueDel}>×</Text>
-              </Pressable>
-            </View>
-          ))}
-          {cues.length < 8 && (
-            <Pressable
-              style={styles.setCue}
-              onPress={() => set('cuePoints', addHotCue(draft.cuePoints, playheadSec * 1000))}
-            >
-              <Text style={styles.setCueTxt}>+ SET CUE AT {mmss(playheadSec)}</Text>
-            </Pressable>
-          )}
-        </View>
       </Field>
 
       <Pressable

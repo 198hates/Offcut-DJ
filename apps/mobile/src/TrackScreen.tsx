@@ -6,12 +6,13 @@ import { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio'
 import { DeckWaveform } from './DeckWaveform'
+import { TransportControls } from './TransportControls'
 import { TrackEditor } from './TrackEditor'
 import { isEditable } from './playlists'
 import { getCachedPeaks, cachePeaks, cachedAudioUri, saveAudioOffline, removeAudioOffline } from './offline'
 import { C, MONO, MONO_BOLD } from './theme'
 import type { SyncClient } from './syncClient'
-import type { PeaksData, Playlist, Track, SyncPushPayload, SyncPushResult } from './sync-types'
+import type { CuePoint, PeaksData, Playlist, Track, SyncPushPayload, SyncPushResult } from './sync-types'
 
 type Push = (payload: SyncPushPayload) => Promise<SyncPushResult | null>
 
@@ -43,7 +44,19 @@ export function TrackScreen({
   const [offlineUri, setOfflineUri] = useState<string | null>(null)
   const [savingOffline, setSavingOffline] = useState(false)
 
-  const player = useAudioPlayer({ uri: client.proxyUrl(track.id) })
+  // Hot cues are the single source of truth here (the transport pads + waveform
+  // share them). Like the desktop, they persist immediately — separate from the
+  // metadata draft+Save in TrackEditor.
+  const [cues, setCues] = useState<CuePoint[]>(track.cuePoints ?? [])
+  useEffect(() => setCues(track.cuePoints ?? []), [track.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const commitCues = (next: CuePoint[]): void => {
+    setCues(next)
+    onPatched(track.id, { cuePoints: next })
+    void push({ tracks: [{ id: track.id, updatedAt: new Date().toISOString(), cuePoints: next }] })
+  }
+
+  // Faster status ticks so beat-loop wrap + the scrolling waveform stay tight.
+  const player = useAudioPlayer({ uri: client.proxyUrl(track.id) }, { updateInterval: 100 })
   const status = useAudioPlayerStatus(player)
 
   useEffect(() => {
@@ -82,11 +95,6 @@ export function TrackScreen({
     })()
     return () => { cancelled = true }
   }, [track.id, player])
-
-  const toggle = (): void => {
-    if (status.playing) player.pause()
-    else player.play()
-  }
 
   const toggleOffline = async (): Promise<void> => {
     setSavingOffline(true)
@@ -130,7 +138,7 @@ export function TrackScreen({
             currentTime={status.currentTime}
             duration={status.duration || track.durationSeconds || peaks.durationSec}
             playing={status.playing}
-            cues={track.cuePoints}
+            cues={cues}
             onSeek={(s) => void player.seekTo(s)}
           />
         ) : peaksErr ? (
@@ -140,15 +148,7 @@ export function TrackScreen({
         )}
       </View>
 
-      <View style={styles.transport}>
-        <Pressable style={styles.playBtn} onPress={toggle} disabled={!status.isLoaded}>
-          <Text style={styles.playIcon}>{status.playing ? '❚❚' : '▶'}</Text>
-        </Pressable>
-        <Text style={styles.time}>
-          {mmss(status.currentTime)} / {mmss(status.duration || track.durationSeconds || 0)}
-        </Text>
-        {!status.isLoaded && <Text style={styles.dim}>buffering…</Text>}
-      </View>
+      <TransportControls track={track} player={player} status={status} cues={cues} onCommitCues={commitCues} />
 
       <Pressable style={styles.offlineBtn} onPress={() => void toggleOffline()} disabled={savingOffline}>
         <Text style={[styles.offlineTxt, offlineUri && styles.offlineTxtOn]}>
@@ -158,13 +158,7 @@ export function TrackScreen({
 
       <AddToPlaylist playlists={playlists} track={track} onAdd={onAddToPlaylist} />
 
-      <TrackEditor
-        track={track}
-        push={push}
-        player={player}
-        playheadSec={status.currentTime}
-        onPatched={onPatched}
-      />
+      <TrackEditor track={track} push={push} onPatched={onPatched} />
     </ScrollView>
   )
 }
