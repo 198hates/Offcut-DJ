@@ -113,7 +113,14 @@ export function TransportControls({
           <Text style={styles.cueTxt}>CUE</Text>
         </Pressable>
         <Pressable style={styles.play} onPress={() => (status.playing ? player.pause() : player.play())} disabled={!status.isLoaded}>
-          <Text style={styles.playIcon}>{status.playing ? '❚❚' : '▶'}</Text>
+          {status.playing ? (
+            <View style={styles.pauseRow}>
+              <View style={styles.pauseBar} />
+              <View style={styles.pauseBar} />
+            </View>
+          ) : (
+            <View style={styles.playTriangle} />
+          )}
         </Pressable>
         <Text style={styles.time}>{mmss(status.currentTime)} / {mmss(dur)}</Text>
         <View style={{ flex: 1 }} />
@@ -239,7 +246,13 @@ const styles = StyleSheet.create({
   cueBtn: { width: 52, height: 52, borderRadius: 8, borderWidth: 1, borderColor: '#C9A02C', alignItems: 'center', justifyContent: 'center' },
   cueTxt: { color: '#C9A02C', fontFamily: MONO_BOLD, fontSize: 12 },
   play: { width: 52, height: 52, borderRadius: 26, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
-  playIcon: { color: C.bg, fontSize: 18, fontWeight: '800' },
+  playTriangle: {
+    width: 0, height: 0, marginLeft: 4,
+    borderTopWidth: 10, borderBottomWidth: 10, borderLeftWidth: 17,
+    borderTopColor: 'transparent', borderBottomColor: 'transparent', borderLeftColor: C.bg
+  },
+  pauseRow: { flexDirection: 'row', gap: 5 },
+  pauseBar: { width: 5, height: 18, borderRadius: 1, backgroundColor: C.bg },
   time: { color: C.ink, fontFamily: MONO, fontSize: 14, fontVariant: ['tabular-nums'] },
   dim: { color: C.muted, fontFamily: MONO, fontSize: 11 },
 
