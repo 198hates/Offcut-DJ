@@ -4,6 +4,7 @@
 import { useMemo, useState } from 'react'
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
 import { isEditable } from './playlists'
+import { playlistTracks } from './smartRules'
 import type { LibraryState } from './useLibrary'
 import type { Playlist, Track } from './sync-types'
 
@@ -35,10 +36,18 @@ export function LibraryScreen({
   const [playlist, setPlaylist] = useState<Playlist | null>(null)
   const [newName, setNewName] = useState('')
 
+  // Evaluated track counts for smartlists (computed once per library change).
+  const smartCounts = useMemo<Map<string, number>>(() => {
+    const m = new Map<string, number>()
+    for (const p of lib.playlists) {
+      if (p.isSmart) m.set(p.id, playlistTracks(p, lib.tracks, lib.byId).length)
+    }
+    return m
+  }, [lib.playlists, lib.tracks, lib.byId])
+
   const tracks = useMemo<Track[]>(() => {
-    const base = playlist
-      ? playlist.trackIds.map((id) => lib.byId.get(id)).filter((t): t is Track => !!t)
-      : lib.tracks
+    // Smartlists evaluate their rules client-side; regular playlists map membership.
+    const base = playlist ? playlistTracks(playlist, lib.tracks, lib.byId) : lib.tracks
     const q = query.trim().toLowerCase()
     if (!q) return base
     return base.filter((t) => `${t.title} ${t.artist}`.toLowerCase().includes(q))
@@ -176,7 +185,7 @@ export function LibraryScreen({
                 <Text style={[styles.title, { flex: 1 }]} numberOfLines={1}>
                   {item.isSmart ? '✨ ' : item.isFolder ? '📁 ' : ''}{item.name}
                 </Text>
-                <Text style={styles.meta}>{item.trackIds.length}</Text>
+                <Text style={styles.meta}>{item.isSmart ? (smartCounts.get(item.id) ?? 0) : item.trackIds.length}</Text>
               </Pressable>
               {isEditable(item) && (
                 <Pressable hitSlop={10} onPress={() => onManagePlaylist(item)}>

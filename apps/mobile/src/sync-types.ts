@@ -89,6 +89,20 @@ export interface Track {
   phrases: PhraseSegment[] | null
 }
 
+export type SmartRuleField =
+  | 'bpm' | 'key' | 'genre' | 'artist' | 'album' | 'year' | 'label' | 'rating'
+  | 'title' | 'comment' | 'durationSeconds' | 'dateAdded' | 'playCount'
+  | 'lastPlayedAt' | 'energy' | 'danceability' | 'mood' | 'tags' | 'customTag'
+export type SmartRuleOp =
+  | 'is' | 'is_not' | 'contains' | 'not_contains'
+  | 'greater_than' | 'less_than' | 'between' | 'in_last_days'
+export interface SmartRule {
+  field: SmartRuleField
+  op: SmartRuleOp
+  value: string | number | [number, number]
+  customTagKey?: string
+}
+
 export interface Playlist {
   id: string
   name: string
@@ -96,7 +110,7 @@ export interface Playlist {
   isFolder: boolean
   isSmart: boolean
   isAutoGroup?: boolean
-  rules: unknown[]
+  rules: SmartRule[]
   parentId: string | null
   sortOrder: number
   trackIds: string[]
