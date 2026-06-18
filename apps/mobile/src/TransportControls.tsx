@@ -41,7 +41,9 @@ export function TransportControls({
   grid?: CompactGrid | null
 }): JSX.Element {
   const dur = status.duration || track.durationSeconds || 0
-  const beatLen = track.bpm && track.bpm > 0 ? 60 / track.bpm : 0
+  // Prefer the analysed grid's BPM so loop lengths line up with the beat lines.
+  const bpm = grid && grid.bpm > 0 ? grid.bpm : track.bpm && track.bpm > 0 ? track.bpm : 0
+  const beatLen = bpm > 0 ? 60 / bpm : 0
   const seek = (t: number): void => void player.seekTo(Math.max(0, Math.min(dur || t, t)))
 
   // ── quantize (snap to the nearest beat; needs the grid) ──
@@ -87,6 +89,9 @@ export function TransportControls({
     if (!beatLen) return
     const s = snap(status.currentTime)
     setLoop({ s, e: s + bars * beatLen * 4 })
+    // Jump to the (snapped) start so the loop plays the grid-aligned region from
+    // the top, rather than continuing from where you tapped until the first wrap.
+    if (Math.abs(s - status.currentTime) > 0.02) seek(s)
   }
   const loopIn = (): void => setLoop((l) => ({ s: snap(status.currentTime), e: l?.e ?? snap(status.currentTime) + beatLen * 4 }))
   const loopOut = (): void => setLoop((l) => (l ? { ...l, e: status.currentTime } : null))
