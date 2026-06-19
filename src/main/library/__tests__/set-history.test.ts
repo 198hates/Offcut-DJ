@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import Database from 'better-sqlite3'
 import { applySchema } from '../schema'
-import { camelotAdjacent, backfillSetSessions, listSets, getSet, updateSet, deleteSet } from '../set-history'
+import { camelotAdjacent, backfillSetSessions, listSets, getSet, updateSet, deleteSet, createResidency, residencyDashboard } from '../set-history'
 
 function freshDb(): Database.Database {
   const db = new Database(':memory:')
@@ -89,5 +89,31 @@ describe('set history', () => {
     expect(deleteSet(db, s.id)).toBe(true)
     expect(listSets(db, { includeArchived: true })).toHaveLength(0)
     expect(db.prepare('SELECT count(*) c FROM playlists').get()).toMatchObject({ c: 0 })
+  })
+
+  it('residency dashboard: rolling averages + rotation streaks', () => {
+    const db = freshDb()
+    const x = track(db, { bpm: 120 })
+    const y = track(db, { bpm: 124 })
+    const z = track(db, { bpm: 128 })
+    historyPlaylist(db, 'Cause 2026-06-14', [x, z]) // newest: X, Z
+    historyPlaylist(db, 'Cause 2026-06-07', [x, y]) // mid: X, Y
+    historyPlaylist(db, 'Cause 2026-05-31', [x, y]) // oldest: X, Y
+    const sets = listSets(db)
+    const res = createResidency(db, { name: 'The Cause', color: '#B07A4E' })
+    for (const s of sets) updateSet(db, s.id, { residencyId: res.id })
+
+    const dash = residencyDashboard(db, res.id)!
+    expect(dash.rollup.setCount).toBe(3)
+    expect(dash.rollup.firstPlayedOn).toBe('2026-05-31')
+    expect(dash.rollup.lastPlayedOn).toBe('2026-06-14')
+
+    const byId = new Map(dash.rotation.map((r) => [r.trackId, r]))
+    // X is in all three, consecutively from the newest → plays 3, streak 3, lastAgo 0
+    expect(byId.get(x)).toMatchObject({ plays: 3, streak: 3, lastAgo: 0 })
+    // Y is in the two oldest (not the newest) → plays 2, streak 0, lastAgo 1
+    expect(byId.get(y)).toMatchObject({ plays: 2, streak: 0, lastAgo: 1 })
+    // Z played once → below the rotation threshold (plays > 1)
+    expect(byId.has(z)).toBe(false)
   })
 })

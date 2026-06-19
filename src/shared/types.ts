@@ -1012,10 +1012,58 @@ export interface SetPatch {
   vibe?: string | null
   notes?: string | null
   status?: string
+  residencyId?: string | null
 }
 
 export interface SetListFilter {
   includeArchived?: boolean
+  residencyId?: string // scope to one residency
+}
+
+export interface Residency {
+  id: string
+  name: string
+  venue: string
+  color: string
+  cadence: string | null
+  notes: string | null
+  setCount: number
+}
+
+export interface ResidencyPatch {
+  name?: string
+  venue?: string
+  color?: string
+  cadence?: string | null
+  notes?: string | null
+}
+
+/** Rolling averages over a residency's sets — the baseline a new set compares to. */
+export interface ResidencyRollup {
+  setCount: number
+  avgBpm: number | null
+  avgTrackCount: number | null
+  avgDurationSec: number | null
+  avgHarmonicPct: number | null
+  firstPlayedOn: string | null
+  lastPlayedOn: string | null
+}
+
+/** A track's footprint across a residency: total plays, consecutive-from-latest
+ *  streak (over-rotation signal), and how many sets ago it last appeared. */
+export interface RotationTrack {
+  trackId: string
+  title: string
+  artist: string
+  plays: number
+  streak: number
+  lastAgo: number // sets since last played (0 = in the latest set)
+}
+
+export interface ResidencyDashboard {
+  residency: Residency
+  rollup: ResidencyRollup
+  rotation: RotationTrack[]
 }
 
 /** A HISTORY set on a Pioneer stick, previewed before import. */

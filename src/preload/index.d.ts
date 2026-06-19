@@ -9,6 +9,7 @@ import type {
   BackupInfo, SystemInfo, CastDevice, CastStatus,
   SyncStatus, SyncPairingInfo,
   SetSummary, SetDetail, SetPatch, SetListFilter, UsbHistoryPreview, UsbImportResult,
+  Residency, ResidencyPatch, ResidencyDashboard,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -261,6 +262,13 @@ declare global {
         delete: (id: string) => Promise<boolean>
         listUsb: (usbRoot: string) => Promise<UsbHistoryPreview[] | { error: string }>
         importUsb: (usbRoot: string, refs: string[]) => Promise<UsbImportResult | { error: string }>
+      }
+      residencies: {
+        list: () => Promise<Residency[]>
+        create: (patch: ResidencyPatch) => Promise<Residency>
+        update: (id: string, patch: ResidencyPatch) => Promise<boolean>
+        delete: (id: string) => Promise<boolean>
+        dashboard: (id: string) => Promise<ResidencyDashboard | null>
       }
     }
   }

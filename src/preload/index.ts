@@ -379,6 +379,16 @@ const api = {
       ipcRenderer.invoke('setHistory:listUsb', usbRoot) as Promise<import('../shared/types').UsbHistoryPreview[] | { error: string }>,
     importUsb: (usbRoot: string, refs: string[]) =>
       ipcRenderer.invoke('setHistory:importUsb', usbRoot, refs) as Promise<import('../shared/types').UsbImportResult | { error: string }>
+  },
+  residencies: {
+    list: () => ipcRenderer.invoke('residencies:list') as Promise<import('../shared/types').Residency[]>,
+    create: (patch: import('../shared/types').ResidencyPatch) =>
+      ipcRenderer.invoke('residencies:create', patch) as Promise<import('../shared/types').Residency>,
+    update: (id: string, patch: import('../shared/types').ResidencyPatch) =>
+      ipcRenderer.invoke('residencies:update', id, patch) as Promise<boolean>,
+    delete: (id: string) => ipcRenderer.invoke('residencies:delete', id) as Promise<boolean>,
+    dashboard: (id: string) =>
+      ipcRenderer.invoke('residencies:dashboard', id) as Promise<import('../shared/types').ResidencyDashboard | null>
   }
 }
 

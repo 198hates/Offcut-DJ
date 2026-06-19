@@ -28,7 +28,10 @@ import { exportToIntegration as exportVirtualDj } from '../integrations/virtuald
 import { analyzeBeats, isModelAvailable, getDefaultModelPath, warmModel } from '../integrations/beat-analysis'
 import { writeTagsToFile } from '../integrations/file-tags/writer'
 import { readUsbHistory, findPioneerUsbMount } from '../integrations/pioneer-usb/history-reader'
-import { listSets, getSet, updateSet, deleteSet, listUsbHistories, importUsbHistories } from '../library/set-history'
+import {
+  listSets, getSet, updateSet, deleteSet, listUsbHistories, importUsbHistories,
+  listResidencies, createResidency, updateResidency, deleteResidency, residencyDashboard
+} from '../library/set-history'
 import { findRekordboxUsbs, readRekordboxUsb, listUsbVolumes, resolveExportPdb } from '../integrations/rekordbox-usb/reader'
 import { usbPreflight } from '../integrations/rekordbox-usb/drive-health'
 import { writePlaylistToUsb, initializeUsb, exportPlaylistsToUsb } from '../integrations/rekordbox-usb/writer'
@@ -996,6 +999,17 @@ ${rows}
       return { error: (err as Error).message }
     }
   })
+
+  // ── Residencies ──
+  ipcMain.handle('residencies:list', () => listResidencies(getLibraryDb()))
+  ipcMain.handle('residencies:create', (_e, patch: import('../../shared/types').ResidencyPatch) =>
+    createResidency(getLibraryDb(), patch)
+  )
+  ipcMain.handle('residencies:update', (_e, id: string, patch: import('../../shared/types').ResidencyPatch) =>
+    (updateResidency(getLibraryDb(), id, patch), true)
+  )
+  ipcMain.handle('residencies:delete', (_e, id: string) => (deleteResidency(getLibraryDb(), id), true))
+  ipcMain.handle('residencies:dashboard', (_e, id: string) => residencyDashboard(getLibraryDb(), id))
 
   // ── Rekordbox USB (prepared stick) — reads PIONEER/rekordbox/export.pdb ──
   ipcMain.handle('rekordboxUsb:find', (): string[] => {

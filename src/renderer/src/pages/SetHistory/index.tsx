@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PageHeader } from '../../components/PageHeader'
-import type { SetSummary, SetDetail, UsbHistoryPreview } from '../../../../shared/types'
+import type { SetSummary, SetDetail, UsbHistoryPreview, Residency, ResidencyDashboard } from '../../../../shared/types'
 
 function mmss(sec: number | null): string {
   if (!sec || sec <= 0) return '—'
@@ -28,13 +28,32 @@ export function SetHistoryPage(): JSX.Element {
   const [includeArchived, setIncludeArchived] = useState(false)
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
+  const [residencies, setResidencies] = useState<Residency[]>([])
+  const [resFilter, setResFilter] = useState<string | null>(null) // selected residency id
+  const [dashboard, setDashboard] = useState<ResidencyDashboard | null>(null)
 
   const reload = useCallback(async (): Promise<void> => {
-    const s = await window.api.setHistory.list({ includeArchived })
+    const s = await window.api.setHistory.list({ includeArchived, residencyId: resFilter ?? undefined })
     setSets(s)
+    setResidencies(await window.api.residencies.list())
     setLoading(false)
-  }, [includeArchived])
+  }, [includeArchived, resFilter])
   useEffect(() => { void reload() }, [reload])
+
+  useEffect(() => {
+    if (!resFilter) { setDashboard(null); return }
+    let live = true
+    void window.api.residencies.dashboard(resFilter).then((d) => { if (live) setDashboard(d) })
+    return () => { live = false }
+  }, [resFilter, sets])
+
+  const newResidency = async (): Promise<void> => {
+    const name = window.prompt('New residency name (e.g. "The Cause")')?.trim()
+    if (!name) return
+    const r = await window.api.residencies.create({ name, color: '#B07A4E' })
+    setResidencies(await window.api.residencies.list())
+    setResFilter(r.id)
+  }
 
   useEffect(() => {
     if (!selectedId) { setDetail(null); return }
@@ -96,6 +115,19 @@ export function SetHistoryPage(): JSX.Element {
         }} />
       </div>
 
+      {/* residency pills */}
+      <div className="px-5 pt-3 shrink-0 flex items-center gap-1.5 flex-wrap">
+        <Pill active={!resFilter} onClick={() => setResFilter(null)}>All</Pill>
+        {residencies.map((r) => (
+          <Pill key={r.id} active={resFilter === r.id} color={r.color} onClick={() => setResFilter(resFilter === r.id ? null : r.id)}>
+            {r.name} · {r.setCount}
+          </Pill>
+        ))}
+        <button onClick={newResidency} className="font-mono text-[11px] text-muted/70 hover:text-accent px-2 py-1">＋ residency</button>
+      </div>
+
+      {dashboard && <ResidencyPanel d={dashboard} />}
+
       <div className="flex-1 min-h-0 flex gap-4 px-5 py-4">
         {/* list */}
         <div className="w-[42%] min-w-[300px] overflow-y-auto pr-1 flex flex-col gap-1.5">
@@ -131,7 +163,7 @@ export function SetHistoryPage(): JSX.Element {
 
         {/* detail */}
         <div className="flex-1 min-w-0 overflow-y-auto">
-          {detail ? <SetDetailPane detail={detail} onPatch={patch} onDelete={onDelete} /> : (
+          {detail ? <SetDetailPane detail={detail} residencies={residencies} onPatch={patch} onDelete={onDelete} /> : (
             <div className="h-full flex items-center justify-center">
               <p className="font-mono text-[12px] text-muted/50">Select a set</p>
             </div>
@@ -231,12 +263,60 @@ function ImportUsbModal({ onClose, onImported }: { onClose: () => void; onImport
   )
 }
 
+function Pill({ active, color, onClick, children }: { active: boolean; color?: string; onClick: () => void; children: React.ReactNode }): JSX.Element {
+  return (
+    <button
+      onClick={onClick}
+      className={`font-mono text-[11px] px-2.5 py-1 rounded-full border transition-colors ${active ? 'border-accent text-ink bg-accent/[0.12]' : 'border-border/40 text-muted hover:text-ink'}`}
+    >
+      {color && <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ backgroundColor: color }} />}
+      {children}
+    </button>
+  )
+}
+
+function ResidencyPanel({ d }: { d: ResidencyDashboard }): JSX.Element {
+  const { rollup, rotation } = d
+  return (
+    <div className="mx-5 mt-3 shrink-0 rounded border border-border/30 bg-paper/40 px-4 py-3">
+      <div className="flex items-center gap-5 flex-wrap font-mono text-[11px]">
+        <span className="text-ink font-bold">{d.residency.name}</span>
+        <RollStat label="sets" value={`${rollup.setCount}`} />
+        <RollStat label="avg bpm" value={rollup.avgBpm != null ? `${Math.round(rollup.avgBpm)}` : '—'} />
+        <RollStat label="avg len" value={mmss(rollup.avgDurationSec)} />
+        <RollStat label="avg harmonic" value={rollup.avgHarmonicPct != null ? `${Math.round(rollup.avgHarmonicPct)}%` : '—'} />
+        <RollStat label="span" value={rollup.firstPlayedOn ? `${fmtDate(rollup.firstPlayedOn)} → ${fmtDate(rollup.lastPlayedOn)}` : '—'} />
+      </div>
+      {rotation.length > 0 && (
+        <div className="mt-3">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted mb-1.5">Rotation · most-played here</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+            {rotation.slice(0, 12).map((t) => (
+              <div key={t.trackId} className="flex items-center gap-2 font-mono text-[11px]">
+                <span className="text-muted/60 tabular-nums w-6 text-right">{t.plays}×</span>
+                <span className="text-ink truncate flex-1">{t.title}<span className="text-muted/60"> — {t.artist}</span></span>
+                {t.streak >= 2 && <span className="text-rec text-[9px] shrink-0" title="played consecutively — consider resting">{t.streak} in a row</span>}
+                {t.streak < 2 && t.lastAgo >= 3 && <span className="text-[#6E8059] text-[9px] shrink-0" title="not aired recently">rested {t.lastAgo}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+function RollStat({ label, value }: { label: string; value: string }): JSX.Element {
+  return <span className="text-muted"><span className="text-ink font-bold tabular-nums">{value}</span> {label}</span>
+}
+
 function SetDetailPane({
   detail,
+  residencies,
   onPatch,
   onDelete
 }: {
   detail: SetDetail
+  residencies: Residency[]
   onPatch: (p: Partial<SetDetail>) => void
   onDelete: () => void
 }): JSX.Element {
@@ -297,6 +377,14 @@ function SetDetailPane({
           placeholder="Vibe (warm-up / peak / closing)"
           className="font-mono text-[12px] bg-paper border border-border/40 rounded px-2 py-1 text-ink flex-1 min-w-[140px] placeholder:text-muted/50"
         />
+        <select
+          value={detail.residencyId ?? ''}
+          onChange={(e) => onPatch({ residencyId: e.target.value || null })}
+          className="font-mono text-[12px] bg-paper border border-border/40 rounded px-2 py-1 text-ink"
+        >
+          <option value="">No residency</option>
+          {residencies.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
       </div>
 
       <textarea

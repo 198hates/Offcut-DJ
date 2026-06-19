@@ -11,7 +11,8 @@ import { basename } from 'path'
 import type { Database } from 'better-sqlite3'
 import { readUsbHistory } from '../integrations/pioneer-usb/history-reader'
 import type {
-  SetDetail, SetListFilter, SetPatch, SetSummary, SetTrack, SetTransition, UsbHistoryPreview, UsbImportResult
+  SetDetail, SetListFilter, SetPatch, SetSummary, SetTrack, SetTransition, UsbHistoryPreview, UsbImportResult,
+  Residency, ResidencyPatch, ResidencyRollup, RotationTrack, ResidencyDashboard
 } from '../../shared/types'
 
 const DATE_RE = /(\d{4})[-./](\d{2})[-./](\d{2})/
@@ -171,10 +172,14 @@ function toSummary(r: SessionRow): SetSummary {
 /** Set summaries for the calendar/list (backfills first). Newest played first. */
 export function listSets(db: Database, filter: SetListFilter = {}): SetSummary[] {
   backfillSetSessions(db)
-  const where = filter.includeArchived ? '' : "WHERE status != 'archived'"
+  const clauses: string[] = []
+  const params: unknown[] = []
+  if (!filter.includeArchived) clauses.push("status != 'archived'")
+  if (filter.residencyId) { clauses.push('residency_id = ?'); params.push(filter.residencyId) }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
   const rows = db
     .prepare(`SELECT * FROM set_sessions ${where} ORDER BY (played_on IS NULL), played_on DESC, imported_at DESC`)
-    .all() as SessionRow[]
+    .all(...params) as SessionRow[]
   return rows.map(toSummary)
 }
 
@@ -210,7 +215,8 @@ const PATCH_COLS: Record<keyof SetPatch, string> = {
   rating: 'rating',
   vibe: 'vibe',
   notes: 'notes',
-  status: 'status'
+  status: 'status',
+  residencyId: 'residency_id'
 }
 
 /** Update set-level metadata (rating/venue/vibe/notes/status/title). */
@@ -304,4 +310,112 @@ export function deleteSet(db: Database, id: string): boolean {
   })
   tx()
   return true
+}
+
+// ── Residencies ─────────────────────────────────────────────────────────────
+
+interface ResidencyRow {
+  id: string
+  name: string
+  venue: string
+  color: string
+  cadence: string | null
+  notes: string | null
+}
+
+export function listResidencies(db: Database): Residency[] {
+  const rows = db.prepare('SELECT * FROM residencies ORDER BY name').all() as ResidencyRow[]
+  const count = db.prepare("SELECT COUNT(*) c FROM set_sessions WHERE residency_id = ? AND status != 'archived'")
+  return rows.map((r) => ({ ...r, setCount: (count.get(r.id) as { c: number }).c }))
+}
+
+export function createResidency(db: Database, patch: ResidencyPatch): Residency {
+  const id = randomUUID()
+  db.prepare('INSERT INTO residencies (id, name, venue, color) VALUES (?, ?, ?, ?)').run(
+    id, patch.name?.trim() || 'Residency', patch.venue ?? '', patch.color || '#8A8474'
+  )
+  if (patch.cadence !== undefined || patch.notes !== undefined) updateResidency(db, id, patch)
+  return { id, name: patch.name?.trim() || 'Residency', venue: patch.venue ?? '', color: patch.color || '#8A8474', cadence: patch.cadence ?? null, notes: patch.notes ?? null, setCount: 0 }
+}
+
+const RES_COLS: Record<keyof ResidencyPatch, string> = {
+  name: 'name', venue: 'venue', color: 'color', cadence: 'cadence', notes: 'notes'
+}
+export function updateResidency(db: Database, id: string, patch: ResidencyPatch): void {
+  const sets: string[] = []
+  const values: unknown[] = []
+  for (const [k, col] of Object.entries(RES_COLS) as [keyof ResidencyPatch, string][]) {
+    if (patch[k] !== undefined) { sets.push(`${col} = ?`); values.push(patch[k]) }
+  }
+  if (!sets.length) return
+  values.push(id)
+  db.prepare(`UPDATE residencies SET ${sets.join(', ')} WHERE id = ?`).run(...values)
+}
+
+/** Delete a residency. Its sets survive (FK sets residency_id → NULL). */
+export function deleteResidency(db: Database, id: string): void {
+  db.prepare('DELETE FROM residencies WHERE id = ?').run(id)
+}
+
+/** Residency dashboard: rolling-average baseline + rotation tracker over its
+ *  sets (newest first), so over-rotation and rested gems are visible. */
+export function residencyDashboard(db: Database, id: string): ResidencyDashboard | null {
+  const row = db.prepare('SELECT * FROM residencies WHERE id = ?').get(id) as ResidencyRow | undefined
+  if (!row) return null
+  const sets = db
+    .prepare("SELECT * FROM set_sessions WHERE residency_id = ? AND status != 'archived' ORDER BY (played_on IS NULL), played_on DESC, imported_at DESC")
+    .all(id) as SessionRow[]
+  const setCount = sets.length
+
+  const avg = (xs: (number | null)[]): number | null => {
+    const v = xs.filter((x): x is number => typeof x === 'number')
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
+  }
+  const played = sets.map((s) => s.played_on).filter((p): p is string => !!p)
+  const rollup: ResidencyRollup = {
+    setCount,
+    avgBpm: avg(sets.map((s) => s.avg_bpm)),
+    avgTrackCount: avg(sets.map((s) => s.track_count)),
+    avgDurationSec: avg(sets.map((s) => s.duration_sec)),
+    avgHarmonicPct: avg(sets.map((s) => s.harmonic_pct)),
+    firstPlayedOn: played.length ? played[played.length - 1] : null,
+    lastPlayedOn: played.length ? played[0] : null
+  }
+
+  // Rotation: track ordered membership across sets (index 0 = newest set).
+  const memberRows = db.prepare(
+    'SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order'
+  )
+  const setTrackSets = sets.map((s) =>
+    s.playlist_id ? new Set((memberRows.all(s.playlist_id) as { track_id: string }[]).map((r) => r.track_id)) : new Set<string>()
+  )
+  const tally = new Map<string, { plays: number; lastAgo: number; streak: number }>()
+  setTrackSets.forEach((trackSet, idx) => {
+    for (const tid of trackSet) {
+      const e = tally.get(tid) ?? { plays: 0, lastAgo: idx, streak: 0 }
+      e.plays++
+      tally.set(tid, e)
+    }
+  })
+  // streak = consecutive sets from the newest (idx 0) that contain the track.
+  for (const [tid, e] of tally) {
+    let s = 0
+    while (s < setTrackSets.length && setTrackSets[s].has(tid)) s++
+    e.streak = s
+    e.lastAgo = setTrackSets.findIndex((ts) => ts.has(tid))
+  }
+  const ids = [...tally.keys()]
+  const meta = new Map<string, { title: string; artist: string }>()
+  if (ids.length) {
+    const placeholders = ids.map(() => '?').join(',')
+    const rows = db.prepare(`SELECT id, title, artist FROM tracks WHERE id IN (${placeholders})`).all(...ids) as { id: string; title: string; artist: string }[]
+    for (const r of rows) meta.set(r.id, { title: r.title, artist: r.artist })
+  }
+  const rotation: RotationTrack[] = ids
+    .map((tid) => ({ trackId: tid, title: meta.get(tid)?.title ?? '(unknown)', artist: meta.get(tid)?.artist ?? '', ...tally.get(tid)! }))
+    .filter((t) => t.plays > 1) // a record is only "rotation" once it repeats
+    .sort((a, b) => b.plays - a.plays || b.streak - a.streak)
+    .slice(0, 40)
+
+  return { residency: { ...row, setCount }, rollup, rotation }
 }
