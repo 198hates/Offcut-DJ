@@ -7,8 +7,12 @@
 // playlist that doesn't have one yet, so existing history shows up immediately.
 
 import { randomUUID } from 'crypto'
+import { basename } from 'path'
 import type { Database } from 'better-sqlite3'
-import type { SetDetail, SetListFilter, SetPatch, SetSummary, SetTrack, SetTransition } from '../../shared/types'
+import { readUsbHistory } from '../integrations/pioneer-usb/history-reader'
+import type {
+  SetDetail, SetListFilter, SetPatch, SetSummary, SetTrack, SetTransition, UsbHistoryPreview, UsbImportResult
+} from '../../shared/types'
 
 const DATE_RE = /(\d{4})[-./](\d{2})[-./](\d{2})/
 
@@ -224,6 +228,67 @@ export function updateSet(db: Database, id: string, patch: SetPatch): SetDetail 
     db.prepare(`UPDATE set_sessions SET ${sets.join(', ')} WHERE id = ?`).run(...values)
   }
   return getSet(db, id)
+}
+
+/** A stable dedupe key for a HISTORY on a stick: `HISTORY NNN@<volume>`. */
+function historyRef(usbRoot: string, name: string): string {
+  return `${name}@${basename(usbRoot) || 'usb'}`
+}
+
+/** Preview the HISTORY sets on a Pioneer stick, flagging already-imported ones.
+ *  Throws if the stick has no rekordbox.db (caller surfaces the message). */
+export function listUsbHistories(db: Database, usbRoot: string): UsbHistoryPreview[] {
+  const seen = db.prepare('SELECT 1 FROM set_sessions WHERE history_ref = ?')
+  return readUsbHistory(usbRoot, db).map((s) => {
+    const ref = historyRef(usbRoot, s.name)
+    return {
+      ref,
+      name: s.name,
+      playedOn: s.date,
+      trackCount: s.tracks.length,
+      matchedCount: s.tracks.filter((t) => t.localTrackId).length,
+      durationSec: s.tracks.reduce((a, t) => a + (t.durationSeconds || 0), 0) || null,
+      alreadyImported: !!seen.get(ref)
+    }
+  })
+}
+
+/** Import the selected HISTORY sets off a stick: create an is_history playlist
+ *  (resolved tracks only) + a set_sessions row per set. Skips already-imported
+ *  refs (idempotent re-insert of the same stick). */
+export function importUsbHistories(db: Database, usbRoot: string, refs: string[]): UsbImportResult {
+  const device = basename(usbRoot) || 'usb'
+  const wanted = new Set(refs)
+  const sets = readUsbHistory(usbRoot, db)
+  const seen = db.prepare('SELECT 1 FROM set_sessions WHERE history_ref = ?')
+  const imported: UsbImportResult['imported'] = []
+  const insPl = db.prepare("INSERT INTO playlists (id, name, sort_order, is_history) VALUES (?, ?, 0, 1)")
+  const insPt = db.prepare('INSERT INTO playlist_tracks (playlist_id, track_id, sort_order) VALUES (?, ?, ?)')
+  const insSes = db.prepare(
+    `INSERT INTO set_sessions
+       (id, playlist_id, title, played_on, source, device, history_ref, track_count, duration_sec, avg_bpm, bpm_min, bpm_max, energy_avg, harmonic_pct)
+     VALUES
+       (@id, @pl, @title, @played, 'usb-history', @device, @ref, @tc, @dur, @avg, @min, @max, @en, @harm)`
+  )
+  const tx = db.transaction(() => {
+    for (const s of sets) {
+      const ref = historyRef(usbRoot, s.name)
+      if (!wanted.has(ref) || seen.get(ref)) continue
+      const matched = s.tracks.filter((t) => t.localTrackId)
+      const plId = randomUUID()
+      insPl.run(plId, s.name)
+      matched.forEach((t, i) => insPt.run(plId, t.localTrackId, i))
+      const sum = summarize(setTrackRows(db, plId))
+      insSes.run({
+        id: randomUUID(), pl: plId, title: s.name, played: s.date ?? null, device, ref,
+        tc: sum.track_count, dur: sum.duration_sec, avg: sum.avg_bpm, min: sum.bpm_min,
+        max: sum.bpm_max, en: sum.energy_avg, harm: sum.harmonic_pct
+      })
+      imported.push({ ref, name: s.name, trackCount: s.tracks.length, matchedCount: matched.length })
+    }
+  })
+  tx()
+  return { imported }
 }
 
 /** Hard-delete a set: removes the set_sessions row AND its history playlist

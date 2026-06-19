@@ -1017,3 +1017,18 @@ export interface SetPatch {
 export interface SetListFilter {
   includeArchived?: boolean
 }
+
+/** A HISTORY set on a Pioneer stick, previewed before import. */
+export interface UsbHistoryPreview {
+  ref: string // dedupe key: `HISTORY NNN@<volume>`
+  name: string
+  playedOn: string | null
+  trackCount: number
+  matchedCount: number // resolved to the local library
+  durationSec: number | null
+  alreadyImported: boolean
+}
+
+export interface UsbImportResult {
+  imported: { ref: string; name: string; trackCount: number; matchedCount: number }[]
+}

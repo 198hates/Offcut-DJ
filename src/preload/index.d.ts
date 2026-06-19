@@ -8,7 +8,7 @@ import type {
   AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent,
   BackupInfo, SystemInfo, CastDevice, CastStatus,
   SyncStatus, SyncPairingInfo,
-  SetSummary, SetDetail, SetPatch, SetListFilter,
+  SetSummary, SetDetail, SetPatch, SetListFilter, UsbHistoryPreview, UsbImportResult,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -259,6 +259,8 @@ declare global {
         get: (id: string) => Promise<SetDetail | null>
         update: (id: string, patch: SetPatch) => Promise<SetDetail | null>
         delete: (id: string) => Promise<boolean>
+        listUsb: (usbRoot: string) => Promise<UsbHistoryPreview[] | { error: string }>
+        importUsb: (usbRoot: string, refs: string[]) => Promise<UsbImportResult | { error: string }>
       }
     }
   }

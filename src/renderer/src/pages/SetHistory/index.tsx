@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PageHeader } from '../../components/PageHeader'
-import type { SetSummary, SetDetail } from '../../../../shared/types'
+import type { SetSummary, SetDetail, UsbHistoryPreview } from '../../../../shared/types'
 
 function mmss(sec: number | null): string {
   if (!sec || sec <= 0) return '—'
@@ -27,6 +27,7 @@ export function SetHistoryPage(): JSX.Element {
   const [detail, setDetail] = useState<SetDetail | null>(null)
   const [includeArchived, setIncludeArchived] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [importing, setImporting] = useState(false)
 
   const reload = useCallback(async (): Promise<void> => {
     const s = await window.api.setHistory.list({ includeArchived })
@@ -73,12 +74,20 @@ export function SetHistoryPage(): JSX.Element {
         title="Set History"
         subtitle={loading ? 'Loading…' : `${sets.length} set${sets.length === 1 ? '' : 's'}`}
         right={
-          <label className="font-mono text-[11px] text-muted flex items-center gap-1.5 cursor-pointer select-none">
-            <input type="checkbox" checked={includeArchived} onChange={(e) => setIncludeArchived(e.target.checked)} />
-            show archived
-          </label>
+          <div className="flex items-center gap-4">
+            <label className="font-mono text-[11px] text-muted flex items-center gap-1.5 cursor-pointer select-none">
+              <input type="checkbox" checked={includeArchived} onChange={(e) => setIncludeArchived(e.target.checked)} />
+              show archived
+            </label>
+            <button
+              onClick={() => setImporting(true)}
+              className="font-mono text-[11px] text-accent border border-accent/40 rounded px-2.5 py-1 hover:bg-accent/[0.08] transition-colors"
+            >⟱ Import from USB</button>
+          </div>
         }
       />
+
+      {importing && <ImportUsbModal onClose={() => setImporting(false)} onImported={() => { setImporting(false); void reload() }} />}
 
       <div className="px-5 pt-4 shrink-0">
         <Heatmap counts={counts} onPickDay={(day) => {
@@ -127,6 +136,95 @@ export function SetHistoryPage(): JSX.Element {
               <p className="font-mono text-[12px] text-muted/50">Select a set</p>
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ImportUsbModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }): JSX.Element {
+  const [usbRoot, setUsbRoot] = useState<string | null>(null)
+  const [previews, setPreviews] = useState<UsbHistoryPreview[] | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async (root: string): Promise<void> => {
+    setError(null); setPreviews(null); setUsbRoot(root)
+    const res = await window.api.setHistory.listUsb(root)
+    if ('error' in res) { setError(res.error); return }
+    setPreviews(res)
+    setSelected(new Set(res.filter((p) => !p.alreadyImported).map((p) => p.ref)))
+  }, [])
+
+  useEffect(() => {
+    void (async () => {
+      const found = await window.api.library.findPioneerUsb()
+      if (found) await load(found)
+    })()
+  }, [load])
+
+  const browse = async (): Promise<void> => {
+    const root = await window.api.library.browseForUsb()
+    if (root) await load(root)
+  }
+  const toggle = (ref: string): void =>
+    setSelected((s) => { const n = new Set(s); n.has(ref) ? n.delete(ref) : n.add(ref); return n })
+  const doImport = async (): Promise<void> => {
+    if (!usbRoot || selected.size === 0) return
+    setBusy(true)
+    const res = await window.api.setHistory.importUsb(usbRoot, [...selected])
+    setBusy(false)
+    if ('error' in res) { setError(res.error); return }
+    onImported()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={onClose}>
+      <div className="bg-chassis border border-border/40 rounded-lg w-[540px] max-h-[80vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
+          <p className="font-mono text-[12px] font-bold uppercase tracking-[0.18em] text-ink"><span className="text-accent mr-1.5">⟱</span>Import from USB</p>
+          <button onClick={onClose} className="text-muted/50 hover:text-muted text-sm">✕</button>
+        </div>
+
+        <div className="px-4 py-3 overflow-y-auto">
+          {usbRoot && <p className="font-mono text-[10px] text-muted/60 mb-2 truncate">{usbRoot}</p>}
+          {error && <p className="font-mono text-[11px] text-rec mb-2">⚠ {error}</p>}
+
+          {!previews && !error && (
+            <div className="py-6 text-center">
+              <p className="font-mono text-[12px] text-muted mb-3">{usbRoot ? 'Reading HISTORY…' : 'Looking for a Pioneer stick…'}</p>
+              <button onClick={browse} className="font-mono text-[11px] text-accent border border-accent/40 rounded px-3 py-1.5 hover:bg-accent/[0.08]">Browse for USB…</button>
+            </div>
+          )}
+
+          {previews && previews.length === 0 && (
+            <p className="font-mono text-[12px] text-muted/70 py-4">No HISTORY sets found on this stick.</p>
+          )}
+
+          {previews && previews.map((p) => (
+            <label key={p.ref} className={`flex items-center gap-3 px-2 py-2 rounded border-b border-border/15 ${p.alreadyImported ? 'opacity-50' : 'cursor-pointer hover:bg-ink/[0.04]'}`}>
+              <input type="checkbox" disabled={p.alreadyImported} checked={selected.has(p.ref)} onChange={() => toggle(p.ref)} />
+              <div className="flex-1 min-w-0">
+                <p className="font-mono text-[12px] text-ink truncate">{p.name}</p>
+                <p className="font-mono text-[10px] text-muted/70">
+                  {fmtDate(p.playedOn)} · {p.trackCount} trks{p.matchedCount < p.trackCount ? ` (${p.matchedCount} matched)` : ''} · {mmss(p.durationSec)}
+                </p>
+              </div>
+              <span className={`font-mono text-[9px] uppercase tracking-wider ${p.alreadyImported ? 'text-muted/50' : 'text-[#6E8059]'}`}>
+                {p.alreadyImported ? 'imported' : 'new'}
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border/30">
+          <button onClick={browse} className="font-mono text-[11px] text-muted hover:text-ink">Change USB…</button>
+          <button
+            onClick={doImport}
+            disabled={busy || selected.size === 0}
+            className={`font-mono text-[11px] rounded px-3 py-1.5 ${busy || selected.size === 0 ? 'text-muted/40 border border-border/30' : 'text-bg bg-accent hover:opacity-90'}`}
+          >{busy ? 'Importing…' : `Import ${selected.size || ''}`}</button>
         </div>
       </div>
     </div>

@@ -374,7 +374,11 @@ const api = {
       ipcRenderer.invoke('setHistory:get', id) as Promise<import('../shared/types').SetDetail | null>,
     update: (id: string, patch: import('../shared/types').SetPatch) =>
       ipcRenderer.invoke('setHistory:update', id, patch) as Promise<import('../shared/types').SetDetail | null>,
-    delete: (id: string) => ipcRenderer.invoke('setHistory:delete', id) as Promise<boolean>
+    delete: (id: string) => ipcRenderer.invoke('setHistory:delete', id) as Promise<boolean>,
+    listUsb: (usbRoot: string) =>
+      ipcRenderer.invoke('setHistory:listUsb', usbRoot) as Promise<import('../shared/types').UsbHistoryPreview[] | { error: string }>,
+    importUsb: (usbRoot: string, refs: string[]) =>
+      ipcRenderer.invoke('setHistory:importUsb', usbRoot, refs) as Promise<import('../shared/types').UsbImportResult | { error: string }>
   }
 }
 
