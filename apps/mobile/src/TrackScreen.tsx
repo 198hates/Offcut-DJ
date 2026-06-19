@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio'
 import { Artwork } from './Artwork'
+import { OverviewWaveform } from './OverviewWaveform'
 import { DeckWaveform } from './DeckWaveform'
 import { TransportControls } from './TransportControls'
 import { TrackEditor } from './TrackEditor'
@@ -155,22 +156,34 @@ export function TrackScreen({
         {track.durationSeconds != null && <Meta label="LEN" value={mmss(track.durationSeconds)} />}
       </View>
 
-      <View style={styles.waveBox}>
-        {peaks ? (
-          <DeckWaveform
-            data={peaks}
-            currentTime={status.currentTime}
-            duration={status.duration || track.durationSeconds || peaks.durationSec}
-            playing={status.playing}
-            cues={cues}
-            onSeek={(s) => void player.seekTo(s)}
-          />
-        ) : peaksErr ? (
-          <Text style={styles.dim}>waveform unavailable</Text>
-        ) : (
-          <ActivityIndicator color="#D86A4A" />
-        )}
-      </View>
+      {peaks ? (
+        <View style={styles.waveStack}>
+          <View style={styles.overviewBox}>
+            <OverviewWaveform
+              data={peaks}
+              currentTime={status.currentTime}
+              duration={status.duration || track.durationSeconds || peaks.durationSec}
+              playing={status.playing}
+              cues={cues}
+              onSeek={(s) => void player.seekTo(s)}
+            />
+          </View>
+          <View style={styles.waveBox}>
+            <DeckWaveform
+              data={peaks}
+              currentTime={status.currentTime}
+              duration={status.duration || track.durationSeconds || peaks.durationSec}
+              playing={status.playing}
+              cues={cues}
+              onSeek={(s) => void player.seekTo(s)}
+            />
+          </View>
+        </View>
+      ) : (
+        <View style={styles.waveBox}>
+          {peaksErr ? <Text style={styles.dim}>waveform unavailable</Text> : <ActivityIndicator color="#D86A4A" />}
+        </View>
+      )}
 
       <TransportControls track={track} player={player} status={status} cues={cues} onCommitCues={commitCues} grid={peaks?.grid ?? null} />
 
@@ -251,7 +264,9 @@ const styles = StyleSheet.create({
   metaLabel: { color: C.muted, fontFamily: MONO, fontSize: 9, letterSpacing: 1.6 },
   metaValue: { color: C.ink, fontFamily: MONO_BOLD, fontSize: 15, fontVariant: ['tabular-nums'] },
   metaValueAccent: { color: C.accent },
-  waveBox: { minHeight: 112, justifyContent: 'center', backgroundColor: C.deckPanel, borderRadius: 6, overflow: 'hidden', paddingHorizontal: 6, marginBottom: 18 },
+  waveStack: { gap: 6, marginBottom: 18 },
+  overviewBox: { backgroundColor: C.deckPanel, borderRadius: 6, overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 4 },
+  waveBox: { minHeight: 112, justifyContent: 'center', backgroundColor: C.deckPanel, borderRadius: 6, overflow: 'hidden', paddingHorizontal: 6 },
   dim: { color: C.muted, fontFamily: MONO, fontSize: 12, textAlign: 'center' },
   offlineBtn: { marginTop: 14, borderWidth: 1, borderColor: 'rgba(42,36,28,0.8)', borderRadius: 4, paddingVertical: 9, alignItems: 'center' },
   offlineTxt: { color: C.muted, fontFamily: MONO, fontSize: 11, letterSpacing: 0.5 },

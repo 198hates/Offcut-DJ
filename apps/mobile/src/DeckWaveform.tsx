@@ -145,13 +145,19 @@ export function DeckWaveform({
               </Group>
             )}
 
-            {/* hot-cue markers (scroll with the waveform) */}
+            {/* hot-cue markers (scroll with the waveform): full-height line + top flag */}
             <Group transform={scroll}>
               {cues
                 .filter((c) => c.type === 'hotcue')
                 .map((c) => {
                   const x = (c.positionMs / 1000 / bucketDur) * BAR_W
-                  return <Rect key={c.index} x={x - 1} y={0} width={2} height={height} color={c.color || '#D86A4A'} />
+                  const col = c.color || '#D86A4A'
+                  return (
+                    <Group key={c.index}>
+                      <Rect x={x - 1} y={0} width={2} height={height} color={col} />
+                      <Rect x={x - 1} y={0} width={9} height={7} color={col} />
+                    </Group>
+                  )
                 })}
             </Group>
 

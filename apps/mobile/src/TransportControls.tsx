@@ -110,106 +110,132 @@ export function TransportControls({
   const valToRate = (v: number): number => 1 + (v - 0.5) * 2 * (range / 100)
   const ratePct = `${rate >= 1 ? '+' : ''}${((rate - 1) * 100).toFixed(1)}%`
 
+  // ── which lower panel is showing (rekordbox-style mode bar) ──
+  const [mode, setMode] = useState<Mode>('cues')
+
   return (
     <View style={styles.wrap}>
-      {/* transport */}
-      <View style={styles.row}>
-        <Pressable style={styles.cueBtn} onPress={pressCue} onLongPress={() => setMainCue(status.currentTime)}>
-          <Text style={styles.cueTxt}>CUE</Text>
-        </Pressable>
-        <Pressable style={styles.play} onPress={() => (status.playing ? player.pause() : player.play())} disabled={!status.isLoaded}>
-          {status.playing ? (
-            <View style={styles.pauseRow}>
-              <View style={styles.pauseBar} />
-              <View style={styles.pauseBar} />
-            </View>
-          ) : (
-            <View style={styles.playTriangle} />
-          )}
-        </Pressable>
+      {/* transport — centred circular CUE + PLAY, time left, QUANT right */}
+      <View style={styles.transport}>
         <Text style={styles.time}>{mmss(status.currentTime)} / {mmss(dur)}</Text>
-        <View style={{ flex: 1 }} />
-        <Pressable
-          style={[styles.miniBtn, quantize && styles.miniOn, !grid && styles.faded]}
-          disabled={!grid}
-          onPress={() => setQuantize((q) => !q)}
-        >
-          <Text style={[styles.miniTxt, quantize && styles.miniTxtOn]}>QUANT</Text>
-        </Pressable>
+        <View style={styles.transCenter}>
+          <Pressable style={styles.cueCircle} onPress={pressCue} onLongPress={() => setMainCue(status.currentTime)}>
+            <Text style={styles.cueTxt}>CUE</Text>
+          </Pressable>
+          <Pressable style={styles.playCircle} onPress={() => (status.playing ? player.pause() : player.play())} disabled={!status.isLoaded}>
+            {status.playing ? (
+              <View style={styles.pauseRow}>
+                <View style={styles.pauseBar} />
+                <View style={styles.pauseBar} />
+              </View>
+            ) : (
+              <View style={styles.playTriangle} />
+            )}
+          </Pressable>
+        </View>
+        <View style={styles.transRight}>
+          <Pressable
+            style={[styles.miniBtn, quantize && styles.miniOn, !grid && styles.faded]}
+            disabled={!grid}
+            onPress={() => setQuantize((q) => !q)}
+          >
+            <Text style={[styles.miniTxt, quantize && styles.miniTxtOn]}>QUANT</Text>
+          </Pressable>
+        </View>
       </View>
 
-      {/* hot-cue pads A–H */}
-      <Group label="HOT CUES">
-        <View style={styles.pads}>
-          {Array.from({ length: 8 }, (_, i) => {
-            const c = hotCueAt(cues, i)
-            return (
-              <Pressable
-                key={i}
-                style={[styles.pad, c ? { backgroundColor: c.color, borderColor: c.color } : null]}
-                onPress={() => onPad(i)}
-                onLongPress={() => onPadLong(i)}
-                disabled={!status.isLoaded}
-              >
-                <Text style={[styles.padLabel, c ? styles.padLabelOn : null]}>{'ABCDEFGH'[i]}</Text>
-                {c && <Text style={styles.padTime}>{mmss(c.positionMs / 1000)}</Text>}
+      {/* mode bar */}
+      <View style={styles.tabs}>
+        {(['cues', 'loop', 'tempo'] as Mode[]).map((m) => (
+          <Pressable key={m} style={[styles.tab, mode === m && styles.tabOn]} onPress={() => setMode(m)}>
+            <Text style={[styles.tabTxt, mode === m && styles.tabTxtOn]}>{MODE_LABELS[m]}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <View style={styles.panel}>
+        {mode === 'cues' && (
+          <>
+            <View style={styles.pads}>
+              {Array.from({ length: 8 }, (_, i) => {
+                const c = hotCueAt(cues, i)
+                return (
+                  <Pressable
+                    key={i}
+                    style={[styles.pad, c ? { backgroundColor: c.color, borderColor: c.color } : null]}
+                    onPress={() => onPad(i)}
+                    onLongPress={() => onPadLong(i)}
+                    disabled={!status.isLoaded}
+                  >
+                    <Text style={[styles.padLabel, c ? styles.padLabelOn : null]}>{'ABCDEFGH'[i]}</Text>
+                    {c && <Text style={styles.padTime}>{mmss(c.positionMs / 1000)}</Text>}
+                  </Pressable>
+                )
+              })}
+            </View>
+            <Text style={styles.hint}>tap empty = set · tap filled = jump · hold = clear</Text>
+            <View style={[styles.groupHead, { marginTop: 6 }]}>
+              <Text style={styles.groupLabel}>{beatLen ? 'BEAT JUMP' : 'BEAT JUMP · no BPM'}</Text>
+            </View>
+            <View style={styles.btnRow}>
+              {[-4, -1, 1, 4].map((b) => (
+                <Pressable key={b} style={styles.jumpBtn} disabled={!beatLen} onPress={() => seek(status.currentTime + b * beatLen)}>
+                  <Text style={[styles.jumpTxt, !beatLen && styles.disabled]}>{b > 0 ? `+${b}` : b}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        )}
+
+        {mode === 'loop' && (
+          <>
+            <View style={styles.groupHead}>
+              <Text style={styles.groupLabel}>LOOP {loop ? '· active' : ''}</Text>
+            </View>
+            <View style={styles.btnRow}>
+              <Pressable style={[styles.loopBtn, loop && styles.loopOn]} onPress={loopIn}><Text style={styles.loopTxt}>IN</Text></Pressable>
+              <Pressable style={[styles.loopBtn, loop && styles.loopOn]} onPress={loopOut}><Text style={styles.loopTxt}>OUT</Text></Pressable>
+              {[1, 2, 4].map((bars) => (
+                <Pressable key={bars} style={styles.loopBtn} disabled={!beatLen} onPress={() => beatLoop(bars)}>
+                  <Text style={[styles.loopTxt, !beatLen && styles.disabled]}>{bars}</Text>
+                </Pressable>
+              ))}
+              <Pressable style={[styles.loopBtn, !loop && styles.faded]} disabled={!loop} onPress={() => setLoop(null)}>
+                <Text style={styles.loopTxt}>✕</Text>
               </Pressable>
-            )
-          })}
-        </View>
-        <Text style={styles.hint}>tap empty = set · tap filled = jump · hold = clear</Text>
-      </Group>
+            </View>
+            <Text style={styles.hint}>IN/OUT = manual · 1/2/4 = bar loops{quantize ? ' · quantised' : ''}</Text>
+          </>
+        )}
 
-      {/* beat jump */}
-      <Group label={beatLen ? 'BEAT JUMP' : 'BEAT JUMP · no BPM'}>
-        <View style={styles.btnRow}>
-          {[-4, -1, 1, 4].map((b) => (
-            <Pressable key={b} style={styles.jumpBtn} disabled={!beatLen} onPress={() => seek(status.currentTime + b * beatLen)}>
-              <Text style={[styles.jumpTxt, !beatLen && styles.disabled]}>{b > 0 ? `+${b}` : b}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </Group>
-
-      {/* loop */}
-      <Group label="LOOP">
-        <View style={styles.btnRow}>
-          <Pressable style={[styles.loopBtn, loop && styles.loopOn]} onPress={loopIn}><Text style={styles.loopTxt}>IN</Text></Pressable>
-          <Pressable style={[styles.loopBtn, loop && styles.loopOn]} onPress={loopOut}><Text style={styles.loopTxt}>OUT</Text></Pressable>
-          {[1, 2, 4].map((bars) => (
-            <Pressable key={bars} style={styles.loopBtn} disabled={!beatLen} onPress={() => beatLoop(bars)}>
-              <Text style={[styles.loopTxt, !beatLen && styles.disabled]}>{bars}</Text>
-            </Pressable>
-          ))}
-          <Pressable style={[styles.loopBtn, !loop && styles.faded]} disabled={!loop} onPress={() => setLoop(null)}>
-            <Text style={styles.loopTxt}>✕</Text>
-          </Pressable>
-        </View>
-      </Group>
-
-      {/* tempo + keylock */}
-      <Group label="TEMPO" value={ratePct}>
-        <View style={styles.faderRow}>
-          <Fader value={rateToVal(rate)} onChange={(v) => setRate(+valToRate(v).toFixed(3))} fill="#4E7090" />
-          <Pressable style={styles.miniBtn} onPress={() => setRange((r) => (r === 8 ? 16 : r === 16 ? 50 : r === 50 ? 4 : 8))}>
-            <Text style={styles.miniTxt}>±{range}</Text>
-          </Pressable>
-          <Pressable style={[styles.miniBtn, keylock && styles.miniOn]} onPress={() => setKeylock((k) => !k)}>
-            <Text style={[styles.miniTxt, keylock && styles.miniTxtOn]}>KEY</Text>
-          </Pressable>
-          <Pressable style={styles.miniBtn} onPress={() => setRate(1)}>
-            <Text style={styles.miniTxt}>0</Text>
-          </Pressable>
-        </View>
-      </Group>
-
-      {/* volume */}
-      <Group label="VOLUME" value={`${Math.round(vol * 100)}%`}>
-        <Fader value={vol} onChange={setVol} fill={C.accent} />
-      </Group>
+        {mode === 'tempo' && (
+          <>
+            <Group label="TEMPO" value={ratePct}>
+              <View style={styles.faderRow}>
+                <Fader value={rateToVal(rate)} onChange={(v) => setRate(+valToRate(v).toFixed(3))} fill="#4E7090" />
+                <Pressable style={styles.miniBtn} onPress={() => setRange((r) => (r === 8 ? 16 : r === 16 ? 50 : r === 50 ? 4 : 8))}>
+                  <Text style={styles.miniTxt}>±{range}</Text>
+                </Pressable>
+                <Pressable style={[styles.miniBtn, keylock && styles.miniOn]} onPress={() => setKeylock((k) => !k)}>
+                  <Text style={[styles.miniTxt, keylock && styles.miniTxtOn]}>KEY</Text>
+                </Pressable>
+                <Pressable style={styles.miniBtn} onPress={() => setRate(1)}>
+                  <Text style={styles.miniTxt}>0</Text>
+                </Pressable>
+              </View>
+            </Group>
+            <Group label="VOLUME" value={`${Math.round(vol * 100)}%`}>
+              <Fader value={vol} onChange={setVol} fill={C.accent} />
+            </Group>
+          </>
+        )}
+      </View>
     </View>
   )
 }
+
+type Mode = 'cues' | 'loop' | 'tempo'
+const MODE_LABELS: Record<Mode, string> = { cues: 'HOT CUES', loop: 'LOOP', tempo: 'TEMPO' }
 
 function Group({ label, value, children }: { label: string; value?: string; children: React.ReactNode }): JSX.Element {
   return (
@@ -246,20 +272,31 @@ function Fader({ value, onChange, fill = C.accent }: { value: number; onChange: 
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: 16 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  cueBtn: { width: 52, height: 52, borderRadius: 8, borderWidth: 1, borderColor: '#C9A02C', alignItems: 'center', justifyContent: 'center' },
-  cueTxt: { color: '#C9A02C', fontFamily: MONO_BOLD, fontSize: 12 },
-  play: { width: 52, height: 52, borderRadius: 26, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
+  wrap: { gap: 14 },
+
+  // transport
+  transport: { flexDirection: 'row', alignItems: 'center' },
+  time: { width: 92, color: C.ink, fontFamily: MONO, fontSize: 13, fontVariant: ['tabular-nums'] },
+  transCenter: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 20 },
+  transRight: { width: 92, alignItems: 'flex-end' },
+  cueCircle: { width: 56, height: 56, borderRadius: 28, borderWidth: 1.5, borderColor: '#C9A02C', alignItems: 'center', justifyContent: 'center' },
+  cueTxt: { color: '#C9A02C', fontFamily: MONO_BOLD, fontSize: 12, letterSpacing: 1 },
+  playCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
   playTriangle: {
-    width: 0, height: 0, marginLeft: 4,
-    borderTopWidth: 10, borderBottomWidth: 10, borderLeftWidth: 17,
+    width: 0, height: 0, marginLeft: 5,
+    borderTopWidth: 12, borderBottomWidth: 12, borderLeftWidth: 20,
     borderTopColor: 'transparent', borderBottomColor: 'transparent', borderLeftColor: C.bg
   },
-  pauseRow: { flexDirection: 'row', gap: 5 },
-  pauseBar: { width: 5, height: 18, borderRadius: 1, backgroundColor: C.bg },
-  time: { color: C.ink, fontFamily: MONO, fontSize: 14, fontVariant: ['tabular-nums'] },
-  dim: { color: C.muted, fontFamily: MONO, fontSize: 11 },
+  pauseRow: { flexDirection: 'row', gap: 6 },
+  pauseBar: { width: 6, height: 22, borderRadius: 1, backgroundColor: C.bg },
+
+  // mode bar + panel
+  tabs: { flexDirection: 'row', backgroundColor: C.deckPanel, borderRadius: 8, padding: 3, gap: 3 },
+  tab: { flex: 1, paddingVertical: 8, borderRadius: 6, alignItems: 'center' },
+  tabOn: { backgroundColor: C.panel },
+  tabTxt: { color: C.muted, fontFamily: MONO, fontSize: 11, letterSpacing: 1 },
+  tabTxtOn: { color: C.accent },
+  panel: { minHeight: 150, gap: 10 },
 
   group: { gap: 8 },
   groupHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
