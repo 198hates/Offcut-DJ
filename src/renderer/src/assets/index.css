@@ -92,12 +92,14 @@
 
 /* Reusable deck-zone button variants (C3 — inactive must be clearly readable) */
 .deck-btn {
-  color: var(--deck-mute);
-  border-color: rgba(140, 129, 106, 0.45);
+  color: var(--deck-ink);
+  border-color: rgba(165, 154, 130, 0.6);
+  background: rgba(165, 154, 130, 0.06);
 }
 .deck-btn:hover {
-  color: var(--deck-ink);
-  border-color: rgba(165, 154, 130, 0.8);
+  color: #fff;
+  border-color: rgba(190, 178, 150, 0.95);
+  background: rgba(165, 154, 130, 0.14);
 }
 .deck-btn-active {
   color: var(--deck-spot);

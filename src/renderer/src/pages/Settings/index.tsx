@@ -104,7 +104,7 @@ export function SettingsPage(): JSX.Element {
   }
 
   return (
-    <div className="h-full overflow-y-auto p-6 space-y-8 max-w-2xl">
+    <div className="h-full overflow-y-auto p-6 space-y-8 max-w-5xl">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-mono text-base font-bold uppercase tracking-[0.12em] text-ink">

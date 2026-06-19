@@ -172,7 +172,7 @@ export function FnBus(): JSX.Element {
 
               {/* Icon — ink-soft when idle so the bus reads at a glance */}
               <div
-                className="w-[18px] h-[18px] mb-0.5 transition-colors"
+                className="w-[20px] h-[20px] mb-1 transition-colors"
                 style={{ color: on ? 'rgb(var(--accent-rgb))' : 'rgb(var(--ink-soft-rgb))' }}
               >
                 {ICONS[key]}
@@ -182,11 +182,11 @@ export function FnBus(): JSX.Element {
               <span
                 className="font-mono leading-none"
                 style={{
-                  fontSize: 8,
-                  letterSpacing: '0.10em',
+                  fontSize: 9.5,
+                  letterSpacing: '0.12em',
                   textTransform: 'uppercase',
                   whiteSpace: 'nowrap',
-                  color: on ? 'rgb(var(--ink-rgb))' : 'rgb(var(--muted-rgb))',
+                  color: on ? 'rgb(var(--ink-rgb))' : 'rgb(var(--ink-soft-rgb))',
                 }}
               >
                 {label}

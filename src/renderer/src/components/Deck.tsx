@@ -254,9 +254,9 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
         </div>
 
         {/* Key LED */}
-        <LedReadout value={liveTrack?.key || '—'} ghost="00A"   label="key" fontSize={13} />
+        <LedReadout value={liveTrack?.key || '—'} ghost="88"   label="key" fontSize={13} />
         {/* BPM LED */}
-        <LedReadout value={liveTrack?.bpm ? liveTrack.bpm.toFixed(1) : '—.—'} ghost="000.0" label="bpm" fontSize={13} />
+        <LedReadout value={liveTrack?.bpm ? liveTrack.bpm.toFixed(1) : '—.—'} ghost="888.8" label="bpm" fontSize={13} />
         {/* Time LED */}
         <LedReadout value={fmt(currentTime, true)} ghost="0:00.0" label={`-${fmt(remaining)}`} fontSize={12} />
       </div>
@@ -626,9 +626,16 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
 function LedReadout({ value, ghost, label, fontSize = 14 }: {
   value: string; ghost: string; label: string; fontSize?: number
 }): JSX.Element {
+  // The ghost is the dim "unlit segments" layer behind the value. When a real
+  // value is showing it must be EXACTLY as wide as the value (alnum → '8',
+  // separators kept) so nothing peeks out the side — e.g. the 3-char "00A" key
+  // ghost used to leave a stray dim "0" beside a 2-char key like "3A". The
+  // provided `ghost` is only the idle/full-width placeholder (value is a dash).
+  const idle = value.includes('—')
+  const ghostStr = idle ? ghost : value.replace(/[0-9A-Za-z]/g, '8')
   return (
     <div className="led-readout shrink-0 text-right">
-      <div className="led-readout-ghost" style={{ fontSize }}>{ghost}</div>
+      <div className="led-readout-ghost" style={{ fontSize }}>{ghostStr}</div>
       <div className="led-readout-val" style={{ fontSize }}>{value}</div>
       <span className="led-readout-label">{label}</span>
     </div>
@@ -728,7 +735,7 @@ function HotCuePad({ label, cue, color, disabled, onPress, onSet, onClear }: Hot
       style={
         cue
           ? { background: `linear-gradient(180deg,${color}44 0%,${color}18 100%)`, border: `1px solid ${color}`, color, boxShadow: `0 0 6px ${color}33` }
-          : { background: 'rgba(42,36,28,0.5)', border: '1px solid rgba(140,129,106,0.35)', color: 'var(--deck-mute)' }
+          : { background: 'rgba(60,52,40,0.55)', border: '1px solid rgba(165,154,130,0.5)', color: 'var(--deck-ink)' }
       }
     >
       {label}

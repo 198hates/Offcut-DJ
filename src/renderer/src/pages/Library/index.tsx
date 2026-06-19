@@ -433,7 +433,7 @@ export function LibraryPage(): JSX.Element {
                     key={col.id}
                     onClick={(e) => handleSort(col.sortKey, e)}
                     title={sortSpec.length > 1 ? 'Click: primary sort · Shift+click: add/toggle secondary sort' : 'Click to sort · Shift+click to add secondary sort'}
-                    className="text-left px-2 text-[12px] font-mono font-bold uppercase tracking-[0.18em] text-muted cursor-pointer hover:text-ink transition-colors select-none border-b border-border/30 truncate"
+                    className="text-left px-2 text-[12px] font-mono font-bold uppercase tracking-[0.06em] text-muted cursor-pointer hover:text-ink transition-colors select-none border-b border-border/30 truncate"
                   >
                     {col.label}
                     {sortLevel && (

@@ -297,9 +297,9 @@ export function Waveform({
         </div>
       )}
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full cursor-crosshair block" onClick={handleClick} />
-      <div className="absolute bottom-1 right-1 flex gap-0.5">
-        <button onClick={zoomOut} className="w-5 h-5 rounded bg-black/50 text-white/50 hover:text-white text-xs flex items-center justify-center">−</button>
-        <button onClick={zoomIn}  className="w-5 h-5 rounded bg-black/50 text-white/50 hover:text-white text-xs flex items-center justify-center">+</button>
+      <div className="absolute bottom-1 right-1 flex gap-1">
+        <button onClick={zoomOut} title="Zoom out" className="w-7 h-7 rounded bg-black/70 border border-white/15 text-white/80 hover:text-white hover:border-white/40 text-sm flex items-center justify-center transition-colors">−</button>
+        <button onClick={zoomIn}  title="Zoom in"  className="w-7 h-7 rounded bg-black/70 border border-white/15 text-white/80 hover:text-white hover:border-white/40 text-sm flex items-center justify-center transition-colors">+</button>
       </div>
     </div>
   )
