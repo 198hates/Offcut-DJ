@@ -187,11 +187,11 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
               await navigator.clipboard.writeText(info)
               showToast('Copied to clipboard', 'success')
             }}
-            className="font-mono text-[11px] text-muted/40 hover:text-muted transition-colors px-1"
+            className="w-6 h-6 flex items-center justify-center rounded font-mono text-[13px] text-muted/70 hover:text-ink hover:bg-ink/[0.07] transition-colors"
           >
             ⎘
           </button>
-          <button onClick={onClose} className="text-muted hover:text-ink transition-colors text-base leading-none px-1">×</button>
+          <button onClick={onClose} title="Close inspector" className="w-6 h-6 flex items-center justify-center rounded text-muted hover:text-ink hover:bg-ink/[0.07] transition-colors text-lg leading-none">×</button>
         </div>
       </div>
 

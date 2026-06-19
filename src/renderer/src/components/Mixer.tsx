@@ -64,7 +64,7 @@ function EqKnob({ label, value, min = -24, max = 6, onChange }: {
       {/* Label + value */}
       <div className="flex flex-col" style={{ minWidth: 0 }}>
         <span
-          className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] leading-none"
+          className="font-mono text-[10px] font-bold uppercase tracking-[0.02em] leading-none"
           style={{ color: 'var(--deck-mute)' }}
         >{label}</span>
         <span

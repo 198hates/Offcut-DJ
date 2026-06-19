@@ -184,29 +184,36 @@ const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; l
 
 export function NavRail({ active, onNavigate }: Props): JSX.Element {
   const cls = (id: Section) =>
-    `w-8 h-8 flex items-center justify-center rounded transition-colors ${
+    `w-[58px] py-1.5 flex flex-col items-center gap-1 rounded transition-colors ${
       active === id
         ? 'bg-accent/15 text-accent'
         : 'text-muted hover:text-ink hover:bg-ink/[0.07]'
     }`
+  const Lbl = ({ children }: { children: string }): JSX.Element => (
+    <span className="font-mono text-[9px] leading-none tracking-wide">{children}</span>
+  )
 
   return (
-    <div className="w-11 shrink-0 flex flex-col items-center bg-chassis border-r border-border/30 py-2">
-      <div className="flex flex-col items-center gap-1 flex-1 pt-1">
+    <div className="w-[66px] shrink-0 flex flex-col items-center bg-chassis border-r border-border/30 py-2 gap-0.5">
+      <div className="flex flex-col items-center gap-0.5 flex-1 pt-1">
         {MAIN_ITEMS.map(({ id, Icon, label }) => (
           <button key={id} onClick={() => onNavigate(id)} title={label} className={cls(id)}>
             <Icon />
+            <Lbl>{label.split(' ').slice(-1)[0]}</Lbl>
           </button>
         ))}
       </div>
-      <button onClick={() => onNavigate('phonesync')} title="Phone Sync" className={`${cls('phonesync')} mb-1`}>
+      <button onClick={() => onNavigate('phonesync')} title="Phone Sync" className={cls('phonesync')}>
         <PhoneIcon />
+        <Lbl>Phone</Lbl>
       </button>
-      <button onClick={() => onNavigate('usb')} title="USB Export" className={`${cls('usb')} mb-1`}>
+      <button onClick={() => onNavigate('usb')} title="USB Export" className={cls('usb')}>
         <UsbIcon />
+        <Lbl>USB</Lbl>
       </button>
       <button onClick={() => onNavigate('settings')} title="Settings" className={cls('settings')}>
         <GearIcon />
+        <Lbl>Settings</Lbl>
       </button>
     </div>
   )
