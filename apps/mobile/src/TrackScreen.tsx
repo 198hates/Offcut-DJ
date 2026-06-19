@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio'
 import { Artwork } from './Artwork'
 import { OverviewWaveform } from './OverviewWaveform'
@@ -22,6 +23,14 @@ function mmss(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00'
   const s = Math.floor(sec)
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** A #rrggbb colour tag at the given alpha, or a faint accent wash when untagged. */
+function tintHex(hex: string | null | undefined, alpha: number): string {
+  if (hex && /^#[0-9a-fA-F]{6}$/.test(hex)) {
+    return `${hex}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`
+  }
+  return `rgba(216,106,74,${(alpha * 0.5).toFixed(3)})`
 }
 
 export function TrackScreen({
@@ -141,19 +150,29 @@ export function TrackScreen({
 
   return (
     <ScrollView style={styles.fill} contentContainerStyle={styles.content}>
-      <View style={styles.headerRow}>
-        <Artwork url={client.artworkUrl(track.id)} size={88} label={track.title} color={track.color} radius={6} />
-        <View style={styles.headerText}>
-          <Text style={styles.title} numberOfLines={2}>{track.title || '(untitled)'}</Text>
-          <Text style={styles.artist} numberOfLines={1}>{track.artist || '—'}</Text>
+      <View style={styles.hero}>
+        {/* colour wash from the track's colour tag — Offcut's take on rekordbox's
+            artwork-tinted player background */}
+        <LinearGradient
+          colors={[tintHex(track.color, 0.22), tintHex(track.color, 0.05), 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0.9, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={styles.headerRow}>
+          <Artwork url={client.artworkUrl(track.id)} size={96} label={track.title} color={track.color} radius={8} />
+          <View style={styles.headerText}>
+            <Text style={styles.title} numberOfLines={2}>{track.title || '(untitled)'}</Text>
+            <Text style={styles.artist} numberOfLines={1}>{track.artist || '—'}</Text>
+          </View>
         </View>
-      </View>
 
-      <View style={styles.metaRow}>
-        {track.bpm != null && <Meta label="BPM" value={`${Math.round(track.bpm)}`} accent />}
-        {track.key && <Meta label="KEY" value={track.key} accent />}
-        {track.energy != null && <Meta label="ENERGY" value={`${track.energy}`} />}
-        {track.durationSeconds != null && <Meta label="LEN" value={mmss(track.durationSeconds)} />}
+        <View style={styles.metaRow}>
+          {track.bpm != null && <Meta label="BPM" value={`${Math.round(track.bpm)}`} accent />}
+          {track.key && <Meta label="KEY" value={track.key} accent />}
+          {track.energy != null && <Meta label="ENERGY" value={`${track.energy}`} />}
+          {track.durationSeconds != null && <Meta label="LEN" value={mmss(track.durationSeconds)} />}
+        </View>
       </View>
 
       {peaks ? (
@@ -255,11 +274,12 @@ function AddToPlaylist({
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: C.bg },
   content: { padding: 20, paddingTop: 16, gap: 6 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 },
+  hero: { borderRadius: 12, overflow: 'hidden', marginBottom: 16, padding: 14, gap: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   headerText: { flex: 1, gap: 4 },
   title: { color: C.ink, fontFamily: MONO_BOLD, fontSize: 19 },
   artist: { color: C.muted, fontFamily: MONO, fontSize: 14 },
-  metaRow: { flexDirection: 'row', gap: 22, marginBottom: 18, flexWrap: 'wrap' },
+  metaRow: { flexDirection: 'row', gap: 22, flexWrap: 'wrap' },
   meta: { gap: 3 },
   metaLabel: { color: C.muted, fontFamily: MONO, fontSize: 9, letterSpacing: 1.6 },
   metaValue: { color: C.ink, fontFamily: MONO_BOLD, fontSize: 15, fontVariant: ['tabular-nums'] },

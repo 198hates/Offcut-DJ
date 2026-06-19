@@ -54,6 +54,16 @@ export function OverviewWaveform({
 
   const path = useMemo(() => buildOverviewPath(data.peaks, cols, half), [data.peaks, cols, half])
 
+  // Downbeat ticks (one per bar) baked into a single path so the per-frame cursor
+  // re-render stays cheap. Skipped when the track has no analysed grid.
+  const downPath = useMemo(() => {
+    const p = Skia.Path.Make()
+    if (data.grid && width > 0) {
+      for (const ms of data.grid.downbeats) p.addRect(rect((ms / 1000 / dur) * width, 0, 1, height))
+    }
+    return p
+  }, [data.grid, width, dur, height])
+
   // Smooth cursor between status ticks (same RAF estimate as the detail view).
   const [pos, setPos] = useState(currentTime)
   const base = useRef({ t: currentTime, at: Date.now(), playing })
@@ -98,6 +108,8 @@ export function OverviewWaveform({
           <Group clip={rect(cursorX, 0, width - cursorX, height)}>
             <Path path={path} color={WAVE.future.low} />
           </Group>
+          {/* downbeat ticks */}
+          <Path path={downPath} color="rgba(255,255,255,0.10)" />
           {/* hot-cue ticks */}
           {cues
             .filter((c) => c.type === 'hotcue')
