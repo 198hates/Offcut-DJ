@@ -12,25 +12,25 @@ import { Canvas, Group, Path, Rect, Skia, rect, type SkPath } from '@shopify/rea
 import { WAVE } from './theme'
 import type { CompactGrid, CuePoint, PeaksData } from './sync-types'
 
-const BAR_W = 3 // px per bucket (≈90 px/s at ~30 buckets/s → ~a few seconds visible)
+const BAR_W = 3 // base px per bucket at zoom 1 (≈90 px/s at ~30 buckets/s)
 const SCALE = 0.92 // matches the desktop peak scaling
 
-function buildBandPath(band: number[], n: number, half: number): SkPath {
+function buildBandPath(band: number[], n: number, half: number, barW: number): SkPath {
   const p = Skia.Path.Make()
   for (let i = 0; i < n; i++) {
     const v = (band[i] ?? 0) / 255
     const h = v * half * SCALE
     if (h <= 0.5) continue
-    p.addRect(rect(i * BAR_W, half - h, BAR_W, h * 2)) // mirrored around centre
+    p.addRect(rect(i * barW, half - h, barW, h * 2)) // mirrored around centre
   }
   return p
 }
 
 /** Vertical beat + downbeat lines in track space (1px each). */
-function buildGridPaths(grid: CompactGrid, bucketDur: number, durSec: number, height: number): { beat: SkPath; down: SkPath } {
+function buildGridPaths(grid: CompactGrid, bucketDur: number, durSec: number, height: number, barW: number): { beat: SkPath; down: SkPath } {
   const beat = Skia.Path.Make()
   const down = Skia.Path.Make()
-  const xOf = (ms: number): number => (ms / 1000 / bucketDur) * BAR_W
+  const xOf = (ms: number): number => (ms / 1000 / bucketDur) * barW
   const beatMs = grid.bpm > 0 ? 60000 / grid.bpm : 0
   if (beatMs > 0) {
     const count = Math.floor((durSec * 1000 - grid.firstBeatMs) / beatMs)
@@ -49,7 +49,8 @@ export function DeckWaveform({
   playing,
   cues,
   onSeek,
-  height = 112
+  height = 112,
+  zoom = 1
 }: {
   data: PeaksData
   currentTime: number
@@ -58,6 +59,7 @@ export function DeckWaveform({
   cues: CuePoint[]
   onSeek?: (sec: number) => void
   height?: number
+  zoom?: number
 }): JSX.Element {
   const [width, setWidth] = useState(0)
   const onLayout = (e: LayoutChangeEvent): void => setWidth(e.nativeEvent.layout.width)
@@ -65,22 +67,22 @@ export function DeckWaveform({
   const n = data.peaks.length
   const dur = duration > 0 ? duration : data.durationSec || 1
   const bucketDur = dur / n // seconds per bucket
-  const totalW = n * BAR_W
+  const barW = BAR_W * zoom
   const half = height / 2
   const centerX = width / 2
 
   const paths = useMemo(
     () => ({
-      low: buildBandPath(data.low, n, half),
-      mid: buildBandPath(data.mid, n, half),
-      high: buildBandPath(data.high, n, half)
+      low: buildBandPath(data.low, n, half, barW),
+      mid: buildBandPath(data.mid, n, half, barW),
+      high: buildBandPath(data.high, n, half, barW)
     }),
-    [data, n, half]
+    [data, n, half, barW]
   )
 
   const grid = useMemo(
-    () => (data.grid ? buildGridPaths(data.grid, bucketDur, dur, height) : null),
-    [data.grid, bucketDur, dur, height]
+    () => (data.grid ? buildGridPaths(data.grid, bucketDur, dur, height, barW) : null),
+    [data.grid, bucketDur, dur, height, barW]
   )
 
   // Smooth playhead: estimate time between status updates with a RAF clock.
@@ -102,12 +104,12 @@ export function DeckWaveform({
   }, [dur])
 
   // Scroll so the current bucket sits under the centre playhead.
-  const translateX = centerX - (pos / bucketDur) * BAR_W
+  const translateX = centerX - (pos / bucketDur) * barW
   const scroll = [{ translateX }]
 
   const tap = (x: number): void => {
     if (!onSeek || width <= 0) return
-    const delta = ((x - centerX) / BAR_W) * bucketDur
+    const delta = ((x - centerX) / barW) * bucketDur
     onSeek(Math.max(0, Math.min(dur, pos + delta)))
   }
 
@@ -150,7 +152,7 @@ export function DeckWaveform({
               {cues
                 .filter((c) => c.type === 'hotcue')
                 .map((c) => {
-                  const x = (c.positionMs / 1000 / bucketDur) * BAR_W
+                  const x = (c.positionMs / 1000 / bucketDur) * barW
                   const col = c.color || '#D86A4A'
                   return (
                     <Group key={c.index}>

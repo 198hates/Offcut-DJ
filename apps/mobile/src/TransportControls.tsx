@@ -112,12 +112,19 @@ export function TransportControls({
 
   // ── which lower panel is showing (rekordbox-style mode bar) ──
   const [mode, setMode] = useState<Mode>('cues')
+  // tap the time to flip elapsed ↔ remaining (remaining shows red, like rekordbox)
+  const [showRemaining, setShowRemaining] = useState(false)
 
   return (
     <View style={styles.wrap}>
       {/* transport — centred circular CUE + PLAY, time left, QUANT right */}
       <View style={styles.transport}>
-        <Text style={styles.time}>{mmss(status.currentTime)} / {mmss(dur)}</Text>
+        <Pressable style={styles.time} onPress={() => setShowRemaining((r) => !r)} hitSlop={8}>
+          <Text style={[styles.timeMain, showRemaining && styles.timeRemain]}>
+            {showRemaining ? `-${mmss(Math.max(0, dur - status.currentTime))}` : mmss(status.currentTime)}
+          </Text>
+          <Text style={styles.timeTotal}>{mmss(dur)}</Text>
+        </Pressable>
         <View style={styles.transCenter}>
           <Pressable style={styles.cueCircle} onPress={pressCue} onLongPress={() => setMainCue(status.currentTime)}>
             <Text style={styles.cueTxt}>CUE</Text>
@@ -276,7 +283,10 @@ const styles = StyleSheet.create({
 
   // transport
   transport: { flexDirection: 'row', alignItems: 'center' },
-  time: { width: 92, color: C.ink, fontFamily: MONO, fontSize: 13, fontVariant: ['tabular-nums'] },
+  time: { width: 92 },
+  timeMain: { color: C.ink, fontFamily: MONO_BOLD, fontSize: 15, fontVariant: ['tabular-nums'] },
+  timeRemain: { color: C.rec },
+  timeTotal: { color: C.muted, fontFamily: MONO, fontSize: 11, fontVariant: ['tabular-nums'], marginTop: 1 },
   transCenter: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 20 },
   transRight: { width: 92, alignItems: 'flex-end' },
   cueCircle: { width: 56, height: 56, borderRadius: 28, borderWidth: 1.5, borderColor: '#C9A02C', alignItems: 'center', justifyContent: 'center' },

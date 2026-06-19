@@ -52,6 +52,8 @@ export function TrackScreen({
   const [peaksErr, setPeaksErr] = useState<string | null>(null)
   const [offlineUri, setOfflineUri] = useState<string | null>(null)
   const [savingOffline, setSavingOffline] = useState(false)
+  const [zoom, setZoom] = useState(1) // detail-waveform horizontal zoom
+  useEffect(() => setZoom(1), [track.id])
 
   // Hot cues are the single source of truth here (the transport pads + waveform
   // share them). Like the desktop, they persist immediately — separate from the
@@ -195,7 +197,16 @@ export function TrackScreen({
               playing={status.playing}
               cues={cues}
               onSeek={(s) => void player.seekTo(s)}
+              zoom={zoom}
             />
+            <View style={styles.zoomCtl}>
+              <Pressable style={styles.zoomBtn} hitSlop={6} onPress={() => setZoom((z) => Math.max(0.5, +(z / 1.5).toFixed(3)))}>
+                <Text style={styles.zoomTxt}>−</Text>
+              </Pressable>
+              <Pressable style={styles.zoomBtn} hitSlop={6} onPress={() => setZoom((z) => Math.min(6, +(z * 1.5).toFixed(3)))}>
+                <Text style={styles.zoomTxt}>＋</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       ) : (
@@ -287,6 +298,9 @@ const styles = StyleSheet.create({
   waveStack: { gap: 6, marginBottom: 18 },
   overviewBox: { backgroundColor: C.deckPanel, borderRadius: 6, overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 4 },
   waveBox: { minHeight: 112, justifyContent: 'center', backgroundColor: C.deckPanel, borderRadius: 6, overflow: 'hidden', paddingHorizontal: 6 },
+  zoomCtl: { position: 'absolute', top: 6, right: 6, flexDirection: 'row', gap: 5 },
+  zoomBtn: { width: 26, height: 26, borderRadius: 5, backgroundColor: 'rgba(16,13,9,0.7)', borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  zoomTxt: { color: C.ink, fontFamily: MONO_BOLD, fontSize: 15, lineHeight: 18 },
   dim: { color: C.muted, fontFamily: MONO, fontSize: 12, textAlign: 'center' },
   offlineBtn: { marginTop: 14, borderWidth: 1, borderColor: 'rgba(42,36,28,0.8)', borderRadius: 4, paddingVertical: 9, alignItems: 'center' },
   offlineTxt: { color: C.muted, fontFamily: MONO, fontSize: 11, letterSpacing: 0.5 },
