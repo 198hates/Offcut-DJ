@@ -263,6 +263,7 @@ declare global {
         listUsb: (usbRoot: string) => Promise<UsbHistoryPreview[] | { error: string }>
         importUsb: (usbRoot: string, refs: string[]) => Promise<UsbImportResult | { error: string }>
         compare: (aId: string, bId: string) => Promise<SetComparison | null>
+        recreate: (id: string) => Promise<{ playlistId: string; name: string } | null>
       }
       residencies: {
         list: () => Promise<Residency[]>

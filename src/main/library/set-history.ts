@@ -183,7 +183,33 @@ export function listSets(db: Database, filter: SetListFilter = {}): SetSummary[]
   return rows.map(toSummary)
 }
 
-/** Full set: summary + ordered running order + transition deltas. */
+function humanDur(sec: number): string {
+  const m = Math.round(sec / 60)
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
+/** A coach's-note paragraph: the set's arc, mixing tightness and breadth. */
+function buildDebrief(rows: PlTrackRow[], r: SessionRow, transitions: SetTransition[]): string {
+  if (!rows.length) return 'No tracks recorded for this set.'
+  const parts: string[] = []
+  parts.push(`${rows.length} track${rows.length === 1 ? '' : 's'}${r.duration_sec ? ` over ${humanDur(r.duration_sec)}` : ''}.`)
+  const first = rows.find((t) => t.bpm)?.bpm
+  const last = [...rows].reverse().find((t) => t.bpm)?.bpm
+  if (first && last) {
+    const range = r.bpm_min != null && r.bpm_max != null ? ` (${Math.round(r.bpm_min)}–${Math.round(r.bpm_max)} range)` : ''
+    parts.push(`Tempo ran ${Math.round(first)}→${Math.round(last)} BPM${range}.`)
+  }
+  if (r.energy_avg != null) parts.push(`Energy averaged ${r.energy_avg.toFixed(1)}/10.`)
+  if (r.harmonic_pct != null && transitions.length) {
+    const rough = transitions.filter((t) => t.harmonic === false || (t.bpmDelta != null && Math.abs(t.bpmDelta) > 8)).length
+    parts.push(`${Math.round(r.harmonic_pct)}% harmonic mixing across ${transitions.length} transitions${rough ? `, with ${rough} rough cut${rough === 1 ? '' : 's'}` : ''}.`)
+  }
+  const keys = new Set(rows.map((t) => t.key).filter((k): k is string => !!k))
+  if (keys.size) parts.push(`${keys.size} distinct key${keys.size === 1 ? '' : 's'}.`)
+  return parts.join(' ')
+}
+
+/** Full set: summary + ordered running order + transition deltas + debrief. */
 export function getSet(db: Database, id: string): SetDetail | null {
   const r = db.prepare('SELECT * FROM set_sessions WHERE id = ?').get(id) as SessionRow | undefined
   if (!r) return null
@@ -206,7 +232,27 @@ export function getSet(db: Database, id: string): SetDetail | null {
       harmonic: a.key && b.key ? camelotAdjacent(a.key, b.key) : null
     })
   }
-  return { ...toSummary(r), device: r.device, notes: r.notes, recordingPath: r.recording_path, tracks, transitions }
+  return { ...toSummary(r), device: r.device, notes: r.notes, recordingPath: r.recording_path, tracks, transitions, debrief: buildDebrief(rows, r, transitions) }
+}
+
+/** Copy a set's tracks into a fresh regular playlist ("recreate a winning night"). */
+export function recreateSetAsPlaylist(db: Database, setId: string): { playlistId: string; name: string } | null {
+  const r = db.prepare('SELECT title, playlist_id FROM set_sessions WHERE id = ?').get(setId) as
+    | { title: string; playlist_id: string | null }
+    | undefined
+  if (!r?.playlist_id) return null
+  const tracks = db
+    .prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order')
+    .all(r.playlist_id) as { track_id: string }[]
+  const pid = randomUUID()
+  const name = `${r.title} (recreated)`
+  const tx = db.transaction(() => {
+    db.prepare('INSERT INTO playlists (id, name, sort_order) VALUES (?, ?, 0)').run(pid, name)
+    const ins = db.prepare('INSERT INTO playlist_tracks (playlist_id, track_id, sort_order) VALUES (?, ?, ?)')
+    tracks.forEach((t, i) => ins.run(pid, t.track_id, i))
+  })
+  tx()
+  return { playlistId: pid, name }
 }
 
 const PATCH_COLS: Record<keyof SetPatch, string> = {

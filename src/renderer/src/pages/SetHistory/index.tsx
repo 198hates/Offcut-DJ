@@ -20,6 +20,9 @@ function fmtDate(iso: string | null): string {
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 }
 const dayKey = (iso: string | null): string | null => (iso ? iso.slice(0, 10) : null)
+/** Heuristic: very short sessions are probably USB sound-checks / practice. */
+const looksLikeSoundcheck = (s: { trackCount: number | null; durationSec: number | null }): boolean =>
+  (s.trackCount ?? 0) < 4 || (!!s.durationSec && s.durationSec < 600)
 
 export function SetHistoryPage(): JSX.Element {
   const [sets, setSets] = useState<SetSummary[]>([])
@@ -158,6 +161,7 @@ export function SetHistoryPage(): JSX.Element {
                 {s.harmonicPct != null && <span>{Math.round(s.harmonicPct)}% harm</span>}
                 {s.rating ? <span className="text-[#C9A02C]">{'★'.repeat(s.rating)}</span> : null}
                 {s.status === 'archived' && <span className="text-muted/50">archived</span>}
+                {looksLikeSoundcheck(s) && <span className="text-[#C9A02C]/70" title="short session — likely a soundcheck/practice">soundcheck?</span>}
               </div>
             </button>
           ))}
@@ -403,7 +407,18 @@ function SetDetailPane({
   const [venue, setVenue] = useState(detail.venue ?? '')
   const [vibe, setVibe] = useState(detail.vibe ?? '')
   const [notes, setNotes] = useState(detail.notes ?? '')
-  useEffect(() => { setVenue(detail.venue ?? ''); setVibe(detail.vibe ?? ''); setNotes(detail.notes ?? '') }, [detail.id])
+  const [copied, setCopied] = useState(false)
+  const [recreated, setRecreated] = useState(false)
+  useEffect(() => { setVenue(detail.venue ?? ''); setVibe(detail.vibe ?? ''); setNotes(detail.notes ?? ''); setCopied(false); setRecreated(false) }, [detail.id])
+
+  const copyTracklist = (): void => {
+    const text = detail.tracks.map((t, i) => `${i + 1}. ${t.artist ? `${t.artist} — ` : ''}${t.title}${t.key ? ` [${t.key}]` : ''}${t.bpm ? ` ${Math.round(t.bpm)}` : ''}`).join('\n')
+    void navigator.clipboard.writeText(`${detail.title}\n\n${text}`).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800) })
+  }
+  const recreate = async (): Promise<void> => {
+    const res = await window.api.setHistory.recreate(detail.id)
+    if (res) { setRecreated(true); setTimeout(() => setRecreated(false), 1800) }
+  }
 
   return (
     <div className="flex flex-col gap-4 pb-6">
@@ -439,6 +454,11 @@ function SetDetailPane({
         <Stat label="HARMONIC" value={detail.harmonicPct != null ? `${Math.round(detail.harmonicPct)}%` : '—'} />
         <Stat label="ENERGY" value={detail.energyAvg != null ? detail.energyAvg.toFixed(1) : '—'} />
       </div>
+
+      {/* auto-debrief */}
+      {detail.debrief && (
+        <p className="font-mono text-[12px] text-inkSoft leading-relaxed border-l-2 border-accent/40 pl-3">{detail.debrief}</p>
+      )}
 
       {/* rating + venue + vibe */}
       <div className="flex items-center gap-4 flex-wrap">
@@ -476,7 +496,13 @@ function SetDetailPane({
 
       {/* running order */}
       <div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted mb-1.5">Running order</p>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">Running order</p>
+          <div className="flex items-center gap-3">
+            <button onClick={copyTracklist} className="font-mono text-[10px] text-muted hover:text-accent">{copied ? 'copied ✓' : 'copy list'}</button>
+            <button onClick={recreate} className="font-mono text-[10px] text-muted hover:text-accent">{recreated ? `created ✓` : 'recreate as playlist'}</button>
+          </div>
+        </div>
         <div className="flex flex-col">
           {detail.tracks.map((t, i) => {
             const tr = detail.transitions.find((x) => x.index === i)

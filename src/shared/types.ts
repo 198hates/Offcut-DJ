@@ -1003,6 +1003,7 @@ export interface SetDetail extends SetSummary {
   recordingPath: string | null
   tracks: SetTrack[]
   transitions: SetTransition[]
+  debrief: string // auto-generated one-paragraph summary
 }
 
 export interface SetPatch {

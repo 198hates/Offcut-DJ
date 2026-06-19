@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import Database from 'better-sqlite3'
 import { applySchema } from '../schema'
-import { camelotAdjacent, backfillSetSessions, listSets, getSet, updateSet, deleteSet, createResidency, residencyDashboard, compareSets } from '../set-history'
+import { camelotAdjacent, backfillSetSessions, listSets, getSet, updateSet, deleteSet, createResidency, residencyDashboard, compareSets, recreateSetAsPlaylist } from '../set-history'
 
 function freshDb(): Database.Database {
   const db = new Database(':memory:')
@@ -136,5 +136,24 @@ describe('set history', () => {
     expect(cmp.shared.map((t) => t.trackId)).toEqual([x])
     expect(cmp.onlyA.map((t) => t.trackId).sort()).toEqual([y, z].sort())
     expect(cmp.onlyB.map((t) => t.trackId)).toEqual([w])
+  })
+
+  it('getSet builds a debrief, and recreate copies the set into a fresh playlist', () => {
+    const db = freshDb()
+    const a = track(db, { bpm: 120, key: '8A', dur: 600 })
+    const b = track(db, { bpm: 128, key: '9A', dur: 600 })
+    historyPlaylist(db, 'Gig 2026-06-14', [a, b])
+    const [s] = listSets(db)
+
+    const detail = getSet(db, s.id)!
+    expect(detail.debrief).toMatch(/2 tracks/)
+    expect(detail.debrief).toMatch(/120→128 BPM/)
+
+    const made = recreateSetAsPlaylist(db, s.id)!
+    expect(made.name).toBe('Gig 2026-06-14 (recreated)')
+    const pl = db.prepare('SELECT is_history FROM playlists WHERE id = ?').get(made.playlistId) as { is_history: number }
+    expect(pl.is_history).toBe(0) // a normal, editable playlist
+    const tids = db.prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY sort_order').all(made.playlistId) as { track_id: string }[]
+    expect(tids.map((t) => t.track_id)).toEqual([a, b])
   })
 })
