@@ -14,6 +14,7 @@ import ffmpegPath from 'ffmpeg-static'
 import type { Database } from 'better-sqlite3'
 import { decodeAudioToPcm } from '../integrations/beat-analysis/audio-decode'
 import { computeWaveformBands } from '../integrations/rekordbox-usb/waveform'
+import { readEmbeddedArt, toStickJpeg } from '../integrations/rekordbox-usb/artwork'
 
 /** Compact beat reference for the phone: enough to draw beat/downbeat lines and
  *  snap (quantise) to the beat, without the full per-beat array. */
@@ -243,6 +244,31 @@ export async function getProxyPath(db: Database, cacheDir: string, trackId: stri
   try {
     await transcodeToAac(info.filePath, out)
     return existsSync(out) ? out : null
+  } catch {
+    return null
+  }
+}
+
+function artworkCachePath(cacheDir: string, info: TrackFile): string {
+  return join(cacheDir, `${cacheKey(info)}.art.jpg`)
+}
+
+/** Path to a track's embedded cover art as a ≤500px JPEG (extracted + cached on
+ *  first request). Null when the track has no embedded art. */
+export async function getArtworkPath(db: Database, cacheDir: string, trackId: string): Promise<string | null> {
+  const info = resolveTrackFile(db, trackId)
+  if (!info) return null
+  const out = artworkCachePath(cacheDir, info)
+  if (existsSync(out)) return out
+  if (!existsSync(info.filePath)) return null
+  const raw = await readEmbeddedArt(info.filePath)
+  if (!raw) return null
+  const jpeg = await toStickJpeg(raw)
+  if (!jpeg) return null
+  try {
+    mkdirSync(dirname(out), { recursive: true })
+    writeFileSync(out, jpeg)
+    return out
   } catch {
     return null
   }

@@ -22,6 +22,7 @@ function deps(over: Partial<RouteDeps> = {}): RouteDeps {
     applyPush: () => emptyPush,
     getPeaks: async () => null,
     getProxyPath: async () => null,
+    getArtwork: async () => null,
     recordDevice: () => undefined,
     info: () => ({ name: 'Offcut', version: '1.2.3' }),
     ...over

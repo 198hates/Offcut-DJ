@@ -10,7 +10,7 @@ import { getLibraryDb } from '../library/db'
 import { pullChanges, leanTrack } from '../library/sync'
 import { applyPush } from '../library/apply-push'
 import { backfillContentHashesChunked } from '../library/content-hash'
-import { getPeaks, getProxyPath } from '../sync/media'
+import { getPeaks, getProxyPath, getArtworkPath } from '../sync/media'
 import type { SyncStatus } from '../../shared/types'
 
 /** Tell the renderer windows the library changed underneath them (phone push). */
@@ -72,6 +72,7 @@ function getServer(): SyncServer {
       },
       getPeaks: (trackId) => getPeaks(getLibraryDb(), mediaCacheDir(), trackId),
       getProxyPath: (trackId) => getProxyPath(getLibraryDb(), mediaCacheDir(), trackId),
+      getArtwork: (trackId) => getArtworkPath(getLibraryDb(), mediaCacheDir(), trackId),
       recordDevice: (id, name) => p.recordDevice(id, name),
       info: () => ({ name: 'Offcut', version: app.getVersion() })
     })

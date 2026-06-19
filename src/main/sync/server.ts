@@ -25,6 +25,8 @@ export interface RouteDeps {
   getPeaks: (trackId: string) => Promise<unknown | null>
   /** Filesystem path to a track's AAC proxy, or null if unavailable. */
   getProxyPath: (trackId: string) => Promise<string | null>
+  /** Filesystem path to a track's cover-art JPEG, or null if it has none. */
+  getArtwork: (trackId: string) => Promise<string | null>
   /** Note that a device connected (for the desktop's device list). */
   recordDevice: (id: string | null, name: string | null) => void
   /** Public server identity, returned by /health. */
@@ -222,6 +224,15 @@ export class SyncServer {
         this.streamFile(res, path, Array.isArray(req.headers.range) ? req.headers.range[0] : req.headers.range)
         return
       }
+      if (url.pathname === '/media/artwork') {
+        const path = await this.deps.getArtwork(trackId)
+        if (!path) {
+          this.respond(res, { status: 404, json: { error: 'no artwork' } })
+          return
+        }
+        this.streamImage(res, path)
+        return
+      }
       this.respond(res, { status: 404, json: { error: 'not found' } })
     } catch (e) {
       this.respond(res, { status: 500, json: { error: (e as Error).message } })
@@ -252,5 +263,18 @@ export class SyncServer {
       res.writeHead(200, { 'content-type': type, 'accept-ranges': 'bytes', 'content-length': size })
       createReadStream(path).pipe(res)
     }
+  }
+
+  /** Stream a (small) cover-art JPEG, cacheable by the phone. */
+  private streamImage(res: ServerResponse, path: string): void {
+    let size: number
+    try {
+      size = statSync(path).size
+    } catch {
+      this.respond(res, { status: 404, json: { error: 'not found' } })
+      return
+    }
+    res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': size, 'cache-control': 'max-age=86400' })
+    createReadStream(path).pipe(res)
   }
 }
