@@ -35,6 +35,18 @@ export function Sidebar(): JSX.Element {
   const [showTemplates, setShowTemplates] = useState(false)
   const newPlaylistInputRef = useRef<HTMLInputElement>(null)
 
+  // Collapsible sidebar sections (persisted). Folders/auto-groups manage their own.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('offcut.sidebarCollapsed') || '[]') as string[]) } catch { return new Set() }
+  })
+  const persistCollapsed = (next: Set<string>): void => {
+    try { localStorage.setItem('offcut.sidebarCollapsed', JSON.stringify([...next])) } catch { /* ignore */ }
+  }
+  const toggleSection = (key: string): void =>
+    setCollapsed((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); persistCollapsed(n); return n })
+  const expandSection = (key: string): void =>
+    setCollapsed((prev) => { if (!prev.has(key)) return prev; const n = new Set(prev); n.delete(key); persistCollapsed(n); return n })
+
   // ── Smart playlist templates ────────────────────────────────────────────────
 
   const TEMPLATES: { name: string; icon: string; rules: SmartRule[] }[] = [
@@ -138,10 +150,14 @@ export function Sidebar(): JSX.Element {
 
             {/* Sets header */}
             <div className="flex items-center justify-between px-2.5 pt-3 pb-1">
-              <p className="text-[12px] font-mono font-bold uppercase tracking-[0.2em] text-muted">
+              <button
+                onClick={() => toggleSection('playlists')}
+                className="flex items-center text-[12px] font-mono font-bold uppercase tracking-[0.2em] text-muted hover:text-ink transition-colors"
+              >
                 <span className="text-accent mr-1">01</span>playlists
                 <span className="ml-1 text-muted/60">· {regular.length}</span>
-              </p>
+                <span className="ml-1 text-muted/40">{collapsed.has('playlists') ? '▸' : '▾'}</span>
+              </button>
               <div className="flex items-center gap-1.5 relative">
                 {/* Template picker */}
                 <button
@@ -171,13 +187,14 @@ export function Sidebar(): JSX.Element {
                   title="New smart playlist"
                 >⚡</button>
                 <button
-                  onClick={() => { setAddingPlaylist(true); setTimeout(() => newPlaylistInputRef.current?.focus(), 50) }}
+                  onClick={() => { expandSection('playlists'); setAddingPlaylist(true); setTimeout(() => newPlaylistInputRef.current?.focus(), 50) }}
                   className="text-muted hover:text-ink text-base leading-none transition-colors"
                   title="New playlist"
                 >+</button>
               </div>
             </div>
 
+            {!collapsed.has('playlists') && (<>
             {addingPlaylist && (
               <div className="px-1 mb-1">
                 <input
@@ -216,16 +233,22 @@ export function Sidebar(): JSX.Element {
                 <p className="px-3 py-1 text-[13px] font-mono text-muted/50 italic">no playlists yet</p>
               )}
             </div>
+            </>)}
 
             {/* Smart playlists */}
             {smart.length > 0 && (
               <>
                 <div className="px-2.5 pt-3 pb-1">
-                  <p className="text-[12px] font-mono font-bold uppercase tracking-[0.2em] text-muted">
+                  <button
+                    onClick={() => toggleSection('smart')}
+                    className="flex items-center text-[12px] font-mono font-bold uppercase tracking-[0.2em] text-muted hover:text-ink transition-colors"
+                  >
                     <span className="text-accent mr-1">02</span>smart
                     <span className="ml-1 text-muted/60">· {smart.length}</span>
-                  </p>
+                    <span className="ml-1 text-muted/40">{collapsed.has('smart') ? '▸' : '▾'}</span>
+                  </button>
                 </div>
+                {!collapsed.has('smart') && (
                 <div className="space-y-px">
                   {smart.map((pl) => (
                     <PlaylistItem
@@ -244,6 +267,7 @@ export function Sidebar(): JSX.Element {
                     />
                   ))}
                 </div>
+                )}
               </>
             )}
 

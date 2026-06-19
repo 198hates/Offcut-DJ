@@ -1,4 +1,4 @@
-export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'orders' | 'search' | 'lineage' | 'assistant' | 'phonesync' | 'usb' | 'settings'
+export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'orders' | 'search' | 'lineage' | 'assistant' | 'sethistory' | 'phonesync' | 'usb' | 'settings'
 
 interface Props {
   active: Section
@@ -157,6 +157,17 @@ function GearIcon() {
   )
 }
 
+function SetHistoryIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+      <rect x="2" y="3" width="12" height="11" rx="1.5" />
+      <path d="M2 6h12M5 1.5v2.5M11 1.5v2.5" strokeLinecap="round" />
+      <circle cx="8" cy="10" r="2" />
+      <path d="M8 9v1l0.8 0.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; label: string }[] = [
   { id: 'library', Icon: LibIcon,     label: 'Library'         },
   { id: 'sync',    Icon: SyncIcon,    label: 'Sync'            },
@@ -164,6 +175,7 @@ const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; l
   { id: 'health',  Icon: HealthIcon,  label: 'Library Health'  },
   { id: 'fixes',   Icon: FixesIcon,   label: 'Smart Fixes'     },
   { id: 'builder', Icon: BuilderIcon, label: 'Set Builder'     },
+  { id: 'sethistory', Icon: SetHistoryIcon, label: 'Set History' },
   { id: 'search',  Icon: SearchIcon,  label: 'Advanced Search' },
   { id: 'orders',  Icon: OrdersIcon,   label: 'Running Orders'  },
   { id: 'lineage',   Icon: LineageIcon,    label: 'Lineage'    },
