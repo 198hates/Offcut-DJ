@@ -57,11 +57,12 @@ Renderer dev server on `localhost:5173`, Phone Sync server on `127.0.0.1:47823`.
 ```bash
 bash .claude/skills/run-offcut/driver.sh shot
 ```
-Best-effort full-display capture via macOS `screencapture`. **Requires Screen
-Recording permission** for your terminal (System Settings › Privacy & Security);
-without it, `screencapture` errors "could not create image from display." The GUI
-can't be captured headless — verify the app via `smoke` (HTTP + boot log) instead,
-or just look at the window.
+Best-effort **full-display** capture via macOS `screencapture` — it grabs
+whatever's frontmost, so **focus the Offcut window first** (multiple Electron
+apps can't be disambiguated by process name). **Requires Screen Recording
+permission** for your terminal (System Settings › Privacy & Security); without it
+it errors "could not create image from display." The GUI can't be captured
+headless — the real verification is `smoke` (HTTP + boot log), not a pixel grab.
 
 ## Test
 ```bash
