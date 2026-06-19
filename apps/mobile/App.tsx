@@ -14,6 +14,11 @@ import {
 import { StatusBar } from 'expo-status-bar'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { useFonts, JetBrainsMono_400Regular, JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono'
+import { NavigationContainer, type Theme } from '@react-navigation/native'
+import { createNativeStackNavigator } from '@react-navigation/native-stack'
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
 import {
   clearConnection,
   loadConnection,
@@ -27,9 +32,41 @@ import { useLibrary } from './src/useLibrary'
 import { useOutbox } from './src/useOutbox'
 import { usePlaylistActions } from './src/usePlaylists'
 import { LibraryScreen } from './src/LibraryScreen'
+import { PlaylistsScreen } from './src/PlaylistsScreen'
+import { SyncScreen } from './src/SyncScreen'
 import { TrackScreen } from './src/TrackScreen'
 import { PlaylistScreen } from './src/PlaylistScreen'
-import type { Playlist, Track } from './src/sync-types'
+import { C, MONO, MONO_BOLD } from './src/theme'
+import type { Track } from './src/sync-types'
+
+type RootStackParamList = {
+  Main: undefined
+  Track: { track: Track }
+  Playlist: { id: string }
+}
+
+const RootStack = createNativeStackNavigator<RootStackParamList>()
+const Tabs = createBottomTabNavigator()
+
+// React Navigation theme bound to the Offcut palette so screen backgrounds,
+// headers and the card transitions all read as the same dark product.
+const NavTheme: Theme = {
+  dark: true,
+  colors: {
+    primary: C.accent,
+    background: C.bg,
+    card: C.panel,
+    text: C.ink,
+    border: C.border,
+    notification: C.accent
+  },
+  fonts: {
+    regular: { fontFamily: MONO, fontWeight: '400' },
+    medium: { fontFamily: MONO, fontWeight: '400' },
+    bold: { fontFamily: MONO_BOLD, fontWeight: '700' },
+    heavy: { fontFamily: MONO_BOLD, fontWeight: '700' }
+  }
+}
 
 type Phase = 'loading' | 'unpaired' | 'connecting' | 'connected' | 'error'
 
@@ -189,47 +226,95 @@ function ConnectedApp({ conn, onDisconnect }: { conn: Connection; onDisconnect: 
   // a rotated token → re-pair; after a reconnect-flush, re-pull to reconcile.
   const outbox = useOutbox(client, onDisconnect, lib.refresh)
   const actions = usePlaylistActions(outbox.push, lib)
-  const [selected, setSelected] = useState<Track | null>(null)
-  const [managing, setManaging] = useState<string | null>(null)
 
-  if (managing) {
-    return (
-      <PlaylistScreen
-        playlistId={managing}
-        lib={lib}
-        actions={actions}
-        onBack={() => setManaging(null)}
-        onSelectTrack={setSelected}
-      />
-    )
-  }
-  if (selected) {
-    return (
-      <TrackScreen
-        track={selected}
-        client={client}
-        push={outbox.push}
-        onBack={() => setSelected(null)}
-        onPatched={lib.patchTrack}
-        playlists={lib.playlists}
-        onAddToPlaylist={actions.addTrack}
-      />
-    )
-  }
-  return (
-    <LibraryScreen
-      lib={lib}
-      onSelectTrack={setSelected}
-      onDisconnect={onDisconnect}
-      onCreatePlaylist={(name) => {
-        void actions.create(name)
+  // The bottom-tab section, inlined as a render-prop (not `component={...}`) so it
+  // re-renders with fresh lib/outbox/actions without remounting the navigator.
+  const renderTabs = (): JSX.Element => (
+    <Tabs.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: { backgroundColor: C.panel, borderTopColor: C.border },
+        tabBarActiveTintColor: C.accent,
+        tabBarInactiveTintColor: C.muted,
+        tabBarLabelStyle: { fontFamily: MONO, fontSize: 10, letterSpacing: 0.5 }
       }}
-      onManagePlaylist={(p: Playlist) => setManaging(p.id)}
-      online={outbox.online}
-      pending={outbox.pending}
-      flushing={outbox.flushing}
-      onSync={() => void outbox.flush()}
-    />
+    >
+      <Tabs.Screen
+        name="Library"
+        options={{ tabBarIcon: ({ color, size }) => <Ionicons name="musical-notes" color={color} size={size} /> }}
+      >
+        {({ navigation }) => (
+          <LibraryScreen
+            lib={lib}
+            artworkUrl={(id) => client.artworkUrl(id)}
+            onSelectTrack={(t) => navigation.navigate('Track', { track: t })}
+          />
+        )}
+      </Tabs.Screen>
+      <Tabs.Screen
+        name="Playlists"
+        options={{ tabBarIcon: ({ color, size }) => <Ionicons name="list" color={color} size={size} /> }}
+      >
+        {({ navigation }) => (
+          <PlaylistsScreen lib={lib} actions={actions} onOpenPlaylist={(p) => navigation.navigate('Playlist', { id: p.id })} />
+        )}
+      </Tabs.Screen>
+      <Tabs.Screen
+        name="Sync"
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="sync" color={color} size={size} />,
+          tabBarBadge: outbox.pending > 0 ? outbox.pending : undefined
+        }}
+      >
+        {() => <SyncScreen lib={lib} outbox={outbox} onDisconnect={onDisconnect} />}
+      </Tabs.Screen>
+    </Tabs.Navigator>
+  )
+
+  return (
+    <SafeAreaProvider>
+      <NavigationContainer theme={NavTheme}>
+        <RootStack.Navigator
+          screenOptions={{
+            headerStyle: { backgroundColor: C.panel },
+            headerTintColor: C.ink,
+            headerTitleStyle: { fontFamily: MONO_BOLD, fontSize: 15 },
+            headerShadowVisible: false,
+            contentStyle: { backgroundColor: C.bg }
+          }}
+        >
+          <RootStack.Screen name="Main" options={{ headerShown: false }}>
+            {renderTabs}
+          </RootStack.Screen>
+          <RootStack.Screen
+            name="Track"
+            options={({ route }) => ({ title: route.params.track.title || 'Track', headerBackTitle: '' })}
+          >
+            {({ route }) => (
+              <TrackScreen
+                track={route.params.track}
+                client={client}
+                push={outbox.push}
+                onPatched={lib.patchTrack}
+                playlists={lib.playlists}
+                onAddToPlaylist={actions.addTrack}
+              />
+            )}
+          </RootStack.Screen>
+          <RootStack.Screen name="Playlist" options={{ title: 'Playlist', headerBackTitle: '' }}>
+            {({ navigation, route }) => (
+              <PlaylistScreen
+                playlistId={route.params.id}
+                lib={lib}
+                actions={actions}
+                onBack={navigation.goBack}
+                onSelectTrack={(t) => navigation.navigate('Track', { track: t })}
+              />
+            )}
+          </RootStack.Screen>
+        </RootStack.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
   )
 }
 

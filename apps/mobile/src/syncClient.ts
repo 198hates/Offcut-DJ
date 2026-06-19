@@ -81,6 +81,12 @@ export class SyncClient {
   proxyUrl(trackId: string): string {
     return `${this.base}/media/proxy?track=${encodeURIComponent(trackId)}&token=${encodeURIComponent(this.conn.token)}`
   }
+
+  /** URL for a track's embedded cover art (≤500px JPEG), or 404 when it has none.
+   *  Token in the query so a bare <Image source={{uri}}> works (like proxyUrl). */
+  artworkUrl(trackId: string): string {
+    return `${this.base}/media/artwork?track=${encodeURIComponent(trackId)}&token=${encodeURIComponent(this.conn.token)}`
+  }
 }
 
 /** Thrown when the desktop rotated its token — the UI should re-pair. */

@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react'
 import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { TRACK_COLORS } from './edits'
 import { move, isEditable } from './playlists'
+import { playlistTracks } from './smartRules'
 import type { PlaylistActions } from './usePlaylists'
 import type { LibraryState } from './useLibrary'
 import type { Track } from './sync-types'
@@ -31,10 +32,13 @@ export function PlaylistScreen({
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
-  const rows = useMemo<Track[]>(
-    () => order.map((id) => lib.byId.get(id)).filter((t): t is Track => !!t),
-    [order, lib.byId]
-  )
+  // Editable playlists render their (draft) order; smart playlists evaluate their
+  // rules client-side for a read-only track view.
+  const editablePl = playlist ? isEditable(playlist) : false
+  const rows = useMemo<Track[]>(() => {
+    if (playlist && !editablePl && playlist.isSmart) return playlistTracks(playlist, lib.tracks, lib.byId)
+    return order.map((id) => lib.byId.get(id)).filter((t): t is Track => !!t)
+  }, [playlist, editablePl, order, lib.tracks, lib.byId])
 
   if (!playlist) {
     // Deleted out from under us.
@@ -97,16 +101,13 @@ export function PlaylistScreen({
 
   return (
     <View style={styles.fill}>
-      <View style={styles.header}>
-        <Pressable onPress={onBack} hitSlop={8}>
-          <Text style={styles.back}>‹ playlists</Text>
-        </Pressable>
-        {editable && (
+      {editable && (
+        <View style={styles.header}>
           <Pressable onPress={confirmDelete} hitSlop={8} disabled={busy}>
             <Text style={styles.delete}>delete</Text>
           </Pressable>
-        )}
-      </View>
+        </View>
+      )}
 
       {!editable ? (
         <Text style={styles.title}>{playlist.name}</Text>
@@ -174,10 +175,9 @@ export function PlaylistScreen({
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: '#17150f', paddingTop: 56, paddingHorizontal: 16 },
+  fill: { flex: 1, backgroundColor: '#17150f', paddingTop: 12, paddingHorizontal: 16 },
   center: { alignItems: 'center', justifyContent: 'center', gap: 14 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  back: { color: '#D86A4A', fontSize: 14 },
+  header: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 6 },
   delete: { color: '#e0726f', fontSize: 13 },
   title: { color: '#ECE3CC', fontSize: 22, fontWeight: '700', marginBottom: 8 },
   titleInput: {

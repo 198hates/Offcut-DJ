@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio'
+import { Artwork } from './Artwork'
 import { DeckWaveform } from './DeckWaveform'
 import { TransportControls } from './TransportControls'
 import { TrackEditor } from './TrackEditor'
@@ -26,7 +27,6 @@ export function TrackScreen({
   track,
   client,
   push,
-  onBack,
   onPatched,
   playlists,
   onAddToPlaylist
@@ -34,7 +34,6 @@ export function TrackScreen({
   track: Track
   client: SyncClient
   push: Push
-  onBack: () => void
   onPatched: (id: string, fields: Partial<Track>) => void
   playlists: Playlist[]
   onAddToPlaylist: (p: Playlist, trackId: string) => Promise<void>
@@ -141,12 +140,13 @@ export function TrackScreen({
 
   return (
     <ScrollView style={styles.fill} contentContainerStyle={styles.content}>
-      <Pressable onPress={onBack} hitSlop={8}>
-        <Text style={styles.back}>‹ library</Text>
-      </Pressable>
-
-      <Text style={styles.title}>{track.title || '(untitled)'}</Text>
-      <Text style={styles.artist}>{track.artist || '—'}</Text>
+      <View style={styles.headerRow}>
+        <Artwork url={client.artworkUrl(track.id)} size={88} label={track.title} color={track.color} radius={6} />
+        <View style={styles.headerText}>
+          <Text style={styles.title} numberOfLines={2}>{track.title || '(untitled)'}</Text>
+          <Text style={styles.artist} numberOfLines={1}>{track.artist || '—'}</Text>
+        </View>
+      </View>
 
       <View style={styles.metaRow}>
         {track.bpm != null && <Meta label="BPM" value={`${Math.round(track.bpm)}`} accent />}
@@ -241,10 +241,11 @@ function AddToPlaylist({
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: C.bg },
-  content: { padding: 20, paddingTop: 60, gap: 6 },
-  back: { color: C.accent, fontFamily: MONO, fontSize: 12, letterSpacing: 0.5, marginBottom: 12 },
-  title: { color: C.ink, fontFamily: MONO_BOLD, fontSize: 20 },
-  artist: { color: C.muted, fontFamily: MONO, fontSize: 14, marginBottom: 14 },
+  content: { padding: 20, paddingTop: 16, gap: 6 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 },
+  headerText: { flex: 1, gap: 4 },
+  title: { color: C.ink, fontFamily: MONO_BOLD, fontSize: 19 },
+  artist: { color: C.muted, fontFamily: MONO, fontSize: 14 },
   metaRow: { flexDirection: 'row', gap: 22, marginBottom: 18, flexWrap: 'wrap' },
   meta: { gap: 3 },
   metaLabel: { color: C.muted, fontFamily: MONO, fontSize: 9, letterSpacing: 1.6 },
