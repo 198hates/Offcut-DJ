@@ -366,6 +366,15 @@ const api = {
       ipcRenderer.on('ai:agentEvent', handler)
       return () => ipcRenderer.removeListener('ai:agentEvent', handler)
     }
+  },
+  setHistory: {
+    list: (filter?: import('../shared/types').SetListFilter) =>
+      ipcRenderer.invoke('setHistory:list', filter) as Promise<import('../shared/types').SetSummary[]>,
+    get: (id: string) =>
+      ipcRenderer.invoke('setHistory:get', id) as Promise<import('../shared/types').SetDetail | null>,
+    update: (id: string, patch: import('../shared/types').SetPatch) =>
+      ipcRenderer.invoke('setHistory:update', id, patch) as Promise<import('../shared/types').SetDetail | null>,
+    delete: (id: string) => ipcRenderer.invoke('setHistory:delete', id) as Promise<boolean>
   }
 }
 

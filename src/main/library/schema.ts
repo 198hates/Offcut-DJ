@@ -157,6 +157,46 @@ export function applySchema(db: import('better-sqlite3').Database): void {
     // Session history playlist type
     "ALTER TABLE playlists ADD COLUMN is_history INTEGER NOT NULL DEFAULT 0",
 
+    // ── Set History tab ──────────────────────────────────────────────────────
+    // A played set is an is_history playlist (ordered tracks) + set-level
+    // metadata here. Residencies group sets (venue/cadence). The per-set
+    // timeline lives on play_history (session_id/sort_order/played_for_sec).
+    `CREATE TABLE IF NOT EXISTS residencies (
+       id         TEXT PRIMARY KEY,
+       name       TEXT NOT NULL DEFAULT '',
+       venue      TEXT NOT NULL DEFAULT '',
+       color      TEXT NOT NULL DEFAULT '#8A8474',
+       cadence    TEXT,
+       notes      TEXT,
+       created_at TEXT NOT NULL DEFAULT (datetime('now'))
+     )`,
+    `CREATE TABLE IF NOT EXISTS set_sessions (
+       id             TEXT PRIMARY KEY,
+       playlist_id    TEXT REFERENCES playlists(id) ON DELETE CASCADE,
+       title          TEXT NOT NULL DEFAULT '',
+       played_on      TEXT,
+       source         TEXT NOT NULL DEFAULT 'imported',
+       device         TEXT,
+       history_ref    TEXT,
+       residency_id   TEXT REFERENCES residencies(id) ON DELETE SET NULL,
+       venue          TEXT,
+       rating         INTEGER,
+       vibe           TEXT,
+       notes          TEXT,
+       recording_path TEXT,
+       status         TEXT NOT NULL DEFAULT 'kept',
+       imported_at    TEXT NOT NULL DEFAULT (datetime('now')),
+       track_count    INTEGER,
+       duration_sec   REAL,
+       avg_bpm        REAL, bpm_min REAL, bpm_max REAL,
+       energy_avg     REAL, harmonic_pct REAL, new_track_pct REAL
+     )`,
+    "CREATE INDEX IF NOT EXISTS idx_set_sessions_played_on ON set_sessions(played_on)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_set_sessions_playlist ON set_sessions(playlist_id)",
+    "ALTER TABLE play_history ADD COLUMN session_id     TEXT",
+    "ALTER TABLE play_history ADD COLUMN sort_order     INTEGER",
+    "ALTER TABLE play_history ADD COLUMN played_for_sec REAL",
+
     // ── Library sync (mobile companion / multi-device) ──────────────────────
     // Content hash gives a file a stable identity across devices, so the same
     // track reconciles even though primary keys are library-local.

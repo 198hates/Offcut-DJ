@@ -957,3 +957,63 @@ export interface UsbExport {
   tracks: UsbTrack[]
   playlists: UsbPlaylistNode[]
 }
+
+// ── Set History ─────────────────────────────────────────────────────────────
+// A played set: an is_history playlist (ordered tracks) + set-level metadata.
+
+export interface SetSummary {
+  id: string
+  playlistId: string | null
+  title: string
+  playedOn: string | null
+  source: string
+  venue: string | null
+  residencyId: string | null
+  rating: number | null
+  vibe: string | null
+  status: string // 'kept' | 'archived' | 'unsorted'
+  trackCount: number | null
+  durationSec: number | null
+  avgBpm: number | null
+  bpmMin: number | null
+  bpmMax: number | null
+  energyAvg: number | null
+  harmonicPct: number | null
+}
+
+export interface SetTrack {
+  trackId: string | null
+  title: string
+  artist: string
+  bpm: number | null
+  key: string | null
+  durationSeconds: number | null
+}
+
+/** A→B handover deltas for spotting rough transitions. */
+export interface SetTransition {
+  index: number // the B track's position
+  bpmDelta: number | null
+  harmonic: boolean | null
+}
+
+export interface SetDetail extends SetSummary {
+  device: string | null
+  notes: string | null
+  recordingPath: string | null
+  tracks: SetTrack[]
+  transitions: SetTransition[]
+}
+
+export interface SetPatch {
+  title?: string
+  venue?: string | null
+  rating?: number | null
+  vibe?: string | null
+  notes?: string | null
+  status?: string
+}
+
+export interface SetListFilter {
+  includeArchived?: boolean
+}

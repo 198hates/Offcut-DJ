@@ -28,6 +28,7 @@ import { exportToIntegration as exportVirtualDj } from '../integrations/virtuald
 import { analyzeBeats, isModelAvailable, getDefaultModelPath, warmModel } from '../integrations/beat-analysis'
 import { writeTagsToFile } from '../integrations/file-tags/writer'
 import { readUsbHistory, findPioneerUsbMount } from '../integrations/pioneer-usb/history-reader'
+import { listSets, getSet, updateSet, deleteSet } from '../library/set-history'
 import { findRekordboxUsbs, readRekordboxUsb, listUsbVolumes, resolveExportPdb } from '../integrations/rekordbox-usb/reader'
 import { usbPreflight } from '../integrations/rekordbox-usb/drive-health'
 import { writePlaylistToUsb, initializeUsb, exportPlaylistsToUsb } from '../integrations/rekordbox-usb/writer'
@@ -971,6 +972,16 @@ ${rows}
       return { error: (err as Error).message }
     }
   })
+
+  // ── Set History tab ──────────────────────────────────────────────────────
+  ipcMain.handle('setHistory:list', (_e, filter?: import('../../shared/types').SetListFilter) =>
+    listSets(getLibraryDb(), filter ?? {})
+  )
+  ipcMain.handle('setHistory:get', (_e, id: string) => getSet(getLibraryDb(), id))
+  ipcMain.handle('setHistory:update', (_e, id: string, patch: import('../../shared/types').SetPatch) =>
+    updateSet(getLibraryDb(), id, patch)
+  )
+  ipcMain.handle('setHistory:delete', (_e, id: string) => deleteSet(getLibraryDb(), id))
 
   // ── Rekordbox USB (prepared stick) — reads PIONEER/rekordbox/export.pdb ──
   ipcMain.handle('rekordboxUsb:find', (): string[] => {

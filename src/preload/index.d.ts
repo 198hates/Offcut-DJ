@@ -8,6 +8,7 @@ import type {
   AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent,
   BackupInfo, SystemInfo, CastDevice, CastStatus,
   SyncStatus, SyncPairingInfo,
+  SetSummary, SetDetail, SetPatch, SetListFilter,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -252,6 +253,12 @@ declare global {
         /** `time` is seconds; `level` is the post-fader RMS (0–1) piggy-backed on the same event. */
         onTimeUpdate: (deckId: string, cb: (time: number, level?: number) => void) => () => void
         onEnded:      (deckId: string, cb: () => void) => () => void
+      }
+      setHistory: {
+        list: (filter?: SetListFilter) => Promise<SetSummary[]>
+        get: (id: string) => Promise<SetDetail | null>
+        update: (id: string, patch: SetPatch) => Promise<SetDetail | null>
+        delete: (id: string) => Promise<boolean>
       }
     }
   }
