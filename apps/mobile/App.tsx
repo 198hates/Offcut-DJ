@@ -37,7 +37,8 @@ import { SyncScreen } from './src/SyncScreen'
 import { TrackScreen } from './src/TrackScreen'
 import { PlaylistScreen } from './src/PlaylistScreen'
 import { C, MONO, MONO_BOLD } from './src/theme'
-import type { Track } from './src/sync-types'
+import { patchAsTrackFields, type BatchFields } from './src/edits'
+import type { Track, TrackPatch } from './src/sync-types'
 
 type RootStackParamList = {
   Main: undefined
@@ -227,6 +228,25 @@ function ConnectedApp({ conn, onDisconnect }: { conn: Connection; onDisconnect: 
   const outbox = useOutbox(client, onDisconnect, lib.refresh)
   const actions = usePlaylistActions(outbox.push, lib)
 
+  // Apply one field across a multi-track selection in a single push.
+  const applyBatch = (ids: string[], fields: BatchFields): void => {
+    const nowIso = new Date().toISOString()
+    const patches: TrackPatch[] = []
+    for (const id of ids) {
+      const t = lib.byId.get(id)
+      if (!t) continue
+      const patch: TrackPatch = { id, updatedAt: nowIso }
+      if (fields.rating !== undefined) patch.rating = fields.rating
+      if (fields.energy !== undefined) patch.energy = fields.energy
+      if (fields.mood !== undefined) patch.mood = fields.mood
+      if (fields.color !== undefined) patch.color = fields.color
+      if (fields.addTag) patch.tags = Array.from(new Set([...(t.tags ?? []), fields.addTag]))
+      patches.push(patch)
+      lib.patchTrack(id, patchAsTrackFields(patch)) // optimistic
+    }
+    if (patches.length) void outbox.push({ tracks: patches })
+  }
+
   // The bottom-tab section, inlined as a render-prop (not `component={...}`) so it
   // re-renders with fresh lib/outbox/actions without remounting the navigator.
   const renderTabs = (): JSX.Element => (
@@ -248,6 +268,7 @@ function ConnectedApp({ conn, onDisconnect }: { conn: Connection; onDisconnect: 
             lib={lib}
             artworkUrl={(id) => client.artworkUrl(id)}
             onSelectTrack={(t) => navigation.navigate('Track', { track: t })}
+            onBatchEdit={applyBatch}
           />
         )}
       </Tabs.Screen>

@@ -6,21 +6,33 @@ import { useMemo, useState } from 'react'
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Artwork } from './Artwork'
+import { BatchEditBar } from './BatchEditBar'
 import { C, MONO, MONO_BOLD } from './theme'
+import type { BatchFields } from './edits'
 import type { LibraryState } from './useLibrary'
 import type { Track } from './sync-types'
 
 export function LibraryScreen({
   lib,
   onSelectTrack,
-  artworkUrl
+  artworkUrl,
+  onBatchEdit
 }: {
   lib: LibraryState
   onSelectTrack: (t: Track) => void
   artworkUrl: (trackId: string) => string
+  onBatchEdit: (ids: string[], fields: BatchFields) => void
 }): JSX.Element {
   const insets = useSafeAreaInsets()
   const [query, setQuery] = useState('')
+
+  // multi-select for batch editing (long-press a row to enter)
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const toggle = (id: string): void =>
+    setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const enterSelect = (id: string): void => { setSelecting(true); setSelected(new Set([id])) }
+  const clearSelect = (): void => { setSelecting(false); setSelected(new Set()) }
 
   const tracks = useMemo<Track[]>(() => {
     const q = query.trim().toLowerCase()
@@ -46,33 +58,49 @@ export function LibraryScreen({
       />
 
       <FlatList
+        style={styles.list}
         data={tracks}
         keyExtractor={(t) => t.id}
         initialNumToRender={18}
         windowSize={11}
         removeClippedSubviews
+        extraData={selected}
         refreshControl={<RefreshControl refreshing={lib.loading} onRefresh={lib.refresh} tintColor={C.accent} />}
-        renderItem={({ item }) => (
-          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]} onPress={() => onSelectTrack(item)}>
-            {item.color ? <View style={[styles.colorBar, { backgroundColor: item.color }]} /> : <View style={styles.colorBar} />}
-            <Artwork url={artworkUrl(item.id)} size={44} label={item.title} color={item.color} />
-            <View style={styles.main}>
-              <Text style={styles.title} numberOfLines={1}>{item.title || '(untitled)'}</Text>
-              <Text style={styles.sub} numberOfLines={1}>{item.artist || '—'}</Text>
-            </View>
-            <View style={styles.badges}>
-              {item.rating > 0 && <Text style={styles.rating}>{'★'.repeat(item.rating)}</Text>}
-              <View style={styles.metaRow}>
-                {item.bpm ? <Text style={styles.bpm}>{Math.round(item.bpm)}</Text> : null}
-                {item.key ? <Text style={styles.key}>{item.key}</Text> : null}
+        renderItem={({ item }) => {
+          const sel = selected.has(item.id)
+          return (
+            <Pressable
+              style={({ pressed }) => [styles.row, pressed && styles.rowPressed, sel && styles.rowSel]}
+              onPress={() => (selecting ? toggle(item.id) : onSelectTrack(item))}
+              onLongPress={() => enterSelect(item.id)}
+            >
+              {selecting && (
+                <View style={[styles.check, sel && styles.checkOn]}>{sel && <Text style={styles.checkMark}>✓</Text>}</View>
+              )}
+              {item.color ? <View style={[styles.colorBar, { backgroundColor: item.color }]} /> : <View style={styles.colorBar} />}
+              <Artwork url={artworkUrl(item.id)} size={44} label={item.title} color={item.color} />
+              <View style={styles.main}>
+                <Text style={styles.title} numberOfLines={1}>{item.title || '(untitled)'}</Text>
+                <Text style={styles.sub} numberOfLines={1}>{item.artist || '—'}</Text>
               </View>
-            </View>
-          </Pressable>
-        )}
+              <View style={styles.badges}>
+                {item.rating > 0 && <Text style={styles.rating}>{'★'.repeat(item.rating)}</Text>}
+                <View style={styles.metaRow}>
+                  {item.bpm ? <Text style={styles.bpm}>{Math.round(item.bpm)}</Text> : null}
+                  {item.key ? <Text style={styles.key}>{item.key}</Text> : null}
+                </View>
+              </View>
+            </Pressable>
+          )
+        }}
         ListEmptyComponent={<Text style={styles.empty}>{lib.loading ? 'Loading…' : 'No tracks'}</Text>}
       />
 
       {lib.error && <Text style={styles.error}>⚠ {lib.error}</Text>}
+
+      {selecting && selected.size > 0 && (
+        <BatchEditBar count={selected.size} onApply={(fields) => onBatchEdit(Array.from(selected), fields)} onClear={clearSelect} />
+      )}
     </View>
   )
 }
@@ -95,8 +123,13 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     fontSize: 14
   },
+  list: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingRight: 16, paddingLeft: 0, gap: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border },
   rowPressed: { backgroundColor: C.panel },
+  rowSel: { backgroundColor: '#D86A4A1F' },
+  check: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: C.muted, marginLeft: 14, alignItems: 'center', justifyContent: 'center' },
+  checkOn: { backgroundColor: C.accent, borderColor: C.accent },
+  checkMark: { color: C.bg, fontSize: 12, fontWeight: '800' },
   colorBar: { width: 3, alignSelf: 'stretch', backgroundColor: 'transparent' },
   main: { flex: 1 },
   title: { color: C.ink, fontFamily: MONO, fontSize: 14 },

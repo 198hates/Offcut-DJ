@@ -23,6 +23,16 @@ export const HOT_CUE_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 /** Mood is a −1 (dark) → +1 (uplifting) float; the phone edits it in steps. */
 export const MOOD_STEPS = [-1, -0.5, 0, 0.5, 1]
 
+/** One field applied across a multi-track selection (batch edit). `addTag`
+ *  unions the tag into each track rather than replacing the tag list. */
+export interface BatchFields {
+  rating?: number
+  energy?: number | null
+  mood?: number | null
+  color?: string
+  addTag?: string
+}
+
 // Prep metadata is edited as a draft (Save). Hot cues are NOT here — like the
 // desktop, they persist immediately from the transport pads (see TrackScreen).
 export interface Draft {
