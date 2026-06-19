@@ -378,7 +378,9 @@ const api = {
     listUsb: (usbRoot: string) =>
       ipcRenderer.invoke('setHistory:listUsb', usbRoot) as Promise<import('../shared/types').UsbHistoryPreview[] | { error: string }>,
     importUsb: (usbRoot: string, refs: string[]) =>
-      ipcRenderer.invoke('setHistory:importUsb', usbRoot, refs) as Promise<import('../shared/types').UsbImportResult | { error: string }>
+      ipcRenderer.invoke('setHistory:importUsb', usbRoot, refs) as Promise<import('../shared/types').UsbImportResult | { error: string }>,
+    compare: (aId: string, bId: string) =>
+      ipcRenderer.invoke('setHistory:compare', aId, bId) as Promise<import('../shared/types').SetComparison | null>
   },
   residencies: {
     list: () => ipcRenderer.invoke('residencies:list') as Promise<import('../shared/types').Residency[]>,

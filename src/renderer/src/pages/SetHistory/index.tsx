@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PageHeader } from '../../components/PageHeader'
-import type { SetSummary, SetDetail, UsbHistoryPreview, Residency, ResidencyDashboard } from '../../../../shared/types'
+import type { SetSummary, SetDetail, UsbHistoryPreview, Residency, ResidencyDashboard, SetComparison, SetCompareSide } from '../../../../shared/types'
 
 function mmss(sec: number | null): string {
   if (!sec || sec <= 0) return '—'
@@ -28,6 +28,7 @@ export function SetHistoryPage(): JSX.Element {
   const [includeArchived, setIncludeArchived] = useState(false)
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
+  const [comparing, setComparing] = useState<string | null>(null)
   const [residencies, setResidencies] = useState<Residency[]>([])
   const [resFilter, setResFilter] = useState<string | null>(null) // selected residency id
   const [dashboard, setDashboard] = useState<ResidencyDashboard | null>(null)
@@ -107,6 +108,7 @@ export function SetHistoryPage(): JSX.Element {
       />
 
       {importing && <ImportUsbModal onClose={() => setImporting(false)} onImported={() => { setImporting(false); void reload() }} />}
+      {comparing && <CompareModal aId={comparing} sets={sets} onClose={() => setComparing(null)} />}
 
       <div className="px-5 pt-4 shrink-0">
         <Heatmap counts={counts} onPickDay={(day) => {
@@ -163,7 +165,7 @@ export function SetHistoryPage(): JSX.Element {
 
         {/* detail */}
         <div className="flex-1 min-w-0 overflow-y-auto">
-          {detail ? <SetDetailPane detail={detail} residencies={residencies} onPatch={patch} onDelete={onDelete} /> : (
+          {detail ? <SetDetailPane detail={detail} residencies={residencies} onPatch={patch} onDelete={onDelete} onCompare={() => setComparing(detail.id)} /> : (
             <div className="h-full flex items-center justify-center">
               <p className="font-mono text-[12px] text-muted/50">Select a set</p>
             </div>
@@ -263,6 +265,82 @@ function ImportUsbModal({ onClose, onImported }: { onClose: () => void; onImport
   )
 }
 
+const CMP_ROWS: { label: string; get: (s: SetCompareSide) => number | null; fmt: (v: number) => string }[] = [
+  { label: 'Tracks', get: (s) => s.trackCount, fmt: (v) => `${v}` },
+  { label: 'Length', get: (s) => s.durationSec, fmt: (v) => mmss(v) },
+  { label: 'Tracks / hr', get: (s) => s.tracksPerHour, fmt: (v) => v.toFixed(1) },
+  { label: 'Avg BPM', get: (s) => s.avgBpm, fmt: (v) => `${Math.round(v)}` },
+  { label: 'BPM range', get: (s) => s.bpmRange, fmt: (v) => `${Math.round(v)}` },
+  { label: 'Energy', get: (s) => s.energyAvg, fmt: (v) => v.toFixed(1) },
+  { label: 'Harmonic %', get: (s) => s.harmonicPct, fmt: (v) => `${Math.round(v)}%` },
+  { label: 'Key diversity', get: (s) => s.keyDiversityPct, fmt: (v) => `${Math.round(v)}%` },
+  { label: 'Rough cuts', get: (s) => s.roughTransitions, fmt: (v) => `${v}` }
+]
+
+function CompareModal({ aId, sets, onClose }: { aId: string; sets: SetSummary[]; onClose: () => void }): JSX.Element {
+  const aIdx = sets.findIndex((s) => s.id === aId)
+  const others = sets.filter((s) => s.id !== aId)
+  const [bId, setBId] = useState<string | null>(sets[aIdx + 1]?.id ?? others[0]?.id ?? null)
+  const [cmp, setCmp] = useState<SetComparison | null>(null)
+  useEffect(() => {
+    if (!bId) { setCmp(null); return }
+    let live = true
+    void window.api.setHistory.compare(aId, bId).then((c) => { if (live) setCmp(c) })
+    return () => { live = false }
+  }, [aId, bId])
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={onClose}>
+      <div className="bg-chassis border border-border/40 rounded-lg w-[640px] max-h-[82vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
+          <p className="font-mono text-[12px] font-bold uppercase tracking-[0.18em] text-ink"><span className="text-accent mr-1.5">⇄</span>Compare sets</p>
+          <button onClick={onClose} className="text-muted/50 hover:text-muted text-sm">✕</button>
+        </div>
+        <div className="px-4 py-3 overflow-y-auto">
+          {!cmp ? <p className="font-mono text-[12px] text-muted py-4">{bId ? 'Comparing…' : 'No other set to compare against.'}</p> : (
+            <>
+              {/* column headers + B picker */}
+              <div className="grid grid-cols-[1.4fr_1fr_1fr_0.8fr] gap-2 items-end pb-2 border-b border-border/30">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-muted">metric</span>
+                <span className="font-mono text-[11px] text-ink truncate" title={cmp.a.title}>{cmp.a.title}</span>
+                <select value={bId ?? ''} onChange={(e) => setBId(e.target.value)} className="font-mono text-[11px] bg-paper border border-border/40 rounded px-1 py-0.5 text-ink min-w-0">
+                  {others.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+                </select>
+                <span className="font-mono text-[10px] uppercase tracking-wider text-muted text-right">Δ</span>
+              </div>
+              {CMP_ROWS.map((r) => {
+                const da = r.get(cmp.a); const dbv = r.get(cmp.b)
+                const d = da != null && dbv != null ? da - dbv : null
+                return (
+                  <div key={r.label} className="grid grid-cols-[1.4fr_1fr_1fr_0.8fr] gap-2 py-1 border-b border-border/15 font-mono text-[12px]">
+                    <span className="text-muted">{r.label}</span>
+                    <span className="text-ink tabular-nums">{da != null ? r.fmt(da) : '—'}</span>
+                    <span className="text-ink tabular-nums">{dbv != null ? r.fmt(dbv) : '—'}</span>
+                    <span className={`tabular-nums text-right ${d == null || d === 0 ? 'text-muted/50' : d > 0 ? 'text-[#6E8059]' : 'text-[#B86E72]'}`}>
+                      {d == null ? '—' : `${d > 0 ? '+' : d < 0 ? '−' : ''}${r.fmt(Math.abs(d))}`}
+                    </span>
+                  </div>
+                )
+              })}
+              {/* track overlap */}
+              <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[11px]">
+                <span className="text-ink"><b className="tabular-nums">{cmp.shared.length}</b> <span className="text-muted">shared</span></span>
+                <span className="text-ink"><b className="tabular-nums">{cmp.onlyA.length}</b> <span className="text-muted">only ◀ A</span></span>
+                <span className="text-ink"><b className="tabular-nums">{cmp.onlyB.length}</b> <span className="text-muted">only B ▶</span></span>
+              </div>
+              {cmp.shared.length > 0 && (
+                <p className="font-mono text-[10px] text-muted/70 mt-2 leading-relaxed">
+                  Shared: {cmp.shared.slice(0, 8).map((t) => t.title).join(', ')}{cmp.shared.length > 8 ? ` +${cmp.shared.length - 8}` : ''}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Pill({ active, color, onClick, children }: { active: boolean; color?: string; onClick: () => void; children: React.ReactNode }): JSX.Element {
   return (
     <button
@@ -313,12 +391,14 @@ function SetDetailPane({
   detail,
   residencies,
   onPatch,
-  onDelete
+  onDelete,
+  onCompare
 }: {
   detail: SetDetail
   residencies: Residency[]
   onPatch: (p: Partial<SetDetail>) => void
   onDelete: () => void
+  onCompare: () => void
 }): JSX.Element {
   const [venue, setVenue] = useState(detail.venue ?? '')
   const [vibe, setVibe] = useState(detail.vibe ?? '')
@@ -336,6 +416,7 @@ function SetDetailPane({
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <button onClick={onCompare} className="font-mono text-[11px] text-accent border border-accent/40 rounded px-2 py-1 hover:bg-accent/[0.08]">Compare</button>
             <button
               onClick={() => onPatch({ status: detail.status === 'archived' ? 'kept' : 'archived' })}
               className="font-mono text-[11px] text-muted hover:text-ink border border-border/40 rounded px-2 py-1"

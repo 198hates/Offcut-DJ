@@ -12,7 +12,7 @@ import type { Database } from 'better-sqlite3'
 import { readUsbHistory } from '../integrations/pioneer-usb/history-reader'
 import type {
   SetDetail, SetListFilter, SetPatch, SetSummary, SetTrack, SetTransition, UsbHistoryPreview, UsbImportResult,
-  Residency, ResidencyPatch, ResidencyRollup, RotationTrack, ResidencyDashboard
+  Residency, ResidencyPatch, ResidencyRollup, RotationTrack, ResidencyDashboard, SetCompareSide, SetComparison
 } from '../../shared/types'
 
 const DATE_RE = /(\d{4})[-./](\d{2})[-./](\d{2})/
@@ -310,6 +310,58 @@ export function deleteSet(db: Database, id: string): boolean {
   })
   tx()
   return true
+}
+
+// ── Comparison ──────────────────────────────────────────────────────────────
+
+function compareSide(db: Database, r: SessionRow): { side: SetCompareSide; ids: PlTrackRow[] } {
+  const rows = r.playlist_id ? setTrackRows(db, r.playlist_id) : []
+  const keys = new Set(rows.map((t) => t.key).filter((k): k is string => !!k))
+  let rough = 0
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1]
+    const b = rows[i]
+    const bpmJump = a.bpm != null && b.bpm != null && Math.abs(b.bpm - a.bpm) > 8
+    if (bpmJump || (a.key && b.key && !camelotAdjacent(a.key, b.key))) rough++
+  }
+  const hours = r.duration_sec ? r.duration_sec / 3600 : 0
+  return {
+    side: {
+      id: r.id,
+      title: r.title,
+      playedOn: r.played_on,
+      trackCount: r.track_count ?? rows.length,
+      durationSec: r.duration_sec,
+      tracksPerHour: hours > 0 ? +(rows.length / hours).toFixed(1) : null,
+      avgBpm: r.avg_bpm,
+      bpmRange: r.bpm_min != null && r.bpm_max != null ? +(r.bpm_max - r.bpm_min).toFixed(1) : null,
+      energyAvg: r.energy_avg,
+      harmonicPct: r.harmonic_pct,
+      keyDiversityPct: rows.length ? +((keys.size / rows.length) * 100).toFixed(0) : null,
+      roughTransitions: rough
+    },
+    ids: rows
+  }
+}
+
+/** Compare two sets: side-by-side metrics + the shared / unique-to-each split. */
+export function compareSets(db: Database, aId: string, bId: string): SetComparison | null {
+  const ra = db.prepare('SELECT * FROM set_sessions WHERE id = ?').get(aId) as SessionRow | undefined
+  const rb = db.prepare('SELECT * FROM set_sessions WHERE id = ?').get(bId) as SessionRow | undefined
+  if (!ra || !rb) return null
+  const a = compareSide(db, ra)
+  const b = compareSide(db, rb)
+  const meta = (t: PlTrackRow): { trackId: string; title: string; artist: string } =>
+    ({ trackId: t.track_id, title: t.title, artist: t.artist })
+  const aIds = new Set(a.ids.map((t) => t.track_id))
+  const bIds = new Set(b.ids.map((t) => t.track_id))
+  return {
+    a: a.side,
+    b: b.side,
+    shared: a.ids.filter((t) => bIds.has(t.track_id)).map(meta),
+    onlyA: a.ids.filter((t) => !bIds.has(t.track_id)).map(meta),
+    onlyB: b.ids.filter((t) => !aIds.has(t.track_id)).map(meta)
+  }
 }
 
 // ── Residencies ─────────────────────────────────────────────────────────────

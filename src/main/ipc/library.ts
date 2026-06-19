@@ -30,7 +30,7 @@ import { writeTagsToFile } from '../integrations/file-tags/writer'
 import { readUsbHistory, findPioneerUsbMount } from '../integrations/pioneer-usb/history-reader'
 import {
   listSets, getSet, updateSet, deleteSet, listUsbHistories, importUsbHistories,
-  listResidencies, createResidency, updateResidency, deleteResidency, residencyDashboard
+  listResidencies, createResidency, updateResidency, deleteResidency, residencyDashboard, compareSets
 } from '../library/set-history'
 import { findRekordboxUsbs, readRekordboxUsb, listUsbVolumes, resolveExportPdb } from '../integrations/rekordbox-usb/reader'
 import { usbPreflight } from '../integrations/rekordbox-usb/drive-health'
@@ -1010,6 +1010,7 @@ ${rows}
   )
   ipcMain.handle('residencies:delete', (_e, id: string) => (deleteResidency(getLibraryDb(), id), true))
   ipcMain.handle('residencies:dashboard', (_e, id: string) => residencyDashboard(getLibraryDb(), id))
+  ipcMain.handle('setHistory:compare', (_e, aId: string, bId: string) => compareSets(getLibraryDb(), aId, bId))
 
   // ── Rekordbox USB (prepared stick) — reads PIONEER/rekordbox/export.pdb ──
   ipcMain.handle('rekordboxUsb:find', (): string[] => {

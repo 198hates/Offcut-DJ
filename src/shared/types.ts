@@ -1066,6 +1066,31 @@ export interface ResidencyDashboard {
   rotation: RotationTrack[]
 }
 
+/** One side of a set comparison — set_sessions metrics + a few computed ones. */
+export interface SetCompareSide {
+  id: string
+  title: string
+  playedOn: string | null
+  trackCount: number
+  durationSec: number | null
+  tracksPerHour: number | null
+  avgBpm: number | null
+  bpmRange: number | null
+  energyAvg: number | null
+  harmonicPct: number | null
+  keyDiversityPct: number | null // distinct keys / tracks
+  roughTransitions: number
+}
+
+/** A→B set comparison: side-by-side metrics + the shared/unique track split. */
+export interface SetComparison {
+  a: SetCompareSide
+  b: SetCompareSide
+  shared: { trackId: string; title: string; artist: string }[]
+  onlyA: { trackId: string; title: string; artist: string }[]
+  onlyB: { trackId: string; title: string; artist: string }[]
+}
+
 /** A HISTORY set on a Pioneer stick, previewed before import. */
 export interface UsbHistoryPreview {
   ref: string // dedupe key: `HISTORY NNN@<volume>`

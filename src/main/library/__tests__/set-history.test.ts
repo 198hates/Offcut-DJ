@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import Database from 'better-sqlite3'
 import { applySchema } from '../schema'
-import { camelotAdjacent, backfillSetSessions, listSets, getSet, updateSet, deleteSet, createResidency, residencyDashboard } from '../set-history'
+import { camelotAdjacent, backfillSetSessions, listSets, getSet, updateSet, deleteSet, createResidency, residencyDashboard, compareSets } from '../set-history'
 
 function freshDb(): Database.Database {
   const db = new Database(':memory:')
@@ -115,5 +115,26 @@ describe('set history', () => {
     expect(byId.get(y)).toMatchObject({ plays: 2, streak: 0, lastAgo: 1 })
     // Z played once → below the rotation threshold (plays > 1)
     expect(byId.has(z)).toBe(false)
+  })
+
+  it('compareSets: side metrics + shared/unique split', () => {
+    const db = freshDb()
+    const x = track(db, { bpm: 120, key: '8A', dur: 600 })
+    const y = track(db, { bpm: 126, key: '9A', dur: 600 }) // harmonic w/ x
+    const z = track(db, { bpm: 140, key: '2A', dur: 600 }) // bpm jump + non-harmonic w/ y → rough
+    const w = track(db, { bpm: 122, key: '8A', dur: 600 })
+    historyPlaylist(db, 'A 2026-06-14', [x, y, z])
+    historyPlaylist(db, 'B 2026-06-07', [x, w])
+    const [a, b] = listSets(db) // newest first → A, B
+
+    const cmp = compareSets(db, a.id, b.id)!
+    expect(cmp.a.trackCount).toBe(3)
+    expect(cmp.a.tracksPerHour).toBe(6) // 3 tracks / 0.5h
+    expect(cmp.a.keyDiversityPct).toBe(100) // 3 distinct keys / 3
+    expect(cmp.a.roughTransitions).toBe(1) // y→z
+    expect(cmp.b.roughTransitions).toBe(0) // x→w harmonic, bpm jump 2
+    expect(cmp.shared.map((t) => t.trackId)).toEqual([x])
+    expect(cmp.onlyA.map((t) => t.trackId).sort()).toEqual([y, z].sort())
+    expect(cmp.onlyB.map((t) => t.trackId)).toEqual([w])
   })
 })
