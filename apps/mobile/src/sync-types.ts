@@ -151,6 +151,8 @@ export interface PlaylistPatch {
   name?: string
   color?: string
   trackIds?: string[]
+  isSmart?: boolean
+  rules?: SmartRule[]
 }
 
 export interface SyncPushPayload {

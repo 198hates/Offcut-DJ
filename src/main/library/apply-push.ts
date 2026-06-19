@@ -83,11 +83,14 @@ function applyPlaylistPatch(db: Database, patch: PlaylistPatch): boolean {
   }
 
   if (!row) {
-    // Create — the phone supplies the id (a uuid it generated).
-    db.prepare('INSERT INTO playlists (id, name, color, updated_at) VALUES (?, ?, ?, ?)').run(
+    // Create — the phone supplies the id (a uuid it generated). Smart playlists
+    // carry an `is_smart` flag + a JSON rule set; regular ones default to neither.
+    db.prepare('INSERT INTO playlists (id, name, color, is_smart, rules, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(
       patch.id,
       patch.name ?? 'Playlist',
       patch.color ?? '#8A8474',
+      patch.isSmart ? 1 : 0,
+      JSON.stringify(patch.rules ?? []),
       patch.updatedAt
     )
     if (patch.trackIds) replaceMembership(db, patch.id, patch.trackIds)
@@ -104,6 +107,14 @@ function applyPlaylistPatch(db: Database, patch: PlaylistPatch): boolean {
   if ('color' in patch && patch.color !== undefined) {
     sets.push('color = ?')
     values.push(patch.color)
+  }
+  if ('isSmart' in patch && patch.isSmart !== undefined) {
+    sets.push('is_smart = ?')
+    values.push(patch.isSmart ? 1 : 0)
+  }
+  if ('rules' in patch && patch.rules !== undefined) {
+    sets.push('rules = ?')
+    values.push(JSON.stringify(patch.rules))
   }
   sets.push('updated_at = ?')
   values.push(patch.updatedAt)

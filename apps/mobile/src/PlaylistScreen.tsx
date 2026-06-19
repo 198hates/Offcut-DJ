@@ -7,6 +7,8 @@ import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'r
 import { TRACK_COLORS } from './edits'
 import { move, isEditable } from './playlists'
 import { playlistTracks } from './smartRules'
+import { SmartPlaylistEditor } from './SmartPlaylistEditor'
+import type { SmartRule } from './sync-types'
 import type { PlaylistActions } from './usePlaylists'
 import type { LibraryState } from './useLibrary'
 import type { Track } from './sync-types'
@@ -31,6 +33,9 @@ export function PlaylistScreen({
   const [order, setOrder] = useState<string[]>(playlist?.trackIds ?? [])
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const [smartOpen, setSmartOpen] = useState(false)
+  const countFor = (rules: SmartRule[]): number =>
+    playlist ? playlistTracks({ ...playlist, isSmart: true, rules }, lib.tracks, lib.byId).length : 0
 
   // Editable playlists render their (draft) order; smart playlists evaluate their
   // rules client-side for a read-only track view.
@@ -127,7 +132,16 @@ export function PlaylistScreen({
         </View>
       )}
 
-      {!editable && <Text style={styles.note}>This is a smart playlist / folder — read-only on the phone.</Text>}
+      {!editable && (
+        <View style={styles.smartNote}>
+          <Text style={styles.note}>{playlist.isSmart ? 'Smart playlist — tracks match its rules.' : 'Folder — read-only on the phone.'}</Text>
+          {playlist.isSmart && (
+            <Pressable style={styles.editRules} onPress={() => setSmartOpen(true)}>
+              <Text style={styles.editRulesTxt}>✨ Edit rules</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
 
       <FlatList
         data={rows}
@@ -170,6 +184,18 @@ export function PlaylistScreen({
           )}
         </View>
       )}
+
+      {playlist.isSmart && smartOpen && (
+        <SmartPlaylistEditor
+          visible
+          mode="edit"
+          initialName={playlist.name}
+          initialRules={playlist.rules}
+          countFor={countFor}
+          onSave={(nm, rules) => { void actions.update(playlist, { name: nm, rules, isSmart: true }).catch((e) => setMsg((e as Error).message)) }}
+          onClose={() => setSmartOpen(false)}
+        />
+      )}
     </View>
   )
 }
@@ -183,7 +209,10 @@ const styles = StyleSheet.create({
   titleInput: {
     color: '#ECE3CC', fontSize: 22, fontWeight: '700', borderBottomWidth: 1, borderBottomColor: '#3a352b', paddingVertical: 4, marginBottom: 10
   },
-  note: { color: '#7a7264', fontSize: 12, marginBottom: 10 },
+  note: { color: '#7a7264', fontSize: 12 },
+  smartNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 10 },
+  editRules: { borderWidth: 1, borderColor: '#D86A4A', borderRadius: 6, paddingHorizontal: 12, paddingVertical: 6 },
+  editRulesTxt: { color: '#D86A4A', fontSize: 12 },
   swatchRow: { flexDirection: 'row', gap: 8, marginBottom: 14, flexWrap: 'wrap' },
   swatch: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: 'transparent' },
   swatchOn: { borderColor: '#ECE3CC' },

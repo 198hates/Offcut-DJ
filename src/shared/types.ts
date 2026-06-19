@@ -277,6 +277,9 @@ export interface PlaylistPatch {
   name?: string
   color?: string
   trackIds?: string[]
+  /** Smart-playlist rule set (phone can create/edit rule-based playlists). */
+  isSmart?: boolean
+  rules?: SmartRule[]
 }
 
 export interface SyncPushPayload {

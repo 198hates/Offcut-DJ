@@ -7,10 +7,11 @@ import { useMemo, useState } from 'react'
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { playlistTracks } from './smartRules'
+import { SmartPlaylistEditor } from './SmartPlaylistEditor'
 import { C, MONO, MONO_BOLD } from './theme'
 import type { PlaylistActions } from './usePlaylists'
 import type { LibraryState } from './useLibrary'
-import type { Playlist } from './sync-types'
+import type { Playlist, SmartRule } from './sync-types'
 
 export function PlaylistsScreen({
   lib,
@@ -23,6 +24,9 @@ export function PlaylistsScreen({
 }): JSX.Element {
   const insets = useSafeAreaInsets()
   const [newName, setNewName] = useState('')
+  const [smartOpen, setSmartOpen] = useState(false)
+  const countFor = (rules: SmartRule[]): number =>
+    playlistTracks({ isSmart: true, rules } as Playlist, lib.tracks, lib.byId).length
 
   const smartCounts = useMemo<Map<string, number>>(() => {
     const m = new Map<string, number>()
@@ -63,6 +67,9 @@ export function PlaylistsScreen({
             <Pressable style={[styles.newBtn, !newName.trim() && styles.newBtnOff]} disabled={!newName.trim()} onPress={create}>
               <Text style={styles.newBtnTxt}>Create</Text>
             </Pressable>
+            <Pressable style={styles.smartBtn} onPress={() => setSmartOpen(true)}>
+              <Text style={styles.smartTxt}>✨</Text>
+            </Pressable>
           </View>
         }
         renderItem={({ item }) => {
@@ -80,6 +87,18 @@ export function PlaylistsScreen({
         }}
         ListEmptyComponent={<Text style={styles.empty}>No playlists</Text>}
       />
+
+      {smartOpen && (
+        <SmartPlaylistEditor
+          visible
+          mode="create"
+          initialName={newName.trim()}
+          initialRules={[]}
+          countFor={countFor}
+          onSave={(name, rules) => { setNewName(''); void actions.createSmart(name, rules) }}
+          onClose={() => setSmartOpen(false)}
+        />
+      )}
     </View>
   )
 }
@@ -94,6 +113,8 @@ const styles = StyleSheet.create({
   newBtn: { backgroundColor: C.accent, borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' },
   newBtnOff: { backgroundColor: C.panel },
   newBtnTxt: { color: C.bg, fontFamily: MONO_BOLD, fontSize: 13 },
+  smartBtn: { borderWidth: 1, borderColor: C.accent, borderRadius: 8, paddingHorizontal: 12, justifyContent: 'center' },
+  smartTxt: { fontSize: 16 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border },
   rowPressed: { backgroundColor: C.panel },
   icon: { width: 34, height: 34, borderRadius: 6, backgroundColor: C.paper, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },

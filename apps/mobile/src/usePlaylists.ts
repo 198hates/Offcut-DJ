@@ -5,7 +5,7 @@
 import { useMemo } from 'react'
 import { newLocalPlaylist, withTrack } from './playlists'
 import type { LibraryState } from './useLibrary'
-import type { Playlist, SyncPushPayload, SyncPushResult } from './sync-types'
+import type { Playlist, SmartRule, SyncPushPayload, SyncPushResult } from './sync-types'
 
 const STALE = 'Desktop has newer changes — pull to refresh.'
 
@@ -17,10 +17,13 @@ export interface PlaylistEdit {
   name?: string
   color?: string
   trackIds?: string[]
+  isSmart?: boolean
+  rules?: SmartRule[]
 }
 
 export interface PlaylistActions {
   create: (name: string) => Promise<Playlist>
+  createSmart: (name: string, rules: SmartRule[]) => Promise<Playlist>
   update: (p: Playlist, edit: PlaylistEdit) => Promise<void>
   remove: (p: Playlist) => Promise<void>
   addTrack: (p: Playlist, trackId: string) => Promise<void>
@@ -39,6 +42,18 @@ export function usePlaylistActions(push: Push, lib: LibraryState): PlaylistActio
         return p
       } catch (e) {
         lib.removePlaylist(p.id) // roll back on a hard failure (e.g. auth)
+        throw e
+      }
+    }
+
+    const createSmart = async (name: string, rules: SmartRule[]): Promise<Playlist> => {
+      const p: Playlist = { ...newLocalPlaylist(name), isSmart: true, rules }
+      lib.upsertPlaylist(p) // optimistic
+      try {
+        await push({ playlists: [{ id: p.id, updatedAt: now(), name: p.name, color: p.color, isSmart: true, rules }] })
+        return p
+      } catch (e) {
+        lib.removePlaylist(p.id)
         throw e
       }
     }
@@ -74,6 +89,6 @@ export function usePlaylistActions(push: Push, lib: LibraryState): PlaylistActio
     const addTrack = (p: Playlist, trackId: string): Promise<void> =>
       update(p, { trackIds: withTrack(p.trackIds, trackId) })
 
-    return { create, update, remove, addTrack }
+    return { create, createSmart, update, remove, addTrack }
   }, [push, lib])
 }
