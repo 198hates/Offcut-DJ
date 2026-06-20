@@ -23,7 +23,11 @@ export function registerSettingsHandlers(): void {
   // ── Licence ───────────────────────────────────────────────────────────────
   ipcMain.handle('licence:status', () => {
     const s = getSettings()
-    return { activated: !!s.licenceActivated, key: s.licenceKey ?? '' }
+    // Re-validate the stored key, not just the flag — so editing the
+    // licenceActivated boolean in settings.json can't bypass the gate, and a
+    // rotated build secret invalidates old keys on next launch.
+    const activated = !!s.licenceActivated && isValidLicenceKey(s.licenceKey ?? '')
+    return { activated, key: s.licenceKey ?? '' }
   })
   ipcMain.handle('licence:activate', (_e, key: string) => {
     const ok = isValidLicenceKey(key)
