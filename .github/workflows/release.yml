@@ -45,11 +45,14 @@ jobs:
         with:
           workspaces: native/audio-engine
 
-      # postinstall runs `electron-builder install-app-deps`, rebuilding the
-      # native node modules (better-sqlite3, onnxruntime-node, …) for this
-      # runner's OS + arch.
+      # `npm install` (not `npm ci`) so each runner fetches its own platform's
+      # native optional deps — npm omits cross-platform optionals like
+      # @rollup/rollup-win32-x64-msvc from a lockfile generated on another OS
+      # (npm/cli#4828). The committed lockfile still pins the resolved tree.
+      # postinstall then runs `electron-builder install-app-deps`, rebuilding the
+      # native node modules (better-sqlite3, onnxruntime-node, …) for this arch.
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       # SQLCipher needs its own @electron/rebuild against the exact Electron
       # version for this arch.
