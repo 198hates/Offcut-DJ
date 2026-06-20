@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema'
-import { getAnthropic, AI_MODEL, AI_CHEAP_MODEL } from '../integrations/ai/client'
+import { getAnthropic, AI_REASON_MODEL, AI_CHEAP_MODEL } from '../integrations/ai/client'
 import { runAgent } from '../integrations/ai/agent'
 import { getSettings } from '../settings'
 import type {
@@ -167,9 +167,11 @@ export function registerAiHandlers(): void {
       if (!query.trim()) return { error: 'Empty search.' }
       try {
         const msg = await client.messages.parse({
-          model: AI_MODEL,
+          // Haiku: turning a phrase into a structured filter is cheap extraction,
+          // not reasoning. (No `effort` param — Haiku rejects it.)
+          model: AI_CHEAP_MODEL,
           max_tokens: 1024,
-          output_config: { effort: 'low', format: jsonSchemaOutputFormat(FILTER_SCHEMA) },
+          output_config: { format: jsonSchemaOutputFormat(FILTER_SCHEMA) },
           system: SEARCH_SYSTEM,
           messages: [
             {
@@ -204,10 +206,12 @@ export function registerAiHandlers(): void {
       try {
         const intentLine = intent?.trim() ? `Intent: ${intent.trim()}\n\n` : ''
         const msg = await client.messages.parse({
-          model: AI_MODEL,
+          // Sonnet handles harmonic/energy set ordering well at a fraction of
+          // Opus's cost; medium effort caps the thinking spend.
+          model: AI_REASON_MODEL,
           max_tokens: 8192,
           thinking: { type: 'adaptive' },
-          output_config: { format: jsonSchemaOutputFormat(SEQ_SCHEMA) },
+          output_config: { effort: 'medium', format: jsonSchemaOutputFormat(SEQ_SCHEMA) },
           system: SEQ_SYSTEM,
           messages: [
             { role: 'user', content: intentLine + `Tracks:\n${JSON.stringify(tracks)}` }
@@ -280,10 +284,14 @@ export function registerAiHandlers(): void {
           ? `the record "${title}"${artist ? ` by ${artist}` : ''}`
           : `the artist ${artist}`
         const msg = await client.messages.create({
-          model: AI_MODEL,
-          max_tokens: 4096,
+          // Web search is the single most expensive action: each search injects
+          // large page content that's re-read every round. Haiku (5× cheaper
+          // tokens than Opus) plus a 2-search cap keeps a dig to cents, not
+          // dollars. A smaller output cap trims the closing summary too.
+          model: AI_CHEAP_MODEL,
+          max_tokens: 1536,
           system: DIG_SYSTEM,
-          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }],
+          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 2 }],
           messages: [{ role: 'user', content: `Research ${who} for crate-digging.` }]
         })
 

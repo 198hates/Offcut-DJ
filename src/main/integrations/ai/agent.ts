@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { randomUUID } from 'crypto'
-import { getAnthropic, AI_MODEL } from './client'
+import { getAnthropic, AI_REASON_MODEL } from './client'
 import { getLibraryDb, rowToTrack } from '../../library/db'
 import type { Track, AiAgentEvent } from '../../../shared/types'
 
@@ -40,7 +40,7 @@ const TOOLS: Anthropic.Tool[] = [
         artist: { type: 'string', description: 'case-insensitive substring match on artist' },
         unplayed: { type: 'boolean', description: 'only tracks never played' },
         hasGrid: { type: 'boolean', description: 'only tracks with a beat grid' },
-        limit: { type: 'number', description: 'max rows to return (default 60, max 200)' }
+        limit: { type: 'number', description: 'max rows to return (default 40, max 80)' }
       }
     }
   },
@@ -102,7 +102,10 @@ function doSearch(input: SearchInput): { count: number; returned: number; tracks
   if (artist) r = r.filter((t) => (t.artist || '').toLowerCase().includes(artist))
   if (input.unplayed) r = r.filter((t) => t.playCount === 0)
   if (input.hasGrid) r = r.filter((t) => t.beatgrid.length > 0)
-  const limit = Math.min(Math.max(1, input.limit ?? 60), 200)
+  // Cap returned rows tightly: every track here is re-sent on every later turn,
+  // so a 200-row result is paid for many times over. `count` still reports the
+  // true total so the model knows to narrow its filter.
+  const limit = Math.min(Math.max(1, input.limit ?? 40), 80)
   return { count: r.length, returned: Math.min(r.length, limit), tracks: r.slice(0, limit).map(compact) }
 }
 
@@ -176,7 +179,10 @@ How to work:
 
 Keep replies concise. After acting, briefly tell the user what you did and name the playlist you created. Never invent track ids — only use ids returned by search_library.`
 
-const MAX_TURNS = 8
+// Each turn re-sends the whole transcript, so cost grows quadratically with the
+// turn count. 5 is enough for a search-filter-build flow; the cap stops a
+// confused loop from quietly running up a bill.
+const MAX_TURNS = 5
 
 /**
  * Run the agent for one user message, emitting events as it goes. Resolves when
@@ -197,8 +203,12 @@ export async function runAgent(
   try {
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       const res = await client.messages.create({
-        model: AI_MODEL,
-        max_tokens: 4096,
+        // Sonnet + low effort: the agent re-sends a growing transcript every
+        // turn, so the per-token rate and the turn count dominate cost. Opus
+        // here was the main credit sink.
+        model: AI_REASON_MODEL,
+        max_tokens: 2048,
+        output_config: { effort: 'low' },
         system: AGENT_SYSTEM,
         tools: TOOLS,
         messages
