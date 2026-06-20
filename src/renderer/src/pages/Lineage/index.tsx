@@ -108,7 +108,7 @@ export function LineagePage(): JSX.Element {
 
   // AI crate-dig context (web-grounded).
   const aiEnabled = useAiStatus()
-  const [aiDig, setAiDig] = useState<{ key: string; data: AiDigResult } | null>(null)
+  const [aiDig, setAiDig] = useState<{ key: string; seedId: string | null; data: AiDigResult } | null>(null)
   const [aiDigBusy, setAiDigBusy] = useState(false)
   const [aiDigError, setAiDigError] = useState<string | null>(null)
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set())
@@ -344,13 +344,14 @@ export function LineagePage(): JSX.Element {
       const title = (ti || '').trim()
       if (!artist && !title) return
       const key = `${artist} ${title}`
+      const seedId = selectedRef.current?.id ?? null // node the dig ran on, for "Add to graph"
       setAiDigBusy(true)
       setAiDigError(null)
       setAiDig(null)
       try {
         const { result, error } = await window.api.ai.digContext({ artist, title })
         if (error || !result) setAiDigError(error ?? 'No context found.')
-        else setAiDig({ key, data: result })
+        else setAiDig({ key, seedId, data: result })
       } catch (e) {
         setAiDigError((e as Error).message)
       } finally {
@@ -941,6 +942,21 @@ export function LineagePage(): JSX.Element {
                 {!aiDigBusy && aiDig && (
                   <>
                     <p className="cd-aidig-summary">{aiDig.data.summary}</p>
+                    {aiDig.data.suggestions.length > 0 && (
+                      <button
+                        className="cd-btn cd-aidig-add"
+                        onClick={() =>
+                          controllerRef.current?.addBranch(
+                            aiDig.seedId,
+                            'AI PICKS',
+                            aiDig.data.suggestions
+                          )
+                        }
+                        title="Add these picks as a new branch on the graph"
+                      >
+                        ＋ Add {aiDig.data.suggestions.length} to graph
+                      </button>
+                    )}
                     {aiDig.data.suggestions.length > 0 && (
                       <div className="cd-aidig-list">
                         {aiDig.data.suggestions.map((s, i) => (

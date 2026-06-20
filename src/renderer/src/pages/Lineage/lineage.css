@@ -20,6 +20,7 @@
   --amber: #e0a83c;
   --silver: #c2c9b6;
   --orchid: #c98bbf;
+  --violet: #b79cff; /* AI-suggested branch — distinct from the earthy route palette */
 
   position: relative;
   height: 100%;
@@ -233,6 +234,10 @@
 .cd-detail {
   padding: 24px 22px 18px;
   border-bottom: 1px solid var(--line);
+  /* Selection info (incl. the AI-dig box + preview) can outgrow the panel —
+     let it scroll instead of clipping. Shares the column with .cd-listwrap. */
+  min-height: 0;
+  overflow-y: auto;
 }
 .cd-art {
   width: 100%;
@@ -1076,6 +1081,9 @@
 .cd-cy .card.dir.t-deezer {
   background: var(--peach);
 }
+.cd-cy .card.dir.t-ai {
+  background: var(--violet);
+}
 .cd-cy .card.dir.t-comp {
   background: var(--orchid);
 }
@@ -1389,6 +1397,13 @@
   line-height: 1.55;
   color: var(--text);
   margin: 0 0 10px;
+}
+.cd-aidig-add {
+  width: 100%;
+  justify-content: center;
+  margin: 0 0 10px;
+  border-color: color-mix(in srgb, var(--violet) 45%, var(--line));
+  color: var(--violet);
 }
 .cd-aidig-list {
   display: flex;

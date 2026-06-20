@@ -775,7 +775,7 @@ export interface Candidate {
 
 /**
  * The route family a direction belongs to — drives the viewer's branch colour.
- * remix · label · players · listener · deezer · sample · comp · set
+ * remix · label · players · listener · deezer · sample · comp · set · ai
  */
 export type RouteType =
   | 'remix'
@@ -786,6 +786,7 @@ export type RouteType =
   | 'sample'
   | 'comp'
   | 'set'
+  | 'ai'
 
 /** One branch off a seed: a typed, titled, ranked pool the UI windows to 5. */
 export interface Direction {

@@ -58,7 +58,8 @@ const ROUTE_SOURCE: Record<RouteType, string> = {
   listener: 'Last.fm',
   deezer: 'Deezer',
   sample: 'MusicBrainz',
-  set: '1001Tracklists'
+  set: '1001Tracklists',
+  ai: 'AI'
 }
 
 export interface LineageWebOptions {
@@ -80,6 +81,16 @@ export interface LineageWebController {
   selectByCandidateKey: (key: string) => void
   /** Patch a node's BPM/key (e.g. once a Deezer preview resolves) and refresh its card. */
   setMeta: (id: string, meta: { bpm?: number | null; key?: string | null }) => void
+  /**
+   * Graft a new branch (e.g. AI-suggested picks) onto an existing node, revealed.
+   * `seedId` is the node to hang it off (falls back to the origin); each pick
+   * becomes a track card in the branch's pool.
+   */
+  addBranch: (
+    seedId: string | null,
+    label: string,
+    picks: { artist: string; title: string; why?: string }[]
+  ) => void
   destroy: () => void
 }
 
@@ -164,7 +175,8 @@ export function createLineageWeb(
     players: col('--silver'),
     listener: col('--teal'),
     deezer: col('--peach'),
-    comp: col('--orchid')
+    comp: col('--orchid'),
+    ai: col('--violet')
   }
 
   const cy: Core = cytoscape({
@@ -463,7 +475,7 @@ export function createLineageWeb(
     return n
   }
 
-  function addDirections(seedNode: NodeSingular, directions: Direction[]): void {
+  function addDirections(seedNode: NodeSingular, directions: Direction[]): NodeSingular[] {
     const nodes = directions.map((d) => {
       const id = uid('dir')
       dirs[id] = {
@@ -485,6 +497,7 @@ export function createLineageWeb(
     const sp = seedNode.position()
     nodes.forEach((n) => n.position({ x: sp.x, y: sp.y }))
     if (nodes.length) runLayout()
+    return nodes
   }
 
   function window5(d: DirModel): Candidate[] {
@@ -902,6 +915,39 @@ export function createLineageWeb(
         if (camelotOk(seedKey, meta.key)) n.addClass('harmonic')
       }
       refreshCard(n)
+    },
+    addBranch: (seedId, label, picks) => {
+      let seedNode = seedId ? cy.$id(seedId) : null
+      if (!seedNode || !seedNode.length) seedNode = originId ? cy.$id(originId) : null
+      if (!seedNode || !seedNode.length) return
+      const seen = new Set<string>()
+      const pool: Candidate[] = []
+      for (const p of picks) {
+        const artist = (p.artist || '').trim()
+        const title = (p.title || '').trim()
+        if (!artist && !title) continue
+        const key = `ai ${artist} ${title}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+        if (seen.has(key)) continue
+        seen.add(key)
+        pool.push({
+          key,
+          artist,
+          title,
+          label: null,
+          year: null,
+          discogs_id: null,
+          why: p.why || `AI pick related to ${seeds[seedNode!.id()]?.title ?? 'your seed'}`,
+          score: 72
+        })
+      }
+      if (!pool.length) return
+      const [dirNode] = addDirections(seedNode, [
+        { id: 'aibranch:' + uid('d'), type: 'ai', title: label, pool }
+      ])
+      if (dirNode) {
+        showTracks(dirNode)
+        select(dirNode)
+      }
     },
     destroy: () => {
       cancelAnimationFrame(raf)
