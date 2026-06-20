@@ -87,7 +87,28 @@ export async function enrich(discogs: DiscogsClient, input: EnrichInput): Promis
   // No release id? Search by artist + title (exact, then fuzzy) and take the best hit.
   if (!releaseId) {
     const results = await searchReleaseResults(discogs, input.artist, input.title)
-    if (!results.length) return null
+    if (!results.length) {
+      // No Discogs match (newer / underground / mistagged release). Don't dead-end
+      // the dig — return a minimal seed from the artist/title so the keyless sonic
+      // routes (Deezer related-artists especially) can still build a graph. The
+      // Discogs-fed routes (credits / labels / comps) simply stay empty.
+      const artist = (input.artist || '').trim()
+      const title = (input.title || '').trim()
+      if (!artist && !title) return null
+      return {
+        releaseId: null,
+        artist,
+        artists: [],
+        title,
+        year: null,
+        labels: [],
+        styles: [],
+        genres: [],
+        remixers: [],
+        producers: [],
+        players: []
+      }
+    }
     releaseId = results[0].id
   }
 

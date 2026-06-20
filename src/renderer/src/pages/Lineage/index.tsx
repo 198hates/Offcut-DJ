@@ -308,7 +308,7 @@ export function LineagePage(): JSX.Element {
         setStatusMsg('discovering — following credits, labels, listeners & sets…')
         const res = await window.api.lineage.discover(s, { filters: filtersRef.current })
         if (!res.directions.length) {
-          setError('No directions surfaced — try a seed with richer Discogs credits.')
+          setError('No connections surfaced for that seed — try a different track.')
           setPhase('error')
           return
         }
@@ -956,6 +956,11 @@ export function LineagePage(): JSX.Element {
                 {!aiDigBusy && aiDig && (
                   <>
                     <p className="cd-aidig-summary">{aiDig.data.summary}</p>
+                    {aiDig.data.costUsd != null && (
+                      <div className="cd-aidig-cost">
+                        ≈ ${aiDig.data.costUsd < 0.01 ? aiDig.data.costUsd.toFixed(4) : aiDig.data.costUsd.toFixed(3)} · this dig
+                      </div>
+                    )}
                     {aiDig.data.suggestions.length > 0 && (
                       <button
                         className="cd-btn cd-aidig-add"

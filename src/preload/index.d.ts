@@ -182,6 +182,8 @@ declare global {
       /** AI features bridge (Claude). Metadata only — never audio. */
       ai: {
         status: () => Promise<{ enabled: boolean; hasKey: boolean }>
+        usage: () => Promise<{ usage: import('../shared/types').AiUsage; budgetUsd: number | null }>
+        resetUsage: () => Promise<import('../shared/types').AiUsage>
         nlSearch: (
           query: string,
           facets: { genres: string[]; keys: string[] }

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, createContext, useContext } from 'react'
-import type { AppSettings, SystemInfo } from '@shared/types'
+import type { AppSettings, SystemInfo, AiUsage } from '@shared/types'
 import { suggestConcurrency } from '../../lib/concurrency'
 import { CueTemplateEditor } from '../../components/CueTemplateEditor'
 import { CastPanel } from '../../components/CastPanel'
@@ -364,6 +364,10 @@ export function SettingsPage(): JSX.Element {
             editing.
           </span>
         </div>
+        <AiSpend
+          budgetUsd={settings.aiMonthlyBudgetUsd ?? null}
+          onBudget={(v) => patch({ aiMonthlyBudgetUsd: v })}
+        />
       </Section>
 
       {/* Stems */}
@@ -919,5 +923,84 @@ function QuickImportButton({ label, onClick }: { label: string; onClick: () => P
     >
       {loading ? 'importing…' : `import from ${label}`}
     </button>
+  )
+}
+
+// AI spend readout + monthly cap (Settings → AI). Cost is estimated from token
+// usage × per-model rates — a guide, not the actual bill.
+function AiSpend({
+  budgetUsd,
+  onBudget
+}: {
+  budgetUsd: number | null
+  onBudget: (v: number | null) => void
+}): JSX.Element {
+  const [usage, setUsage] = useState<AiUsage | null>(null)
+  const load = useCallback(() => {
+    window.api.ai
+      .usage()
+      .then((r) => setUsage(r.usage))
+      .catch(() => {})
+  }, [])
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const fmt = (n: number): string => (n > 0 && n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`)
+  const over = budgetUsd != null && budgetUsd > 0 && usage != null && usage.monthUsd >= budgetUsd
+
+  return (
+    <div className="space-y-2">
+      <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted block">
+        Estimated spend
+      </label>
+      <div className="font-mono text-[12px] text-muted/80 bg-ink/[0.03] border border-border/30 rounded p-3 space-y-1">
+        <div>
+          This month: <span className="text-ink">{usage ? fmt(usage.monthUsd) : '—'}</span>
+          {budgetUsd ? <span className="text-muted/60"> / ${budgetUsd.toFixed(2)} cap</span> : null}
+        </div>
+        <div>
+          All time: <span className="text-ink">{usage ? fmt(usage.totalUsd) : '—'}</span> ·{' '}
+          {usage?.calls ?? 0} calls
+        </div>
+        <div className="text-muted/60 text-[11px] leading-relaxed">
+          Estimated from token usage × per-model rates — a guide, not a bill. Set a hard cap in the
+          Anthropic Console for the real backstop.
+        </div>
+      </div>
+      <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted block">
+        Monthly budget (USD)
+      </label>
+      <p className="font-mono text-[12px] text-muted/70">
+        When this month&apos;s estimate reaches the cap, AI features are paused until you raise or
+        clear it. Leave blank for no cap. Save settings after editing.
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min={0}
+          step="0.5"
+          value={budgetUsd ?? ''}
+          onChange={(e) => {
+            const v = e.target.value.trim()
+            onBudget(v === '' ? null : Math.max(0, Number(v) || 0))
+          }}
+          placeholder="no cap"
+          className="w-32 bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/60"
+        />
+        <button
+          onClick={() =>
+            window.api.ai
+              .resetUsage()
+              .then(setUsage)
+              .catch(() => {})
+          }
+          className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-ink px-2 py-1 border border-border/40 rounded"
+        >
+          Reset counter
+        </button>
+        {over && <span className="font-mono text-[11px] text-accent">cap reached — AI paused</span>}
+      </div>
+    </div>
   )
 }

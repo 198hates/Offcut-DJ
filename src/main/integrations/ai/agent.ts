@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { randomUUID } from 'crypto'
 import { getAnthropic, AI_REASON_MODEL } from './client'
+import { recordUsage, overBudget, BUDGET_ERROR } from './usage'
 import { getLibraryDb, rowToTrack } from '../../library/db'
 import type { Track, AiAgentEvent } from '../../../shared/types'
 
@@ -197,6 +198,7 @@ export async function runAgent(
   const client = getAnthropic()
   if (!client) { emit({ type: 'error', runId, message: 'AI is off or no API key is set (Settings → AI).' }); return }
   if (!query.trim()) { emit({ type: 'error', runId, message: 'Empty request.' }); return }
+  if (overBudget()) { emit({ type: 'error', runId, message: BUDGET_ERROR }); return }
 
   const messages: Anthropic.MessageParam[] = [...history, { role: 'user', content: query }]
 
@@ -213,6 +215,7 @@ export async function runAgent(
         tools: TOOLS,
         messages
       })
+      recordUsage(AI_REASON_MODEL, res.usage)
 
       for (const block of res.content) {
         if (block.type === 'text' && block.text.trim()) emit({ type: 'text', runId, text: block.text })

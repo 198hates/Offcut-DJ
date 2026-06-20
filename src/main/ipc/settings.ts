@@ -7,7 +7,15 @@ import type { SystemInfo } from '../../shared/types'
 export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:get', () => getSettings())
 
-  ipcMain.handle('settings:save', (_e, patch: Partial<AppSettings>) => saveSettings(patch))
+  ipcMain.handle('settings:save', (_e, patch: Partial<AppSettings>) => {
+    // `aiUsage` is owned by the main process — it's recorded per AI call and
+    // zeroed via ai:resetUsage. A renderer "Save settings" carries whatever
+    // aiUsage it loaded at mount, which would clobber newer spend (or undo a
+    // reset). Strip it so only the AI pipeline writes it.
+    const { aiUsage: _ignore, ...rest } = patch
+    void _ignore
+    return saveSettings(rest)
+  })
 
   ipcMain.handle('settings:getDetectedPaths', () => getDetectedPaths())
 

@@ -338,6 +338,9 @@ const api = {
   ai: {
     status: (): Promise<{ enabled: boolean; hasKey: boolean }> =>
       ipcRenderer.invoke('ai:status'),
+    usage: (): Promise<{ usage: import('../shared/types').AiUsage; budgetUsd: number | null }> =>
+      ipcRenderer.invoke('ai:usage'),
+    resetUsage: (): Promise<import('../shared/types').AiUsage> => ipcRenderer.invoke('ai:resetUsage'),
     nlSearch: (
       query: string,
       facets: { genres: string[]; keys: string[] }

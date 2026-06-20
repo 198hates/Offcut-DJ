@@ -519,6 +519,28 @@ export interface AppSettings {
   cueTemplates?: CueTemplate[]
   /** Which auto-cue template is active (built-in id or a user template id). */
   activeCueTemplateId?: string
+  /** Soft monthly spend cap (USD) for AI features. null/0 = no cap. When the
+   *  month's estimated spend reaches it, AI calls are blocked until raised. */
+  aiMonthlyBudgetUsd?: number | null
+  /** Running estimate of AI token spend (this month + all time). Updated after
+   *  every AI call; estimated from token usage × per-model rates. */
+  aiUsage?: AiUsage | null
+}
+
+/** Running estimate of AI spend, persisted in settings. */
+export interface AiUsage {
+  /** "YYYY-MM" the monthly figures belong to (rolls over automatically). */
+  monthKey: string
+  /** Estimated USD spent this month. */
+  monthUsd: number
+  /** Estimated USD spent all time. */
+  totalUsd: number
+  /** Total AI calls counted. */
+  calls: number
+  /** Cost (USD) of the most recent call. */
+  lastUsd: number
+  /** Model id of the most recent call. */
+  lastModel: string
 }
 
 /** The five structural cue roles the auto-cue detector can emit. */
@@ -656,6 +678,7 @@ export interface AiDigResult {
   summary: string                 // a few sentences on scene / era / label / sound
   suggestions: AiDigSuggestion[]  // specific things to dig into next
   sources: AiDigSource[]          // de-duplicated web citations
+  costUsd?: number                // estimated cost of this dig (tokens × rates)
 }
 
 /**

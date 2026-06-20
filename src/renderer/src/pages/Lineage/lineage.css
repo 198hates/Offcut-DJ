@@ -1398,6 +1398,13 @@
   color: var(--text);
   margin: 0 0 10px;
 }
+.cd-aidig-cost {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  margin: -4px 0 9px;
+}
 .cd-aidig-add {
   width: 100%;
   justify-content: center;

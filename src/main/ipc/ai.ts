@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema'
 import { getAnthropic, AI_REASON_MODEL, AI_CHEAP_MODEL } from '../integrations/ai/client'
+import { recordUsage, overBudget, costOf, getUsage, resetUsage, BUDGET_ERROR } from '../integrations/ai/usage'
 import { runAgent } from '../integrations/ai/agent'
 import { getSettings } from '../settings'
 import type {
@@ -155,6 +156,13 @@ export function registerAiHandlers(): void {
     return { enabled: !!s.aiEnabled, hasKey: !!s.anthropicApiKey }
   })
 
+  // Estimated AI spend + the monthly cap (Settings → AI readout / guard).
+  ipcMain.handle('ai:usage', () => ({
+    usage: getUsage(),
+    budgetUsd: getSettings().aiMonthlyBudgetUsd ?? null
+  }))
+  ipcMain.handle('ai:resetUsage', () => resetUsage())
+
   ipcMain.handle(
     'ai:nlSearch',
     async (
@@ -165,6 +173,7 @@ export function registerAiHandlers(): void {
       const client = getAnthropic()
       if (!client) return { error: 'AI is off or no API key is set (Settings → AI).' }
       if (!query.trim()) return { error: 'Empty search.' }
+      if (overBudget()) return { error: BUDGET_ERROR }
       try {
         const msg = await client.messages.parse({
           // Haiku: turning a phrase into a structured filter is cheap extraction,
@@ -183,6 +192,7 @@ export function registerAiHandlers(): void {
             }
           ]
         })
+        recordUsage(AI_CHEAP_MODEL, msg.usage)
         const filter = msg.parsed_output as AiSearchFilter | null
         if (!filter) return { error: "Couldn't interpret that search." }
         return { filter }
@@ -203,6 +213,7 @@ export function registerAiHandlers(): void {
       if (!client) return { error: 'AI is off or no API key is set (Settings → AI).' }
       if (!tracks?.length) return { error: 'No tracks to sequence.' }
       if (tracks.length < 2) return { error: 'Need at least 2 tracks to sequence.' }
+      if (overBudget()) return { error: BUDGET_ERROR }
       try {
         const intentLine = intent?.trim() ? `Intent: ${intent.trim()}\n\n` : ''
         const msg = await client.messages.parse({
@@ -217,6 +228,7 @@ export function registerAiHandlers(): void {
             { role: 'user', content: intentLine + `Tracks:\n${JSON.stringify(tracks)}` }
           ]
         })
+        recordUsage(AI_REASON_MODEL, msg.usage)
         const raw = msg.parsed_output as AiSequenceResult | null
         if (!raw) return { error: "Couldn't sequence that set." }
 
@@ -248,6 +260,7 @@ export function registerAiHandlers(): void {
       const client = getAnthropic()
       if (!client) return { error: 'AI is off or no API key is set (Settings → AI).' }
       if (!tracks?.length) return { error: 'No tracks to tidy.' }
+      if (overBudget()) return { error: BUDGET_ERROR }
       try {
         const known = new Set(tracks.map((t) => t.id))
         const msg = await client.messages.parse({
@@ -257,6 +270,7 @@ export function registerAiHandlers(): void {
           system: TIDY_SYSTEM,
           messages: [{ role: 'user', content: `Tracks:\n${JSON.stringify(tracks)}` }]
         })
+        recordUsage(AI_CHEAP_MODEL, msg.usage)
         const raw = msg.parsed_output as { results: AiTidyResult[] } | null
         if (!raw) return { error: "Couldn't tidy that metadata." }
         // Keep only results that map back to a real input id.
@@ -279,6 +293,7 @@ export function registerAiHandlers(): void {
       const artist = (seed?.artist || '').trim()
       const title = (seed?.title || '').trim()
       if (!artist && !title) return { error: 'Nothing to research.' }
+      if (overBudget()) return { error: BUDGET_ERROR }
       try {
         const who = title
           ? `the record "${title}"${artist ? ` by ${artist}` : ''}`
@@ -328,7 +343,9 @@ export function registerAiHandlers(): void {
               .filter((s) => s.artist || s.title)
           : []
         if (!summary && !suggestions.length) return { error: "Couldn't research that seed." }
-        return { result: { summary, suggestions, sources } }
+        const costUsd = costOf(AI_CHEAP_MODEL, msg.usage)
+        recordUsage(AI_CHEAP_MODEL, msg.usage)
+        return { result: { summary, suggestions, sources, costUsd } }
       } catch (err) {
         return { error: (err as Error).message }
       }
