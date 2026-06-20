@@ -152,6 +152,9 @@ export function createLineageWeb(
   ov.style.overflow = 'hidden'
   const audio = new Audio()
   audio.preload = 'none'
+  // The node whose 30s preview is currently playing (or loading). Tracked by id,
+  // not button element, so the play/stop toggle survives a card re-render.
+  let playingId: string | null = null
 
   const TCOL: Record<RouteType, string> = {
     remix: col('--orange'),
@@ -235,7 +238,11 @@ export function createLineageWeb(
       <div class="meta"><span class="kc ${harm ? 'lit' : ''}">${esc(key || '—')}</span><span class="bpm">${
         bpm ? esc(bpm) + ' BPM' : '— BPM'
       }</span></div>
-      <div class="btns"><button class="mini" data-act="view">VIEW</button><button class="mini play" data-act="play">♪</button><button class="mini go" data-act="dig">DIG↘</button></div>`
+      <div class="btns"><button class="mini" data-act="view">VIEW</button><button class="mini play${
+        playingId === node.id() ? ' on' : ''
+      }" data-act="play" title="${playingId === node.id() ? 'Stop preview' : 'Play preview'}">${
+        playingId === node.id() ? '■' : '♪'
+      }</button><button class="mini go" data-act="dig">DIG↘</button></div>`
   }
 
   function wire(el: HTMLElement, node: NodeSingular): void {
@@ -320,9 +327,11 @@ export function createLineageWeb(
     wire(el, node)
   }
   cy.on('remove', 'node', (e) => {
-    const el = cards.get(e.target.id())
+    const id = e.target.id()
+    if (playingId === id) stopPreview() // don't leave a removed card's clip playing with no button
+    const el = cards.get(id)
     if (el) el.remove()
-    cards.delete(e.target.id())
+    cards.delete(id)
   })
 
   function act(node: NodeSingular, a: string, btn: HTMLButtonElement): void {
@@ -338,20 +347,46 @@ export function createLineageWeb(
     else if (a === 'play') play(node, btn)
   }
 
-  function play(node: NodeSingular, btn: HTMLButtonElement): void {
+  // Reflect the play/stop state on a card's ♪ button. Looked up live from the
+  // card map so it works even after the card has been re-rendered.
+  function paintPlay(id: string, on: boolean): void {
+    const b = cards.get(id)?.querySelector('button.play[data-act="play"]') as HTMLButtonElement | null
+    if (!b) return
+    b.classList.toggle('on', on)
+    b.textContent = on ? '■' : '♪'
+    b.title = on ? 'Stop preview' : 'Play preview'
+  }
+  function stopPreview(): void {
+    audio.pause()
+    try { audio.currentTime = 0 } catch { /* not yet loaded */ }
+    if (playingId) paintPlay(playingId, false)
+    playingId = null
+  }
+  // Clear the button when the 30s clip finishes (or errors) on its own.
+  audio.onended = stopPreview
+  audio.onerror = stopPreview
+
+  function play(node: NodeSingular, _btn: HTMLButtonElement): void {
+    const id = node.id()
+    if (playingId === id) { stopPreview(); return } // clicking the playing track stops it
+    stopPreview() // switching tracks: stop whatever was playing first
     const artist = node.data('artist') as string
     const title = node.data('label') as string
     if (!opts.getPreviewUrl || !artist) return
-    btn.classList.add('on')
+    playingId = id
+    paintPlay(id, true) // optimistic: show stop/loading immediately
     opts
       .getPreviewUrl(artist, title)
       .then((url) => {
+        if (playingId !== id) return // user stopped / switched while we were fetching
         if (url) {
           audio.src = url
-          void audio.play().catch(() => {})
+          void audio.play().catch(() => stopPreview())
+        } else {
+          stopPreview() // no preview found — revert the button
         }
       })
-      .finally(() => setTimeout(() => btn.classList.remove('on'), 1400))
+      .catch(() => { if (playingId === id) stopPreview() })
   }
 
   // ── layout: force-directed (fcose) ────────────────────────────────────────
