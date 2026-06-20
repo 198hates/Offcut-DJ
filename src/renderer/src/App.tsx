@@ -24,6 +24,7 @@ import { Titlebar } from './components/Titlebar'
 import { TrackDetail } from './components/TrackDetail'
 import { Toast } from './components/Toast'
 import { Onboarding } from './components/Onboarding'
+import { LicenceGate } from './components/LicenceGate'
 import { Player } from './components/Player'
 import { LineageLibraryTray } from './components/LineageLibraryTray'
 import { LibraryDock } from './components/LibraryDock'
@@ -44,6 +45,8 @@ export default function App(): JSX.Element {
   // 'onboard' = first-run (welcome → tour → import); 'tour' = re-opened tour only.
   const [onboardMode, setOnboardMode] = useState<'onboard' | 'tour'>('onboard')
   const [showShortcuts, setShowShortcuts] = useState(false)
+  // Licence gate: null = still checking, false = blocked, true = unlocked.
+  const [licensed, setLicensed] = useState<boolean | null>(null)
 
   // MIDI engine — initialise once on mount
   useEffect(() => { midiEngine.init() }, [])
@@ -110,6 +113,18 @@ export default function App(): JSX.Element {
   useEffect(() => {
     setDetailTrackId(selectedTrackIds.size === 1 ? [...selectedTrackIds][0] : null)
   }, [selectedTrackIds])
+
+  // Hard licence gate — check activation once on launch (fail closed on error).
+  useEffect(() => {
+    window.api.licence
+      .status()
+      .then((s) => setLicensed(s.activated))
+      .catch(() => setLicensed(false))
+  }, [])
+
+  // Block everything until a valid key is activated.
+  if (licensed === null) return <div className="h-full bg-chassis" />
+  if (!licensed) return <LicenceGate onActivated={() => setLicensed(true)} />
 
   return (
     <TrackMenuProvider>
