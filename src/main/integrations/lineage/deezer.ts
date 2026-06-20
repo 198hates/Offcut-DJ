@@ -31,12 +31,13 @@ interface DeezerTopTrack {
   artist?: DeezerArtist
 }
 
-/** One related-artist track with a 0..1 closeness weight (related rank). */
-export interface RelatedTrack {
-  artist: string
-  title: string
+/** A related artist and their top tracks — one sonic sub-branch off the seed. */
+export interface RelatedArtistGroup {
+  id: number
+  name: string
   /** Closeness to the seed, 0..1 — higher = a nearer related artist. */
   weight: number
+  tracks: { artist: string; title: string }[]
 }
 
 export class DeezerClient {
@@ -70,25 +71,26 @@ export class DeezerClient {
   }
 
   /**
-   * Tracks by artists Deezer considers related to the seed's artist.
-   * `fanout` related artists, `perArtist` top tracks each. Weight decreases with
-   * the related-artist rank so the closest neighbours score highest.
+   * Artists Deezer considers related to the seed's artist, each with their top
+   * tracks — one sonic sub-branch per artist. `fanout` related artists,
+   * `perArtist` top tracks each. Weight decreases with the related-artist rank
+   * so the closest neighbours' branches score highest.
    */
-  async relatedTracks(
+  async relatedArtistGroups(
     artist: string,
     title: string,
-    { fanout = 8, perArtist = 4 }: { fanout?: number; perArtist?: number } = {}
-  ): Promise<RelatedTrack[]> {
+    { fanout = 6, perArtist = 6 }: { fanout?: number; perArtist?: number } = {}
+  ): Promise<RelatedArtistGroup[]> {
     const id = await this.artistId(artist, title)
     if (!id) return []
     let related: DeezerArtist[] = []
     try {
       const { data = [] } = await this.get<{ data?: DeezerArtist[] }>(`/artist/${id}/related?limit=12`)
-      related = data.filter((a) => a.id).slice(0, fanout)
+      related = data.filter((a) => a.id && a.name).slice(0, fanout)
     } catch {
       return []
     }
-    const out: RelatedTrack[] = []
+    const groups: RelatedArtistGroup[] = []
     const n = related.length || 1
     for (let i = 0; i < related.length; i++) {
       const a = related[i]
@@ -97,14 +99,14 @@ export class DeezerClient {
         const { data = [] } = await this.get<{ data?: DeezerTopTrack[] }>(
           `/artist/${a.id}/top?limit=${perArtist}`
         )
-        for (const t of data) {
-          const tArtist = t.artist?.name || a.name || ''
-          if (tArtist && t.title) out.push({ artist: tArtist, title: t.title, weight })
-        }
+        const tracks = data
+          .map((t) => ({ artist: t.artist?.name || a.name || '', title: t.title || '' }))
+          .filter((t) => t.artist && t.title)
+        if (tracks.length) groups.push({ id: a.id!, name: a.name!, weight, tracks })
       } catch {
         /* best-effort per related artist */
       }
     }
-    return out
+    return groups
   }
 }

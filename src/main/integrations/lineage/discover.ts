@@ -183,7 +183,10 @@ export async function discover(
 ): Promise<DiscoverResult> {
   const { lastfm = null, identity = null, tracklists = null, deezer = null } = clients
   const poolSize = opts.poolSize ?? 24
-  const maxDirections = opts.maxDirections ?? 8
+  // Higher than before: a dig now splits the sonic route into one branch per
+  // related artist, so the cap has to leave room for those plus the credit /
+  // label / sample structural branches.
+  const maxDirections = opts.maxDirections ?? 12
   const filters = opts.filters ?? {}
   const keep = makeKeep(filters)
   // Owned tracks are surfaced + tagged; rank them at full score only when asked.
@@ -392,32 +395,36 @@ export async function discover(
   })()
 
   // ── 5b. Sounds-like (Deezer related artists) — own host, concurrent, keyless. ──
+  // One sub-branch PER related artist (e.g. "Four Tet", "Daniel Avery") rather
+  // than a single pooled "SOUNDS LIKE" — the sonic matches are the strongest the
+  // engine produces, so giving each its own branch densifies the web.
   const deezerWork = (async (): Promise<void> => {
     if (!(deezer && routeEnabled('deezer'))) return
     try {
-      const rel = await deezer.relatedTracks(seed.artist, seed.title)
-      const seen = new Set([seedKey])
-      const pool: Candidate[] = []
-      for (const t of rel) {
-        const key = dedupKey(t.artist, t.title)
-        if (seen.has(key) || !keep({ artist: t.artist, title: t.title, year: null, label: null }))
-          continue
-        seen.add(key)
-        pool.push(
-          applyOwned(
-            {
-              key, artist: t.artist, title: t.title, label: null, year: null,
-              discogs_id: null,
-              why: `Deezer lists this among artists like ${seed.artist}`,
-              score: 80 + Math.round((t.weight || 0) * 8)
-            },
-            store,
-            rankOwnedEqually
+      const groups = await deezer.relatedArtistGroups(seed.artist, seed.title)
+      for (const g of groups) {
+        const seen = new Set([seedKey])
+        const pool: Candidate[] = []
+        for (const t of g.tracks) {
+          const key = dedupKey(t.artist, t.title)
+          if (seen.has(key) || !keep({ artist: t.artist, title: t.title, year: null, label: null }))
+            continue
+          seen.add(key)
+          pool.push(
+            applyOwned(
+              {
+                key, artist: t.artist, title: t.title, label: null, year: null,
+                discogs_id: null,
+                why: `${g.name} — related to ${seed.artist} on Deezer`,
+                score: 80 + Math.round((g.weight || 0) * 8)
+              },
+              store,
+              rankOwnedEqually
+            )
           )
-        )
+        }
+        push({ id: `deezer:${g.id}`, type: 'deezer', title: g.name, pool: pool.slice(0, poolSize) })
       }
-      pool.sort((a, b) => b.score - a.score)
-      push({ id: 'deezer', type: 'deezer', title: 'SOUNDS LIKE', pool: pool.slice(0, poolSize) })
     } catch {
       /* sonic route is best-effort */
     } finally {
