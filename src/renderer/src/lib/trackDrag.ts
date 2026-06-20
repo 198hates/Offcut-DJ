@@ -30,3 +30,38 @@ export function readTrackIds(e: DragEvent): string[] {
     return []
   }
 }
+
+// ── Seed drag (artist + title) ───────────────────────────────────────────────
+// Library rows carry a track id; a discovered/saved find has no id, so it drags
+// as a bare {artist, title} seed instead. The Lineage stage accepts both.
+
+/** MIME carrying a JSON {artist, title} seed. */
+export const SEED_DRAG_MIME = 'application/x-offcut-seed'
+
+export interface DragSeed {
+  artist: string
+  title: string
+}
+
+/** Mark a drag as carrying an artist/title seed (call from onDragStart). */
+export function setSeedDragData(e: DragEvent, seed: DragSeed): void {
+  e.dataTransfer.effectAllowed = 'copy'
+  e.dataTransfer.setData(SEED_DRAG_MIME, JSON.stringify(seed))
+}
+
+/** True when the drag carries an artist/title seed. */
+export function acceptsSeedDrop(e: DragEvent): boolean {
+  return e.dataTransfer.types.includes(SEED_DRAG_MIME)
+}
+
+/** Parse the dragged seed; null if absent/malformed. */
+export function readSeedData(e: DragEvent): DragSeed | null {
+  try {
+    const raw = e.dataTransfer.getData(SEED_DRAG_MIME)
+    const s = raw ? (JSON.parse(raw) as { artist?: unknown; title?: unknown }) : null
+    if (!s || typeof s !== 'object') return null
+    return { artist: String(s.artist ?? ''), title: String(s.title ?? '') }
+  } catch {
+    return null
+  }
+}

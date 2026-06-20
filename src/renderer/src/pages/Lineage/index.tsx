@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { useToastStore } from '../../store/toastStore'
 import { createLineageWeb, type HydrateFn, type LineageWebController, type SelNode } from '../../lib/lineageWeb'
-import { acceptsTrackDrop, readTrackIds } from '../../lib/trackDrag'
+import { acceptsTrackDrop, readTrackIds, acceptsSeedDrop, readSeedData } from '../../lib/trackDrag'
 import { hashHue } from '../../lib/format'
 import type {
   BandcampEmbed,
@@ -184,6 +184,8 @@ export function LineagePage(): JSX.Element {
       const finds = await window.api.lineage.listSaved()
       setSavedFinds(finds)
       setSavedKeys(new Set(finds.map((c) => c.key)))
+      // keep the bottom tray's "Saved" tab in sync with the crate
+      window.dispatchEvent(new Event('lineage:saved-changed'))
     } catch {
       /* ignore */
     }
@@ -417,7 +419,7 @@ export function LineagePage(): JSX.Element {
 
   // ── Drag a library track onto the stage → dig from it ────────────────────────
   const onStageDragOver = useCallback((e: React.DragEvent) => {
-    if (!acceptsTrackDrop(e)) return
+    if (!acceptsTrackDrop(e) && !acceptsSeedDrop(e)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
     setDropping(true)
@@ -427,6 +429,18 @@ export function LineagePage(): JSX.Element {
   }, [])
   const onStageDrop = useCallback(
     (e: React.DragEvent) => {
+      // A saved find drags as a bare {artist, title} seed (no library id).
+      if (acceptsSeedDrop(e)) {
+        e.preventDefault()
+        setDropping(false)
+        const s = readSeedData(e)
+        if (s && (s.artist || s.title)) {
+          setArtist(s.artist)
+          setTitle(s.title)
+          dig(s.artist, s.title)
+        }
+        return
+      }
       if (!acceptsTrackDrop(e)) return
       e.preventDefault()
       setDropping(false)
