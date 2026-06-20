@@ -1,0 +1,81 @@
+name: Build & Release
+
+# Push a version tag (e.g. v0.1.0) to build + publish installers to GitHub
+# Releases. Or run manually (workflow_dispatch) to just build + attach the
+# installers as run artifacts (no release).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Apple Silicon (arm64)
+            os: macos-14
+            ebflags: --mac --arm64
+          - name: macOS Intel (x64)
+            os: macos-13
+            ebflags: --mac --x64
+          - name: Windows (x64)
+            os: windows-latest
+            ebflags: --win --x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/audio-engine
+
+      # postinstall runs `electron-builder install-app-deps`, rebuilding the
+      # native node modules (better-sqlite3, onnxruntime-node, …) for this
+      # runner's OS + arch.
+      - name: Install dependencies
+        run: npm ci
+
+      # SQLCipher needs its own @electron/rebuild against the exact Electron
+      # version for this arch.
+      - name: Rebuild SQLCipher for Electron
+        run: npm run rebuild:sqlcipher
+
+      # Builds the Rust cdylib for the runner's host arch and copies it to the
+      # fixed crate-audio-engine.node the packager bundles.
+      - name: Build Rust audio engine
+        run: npm run engine:build
+
+      - name: Build renderer + main (tsc + vite)
+        run: npm run build
+
+      - name: Package${{ startsWith(github.ref, 'refs/tags/') && ' + publish' || '' }}
+        run: npx electron-builder --config electron-builder.cjs ${{ matrix.ebflags }} --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Unsigned for now — stop electron-builder hunting for a signing identity.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: offcut-${{ matrix.os }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+          if-no-files-found: warn

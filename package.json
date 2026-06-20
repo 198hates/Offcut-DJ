@@ -10,13 +10,14 @@
     "build": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "rebuild:sqlcipher": "node scripts/rebuild-sqlcipher.js",
-    "build:mac": "npm run build && npm run engine:build && electron-builder --mac --arm64",
-    "build:win": "npm run build && npm run engine:build && electron-builder --win",
-    "build:linux": "npm run build && npm run engine:build && electron-builder --linux",
-    "engine:build": "cd native/audio-engine && cargo build --release && cd ../.. && node scripts/copy-engine.js",
+    "build:mac": "npm run build && npm run engine:build && electron-builder --config electron-builder.cjs --mac --arm64",
+    "build:mac:x64": "npm run build && npm run engine:build && electron-builder --config electron-builder.cjs --mac --x64",
+    "build:win": "npm run build && npm run engine:build && electron-builder --config electron-builder.cjs --win --x64",
+    "build:linux": "npm run build && npm run engine:build && electron-builder --config electron-builder.cjs --linux",
+    "engine:build": "cargo build --release --manifest-path native/audio-engine/Cargo.toml && node scripts/copy-engine.js",
     "engine:build:napi": "cd native/audio-engine && napi build --platform --release --output-dir ../../out/main",
-    "engine:dev": "cd native/audio-engine && cargo build && cd ../.. && node scripts/copy-engine.js --debug",
-    "engine:check": "cd native/audio-engine && cargo check",
+    "engine:dev": "cargo build --manifest-path native/audio-engine/Cargo.toml && node scripts/copy-engine.js --debug",
+    "engine:check": "cargo check --manifest-path native/audio-engine/Cargo.toml",
     "test": "vitest run"
   },
   "dependencies": {
@@ -60,118 +61,5 @@
     "typescript": "^5.5.4",
     "vite": "^5.4.2",
     "vitest": "^4.1.8"
-  },
-  "build": {
-    "appId": "co.betweenthebridges.offcut",
-    "productName": "Offcut",
-    "copyright": "Copyright © 2026 Between the Bridges",
-    "directories": {
-      "buildResources": "resources",
-      "output": "dist"
-    },
-    "files": [
-      "out/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "build/demucs-dist/offcut-demucs",
-        "to": "offcut-demucs",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "build/models/beat_this.onnx",
-        "to": "models/beat_this.onnx"
-      },
-      {
-        "from": "src/main/integrations/rekordbox-usb/templates",
-        "to": "rekordbox",
-        "filter": [
-          "empty-export.pdb",
-          "*.DAT",
-          "*.bin"
-        ]
-      },
-      {
-        "from": "native/audio-engine/crate-audio-engine.node",
-        "to": "crate-audio-engine.node"
-      }
-    ],
-    "asarUnpack": [
-      "**/node_modules/better-sqlite3/**/*.node",
-      "**/node_modules/better-sqlite3-multiple-ciphers/**/*.node",
-      "**/node_modules/onnxruntime-node/**/*.node",
-      "**/node_modules/onnxruntime-node/bin/**",
-      "**/node_modules/ffmpeg-static/ffmpeg",
-      "out/main/beat-analysis-worker.js"
-    ],
-    "publish": {
-      "provider": "github",
-      "owner": "BtwBridges",
-      "repo": "DJ",
-      "releaseType": "release"
-    },
-    "mac": {
-      "category": "public.app-category.music",
-      "icon": "resources/icon.icns",
-      "identity": null,
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false,
-      "entitlements": "resources/entitlements.mac.plist",
-      "entitlementsInherit": "resources/entitlements.mac.plist",
-      "extendInfo": {
-        "NSDesktopFolderUsageDescription": "Offcut reads your music files to analyse and play them.",
-        "NSDocumentsFolderUsageDescription": "Offcut reads your music files to analyse and play them.",
-        "NSDownloadsFolderUsageDescription": "Offcut reads your music files to analyse and play them.",
-        "NSRemovableVolumesUsageDescription": "Offcut reads music files stored on external drives."
-      },
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "arm64"
-          ]
-        }
-      ]
-    },
-    "dmg": {
-      "title": "${productName} ${version}",
-      "artifactName": "${productName}-${version}-mac-${arch}.dmg"
-    },
-    "win": {
-      "icon": "resources/icon.ico",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "artifactName": "${productName}-${version}-win-setup.exe"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "DJ Library Manager"
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "icon": "resources/icon.png",
-      "category": "Audio",
-      "artifactName": "${productName}-${version}-linux-${arch}.AppImage"
-    }
   }
 }
