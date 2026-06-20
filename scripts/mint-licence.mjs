@@ -10,7 +10,7 @@
 // or keys minted here won't validate in the app.
 import crypto from 'crypto'
 
-const SECRET = 'offcut.licence.v1.7b3c9f2a'
+const SECRET = 'offcut.licence.v2.5b85e53cf1c4d923755ae985a62abb05'
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const KEY_RE = /^OFFCUT-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})$/
 

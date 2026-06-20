@@ -12,7 +12,7 @@
 import crypto from 'crypto'
 
 // Change this before any public/commercial release so pre-release keys don't carry over.
-const SECRET = 'offcut.licence.v1.7b3c9f2a'
+const SECRET = 'offcut.licence.v2.5b85e53cf1c4d923755ae985a62abb05'
 // Crockford-ish alphabet — no I/O/0/1 so keys are easy to read out loud / type.
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const KEY_RE = /^OFFCUT-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})$/
