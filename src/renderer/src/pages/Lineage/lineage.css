@@ -957,6 +957,23 @@
   text-overflow: ellipsis;
   margin-top: 1px;
 }
+/* "IN CRATE" badge — owned tracks are surfaced as validation, marked + deranked. */
+.cd-cy .card .own {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  vertical-align: middle;
+  color: #0c130d;
+  background: var(--lime);
+}
+.cd-cy .card.track.owned {
+  opacity: 0.82;
+}
 .cd-cy .card .btns {
   display: flex;
   gap: 4px;
@@ -1055,6 +1072,9 @@
 }
 .cd-cy .card.dir.t-listener {
   background: var(--teal);
+}
+.cd-cy .card.dir.t-deezer {
+  background: var(--peach);
 }
 .cd-cy .card.dir.t-comp {
   background: var(--orchid);

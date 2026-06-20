@@ -1,0 +1,110 @@
+// Sonic-similarity route via Deezer's public catalogue — NO API KEY required.
+//
+// Discogs gives the *structural* lineage (who played on it, what label it was
+// on); MusicBrainz gives sample/cover lineage; Last.fm gives listener overlap
+// but needs a key the user may not have set. Deezer fills the gap for free:
+//   seed -> Deezer artist -> /artist/{id}/related -> each related artist's top
+//   tracks. That's a collaborative-filtering "sounds like" signal that works on
+// every dig with zero configuration, so a track with thin Discogs credits (an
+// instrumental electronic 12", say) still gets a real sonic branch instead of
+// only tangential label-compilation routes.
+
+import { RateLimiter } from './rate-limiter'
+import { httpJson } from './http'
+import { looksLikeMatch } from './match'
+
+const BASE = 'https://api.deezer.com'
+// Deezer's published ceiling is ~50 requests / 5 s. A dig fans out to ~1 search
+// + 1 related + N top-track calls, so space them ~4.5/s to stay well under.
+const limiter = new RateLimiter(220)
+
+interface DeezerArtist {
+  id?: number
+  name?: string
+}
+interface DeezerSearchHit {
+  title?: string
+  artist?: DeezerArtist
+}
+interface DeezerTopTrack {
+  title?: string
+  artist?: DeezerArtist
+}
+
+/** One related-artist track with a 0..1 closeness weight (related rank). */
+export interface RelatedTrack {
+  artist: string
+  title: string
+  /** Closeness to the seed, 0..1 — higher = a nearer related artist. */
+  weight: number
+}
+
+export class DeezerClient {
+  private get<T>(path: string): Promise<T> {
+    return limiter.schedule(() => httpJson<T>(`${BASE}${path}`, { label: `Deezer ${path}` }))
+  }
+
+  /** Resolve the seed to a Deezer artist id (verified by a fuzzy name match). */
+  private async artistId(artist: string, title: string): Promise<number | null> {
+    const q = encodeURIComponent(`${artist} ${title}`)
+    try {
+      const { data = [] } = await this.get<{ data?: DeezerSearchHit[] }>(`/search?q=${q}&limit=5`)
+      const hit = data.find((d) => looksLikeMatch({ artist }, d.artist?.name, d.title))
+      if (hit?.artist?.id) return hit.artist.id
+    } catch {
+      /* fall through to the artist-only search */
+    }
+    // Fall back to an artist-only search when the track line doesn't match.
+    return (await this.artistOnly(artist))?.id ?? null
+  }
+
+  private async artistOnly(artist: string): Promise<DeezerArtist | null> {
+    try {
+      const { data = [] } = await this.get<{ data?: DeezerArtist[] }>(
+        `/search/artist?q=${encodeURIComponent(artist)}&limit=3`
+      )
+      return data.find((a) => looksLikeMatch({ artist }, a.name)) || data[0] || null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Tracks by artists Deezer considers related to the seed's artist.
+   * `fanout` related artists, `perArtist` top tracks each. Weight decreases with
+   * the related-artist rank so the closest neighbours score highest.
+   */
+  async relatedTracks(
+    artist: string,
+    title: string,
+    { fanout = 8, perArtist = 4 }: { fanout?: number; perArtist?: number } = {}
+  ): Promise<RelatedTrack[]> {
+    const id = await this.artistId(artist, title)
+    if (!id) return []
+    let related: DeezerArtist[] = []
+    try {
+      const { data = [] } = await this.get<{ data?: DeezerArtist[] }>(`/artist/${id}/related?limit=12`)
+      related = data.filter((a) => a.id).slice(0, fanout)
+    } catch {
+      return []
+    }
+    const out: RelatedTrack[] = []
+    const n = related.length || 1
+    for (let i = 0; i < related.length; i++) {
+      const a = related[i]
+      const weight = (n - i) / n // nearest related artist -> 1, furthest -> ~0
+      try {
+        const { data = [] } = await this.get<{ data?: DeezerTopTrack[] }>(
+          `/artist/${a.id}/top?limit=${perArtist}`
+        )
+        for (const t of data) {
+          const tArtist = t.artist?.name || a.name || ''
+          if (tArtist && t.title) out.push({ artist: tArtist, title: t.title, weight })
+        }
+      } catch {
+        /* best-effort per related artist */
+      }
+    }
+    return out
+  }
+}

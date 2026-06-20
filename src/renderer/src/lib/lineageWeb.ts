@@ -56,6 +56,7 @@ const ROUTE_SOURCE: Record<RouteType, string> = {
   label: 'Discogs',
   comp: 'Discogs',
   listener: 'Last.fm',
+  deezer: 'Deezer',
   sample: 'MusicBrainz',
   set: '1001Tracklists'
 }
@@ -159,6 +160,7 @@ export function createLineageWeb(
     set: col('--amber'),
     players: col('--silver'),
     listener: col('--teal'),
+    deezer: col('--peach'),
     comp: col('--orchid')
   }
 
@@ -228,7 +230,8 @@ export function createLineageWeb(
     const harm = node.hasClass('harmonic')
     const key = node.data('key')
     const bpm = node.data('bpm')
-    return `<div class="nm">${esc(node.data('label'))}</div><div class="ar">${esc(node.data('artist'))}</div>
+    const owned = node.data('owned') ? '<span class="own">IN CRATE</span>' : ''
+    return `<div class="nm">${esc(node.data('label'))}${owned}</div><div class="ar">${esc(node.data('artist'))}</div>
       <div class="meta"><span class="kc ${harm ? 'lit' : ''}">${esc(key || '—')}</span><span class="bpm">${
         bpm ? esc(bpm) + ' BPM' : '— BPM'
       }</span></div>
@@ -486,10 +489,14 @@ export function createLineageWeb(
           candidateKey: t.key,
           discogsId: t.discogs_id,
           year: t.year,
+          owned: !!t.owned,
           dirId: dirNode.id(),
           dirType: d.type
         },
-        classes: 'track' + (camelotOk(seed.key, key) ? ' harmonic' : '')
+        classes:
+          'track' +
+          (camelotOk(seed.key, key) ? ' harmonic' : '') +
+          (t.owned ? ' owned' : '')
       })
       cy.add({ group: 'edges', data: { id: uid('e'), source: dirNode.id(), target: id }, classes: 'tk' })
       makeCard(n)

@@ -113,12 +113,21 @@ export class LineageStore {
         score = MAX(candidates.score, excluded.score)
     `
       )
+      // Bind only the columns the statement names — candidates may carry extra
+      // in-memory fields (e.g. `owned`) that aren't persisted, and better-sqlite3
+      // rejects unknown named parameters.
       .run({
-        // defaults so partial candidate objects still bind every named param
-        direction: null,
-        seed_key: null,
-        root_seed_key: null,
-        ...c
+        key: c.key,
+        artist: c.artist,
+        title: c.title,
+        label: c.label ?? null,
+        year: c.year ?? null,
+        discogs_id: c.discogs_id ?? null,
+        why: c.why,
+        score: c.score,
+        direction: c.direction ?? null,
+        seed_key: c.seed_key ?? null,
+        root_seed_key: c.root_seed_key ?? null
       })
   }
 

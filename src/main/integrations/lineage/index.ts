@@ -9,6 +9,7 @@ import { preview } from './preview'
 import { embedFor, previewBandcamp } from './bandcamp'
 import { Identity, deezerByIsrc } from './identity'
 import { LastfmClient } from './lastfm'
+import { DeezerClient } from './deezer'
 import { TracklistsClient } from './tracklists'
 import { readRekordbox, writeRekordboxPlaylist } from './dj-library/rekordbox'
 import type { RekordboxFind } from './dj-library/rekordbox'
@@ -85,6 +86,9 @@ export function createLineageEngine(opts: LineageEngineConfig): LineageEngine {
   })
   const identity = new Identity({ acoustidKey, userAgent, fpcalcPath })
   const lastfm = lastfmKey ? new LastfmClient({ apiKey: lastfmKey }) : null
+  // Deezer's public catalogue needs no key, so the sonic "sounds like" route is
+  // always available — the one similarity signal that doesn't depend on config.
+  const deezer = new DeezerClient()
   // The "played alongside" route only has a real source via the 1001Tracklists
   // partner API (apiBase + apiKey). The public scrape is a deliberate no-op
   // (Cloudflare + ToS), so a scrape-only config would surface an always-empty
@@ -112,7 +116,7 @@ export function createLineageEngine(opts: LineageEngineConfig): LineageEngine {
     enrich: (input) => enrich(discogs, input),
     searchSeeds: (input) => searchSeeds(discogs, input),
     discover: (seed, o, onProgress) =>
-      discover(discogs, store, seed, o, { lastfm, identity, tracklists }, onProgress),
+      discover(discogs, store, seed, o, { lastfm, identity, tracklists, deezer }, onProgress),
 
     // --- identity backbone ---
     identify: (input) => identity.identify(input),

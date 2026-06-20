@@ -769,17 +769,20 @@ export interface Candidate {
   seed_key?: string | null
   /** The original seed at the top of the dig chain. */
   root_seed_key?: string | null
+  /** True when this track is already in the user's library (surfaced, not hidden). */
+  owned?: boolean
 }
 
 /**
  * The route family a direction belongs to — drives the viewer's branch colour.
- * remix · label · players · listener · sample · comp · set
+ * remix · label · players · listener · deezer · sample · comp · set
  */
 export type RouteType =
   | 'remix'
   | 'label'
   | 'players'
   | 'listener'
+  | 'deezer'
   | 'sample'
   | 'comp'
   | 'set'

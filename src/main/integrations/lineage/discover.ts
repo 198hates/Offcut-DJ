@@ -11,6 +11,7 @@ import type { LineageStore } from './store'
 import type { DiscogsClient, DiscogsReleaseSummary } from './discogs'
 import type { Identity } from './identity'
 import type { LastfmClient } from './lastfm'
+import type { DeezerClient } from './deezer'
 import type { TracklistsClient } from './tracklists'
 import type {
   Candidate,
@@ -28,6 +29,8 @@ export interface DiscoverClients {
   lastfm?: LastfmClient | null
   identity?: Identity | null
   tracklists?: TracklistsClient | null
+  /** Keyless Deezer related-artists route — present on every dig. */
+  deezer?: DeezerClient | null
 }
 
 // Discogs formats release/result titles as "Artist - Title".
@@ -38,19 +41,28 @@ function splitTitle(t = ''): { artist: string; title: string } {
 
 // All routes score on a shared 0–100 scale so directions rank by how reliably
 // the relationship tracks the seed's *sound*, not by which formula produced the
-// number. Era proximity is a gentle nudge, not a genre signal.
-function scoreFor(rel: { year?: number | null }, seed: Seed, base: number): number {
-  const eraGap = seed.year && rel.year ? Math.abs(seed.year - rel.year) : 99
-  const eraBonus = eraGap <= 2 ? 6 : eraGap <= 5 ? 3 : 0
-  return base + eraBonus
+// number. Era proximity meaningfully reorders within a route: a same-label
+// release from the seed's own years is a far stronger lead than one 30 years off.
+function eraBonus(relYear: number | null | undefined, seed: Seed): number {
+  if (!seed.year || !relYear) return 0
+  const gap = Math.abs(seed.year - relYear)
+  return gap <= 2 ? 12 : gap <= 5 ? 7 : gap <= 10 ? 3 : gap >= 25 ? -4 : 0
 }
+function scoreFor(rel: { year?: number | null }, seed: Seed, base: number): number {
+  return base + eraBonus(rel.year, seed)
+}
+// Owned tracks are kept (a strong link you already have validates the branch),
+// but deranked so genuinely new finds lead — unless the user opts to rank them
+// equally via the includeOwned filter.
+const OWNED_PENALTY = 12
 
 /**
  * A reusable candidate gate built from the user's filters. Used by every route
  * (Discogs pools and the inline listener/sample/comp/set pools) so the filter
  * behaviour is identical everywhere.
  *
- * - owned: excluded unless `includeOwned` is on.
+ * - owned: NO LONGER dropped — owned tracks are surfaced (and tagged + deranked
+ *          elsewhere) because a strong link you already hold validates a branch.
  * - year:  candidates with no year always pass (era is often unknown); only
  *          dated candidates outside [yearMin, yearMax] are dropped.
  * - label: when a labelQuery is set, only candidates whose label contains it
@@ -59,14 +71,27 @@ function scoreFor(rel: { year?: number | null }, seed: Seed, base: number): numb
  */
 type CandidateLike = { artist: string; title: string; year: number | null; label: string | null }
 
-function makeKeep(filters: DiscoverFilters, store: LineageStore): (c: CandidateLike) => boolean {
+function makeKeep(filters: DiscoverFilters): (c: CandidateLike) => boolean {
   const labelQ = filters.labelQuery?.trim().toLowerCase() || null
   return (c) => {
-    if (!filters.includeOwned && store.owns(c.artist, c.title)) return false
     if (filters.yearMin != null && c.year != null && c.year < filters.yearMin) return false
     if (filters.yearMax != null && c.year != null && c.year > filters.yearMax) return false
     if (labelQ && (!c.label || !c.label.toLowerCase().includes(labelQ))) return false
     return true
+  }
+}
+
+/** Tag a freshly-built candidate as owned and derank it (unless ranking owned equally). */
+function applyOwned<T extends { artist: string; title: string; score: number }>(
+  c: T,
+  store: LineageStore,
+  rankOwnedEqually: boolean
+): T & { owned: boolean } {
+  const owned = store.owns(c.artist, c.title)
+  return {
+    ...c,
+    owned,
+    score: owned && !rankOwnedEqually ? c.score - OWNED_PENALTY : c.score
   }
 }
 
@@ -78,12 +103,13 @@ interface PoolContext {
   /** Releases summaries carry "Artist - Title" in `.title` when from an artist discography. */
   fromArtist: boolean
   keep: (c: CandidateLike) => boolean
+  rankOwnedEqually: boolean
 }
 
 // Discogs release summaries -> one direction's ranked, deduped, filtered pool.
 function buildPool(
   releases: DiscogsReleaseSummary[],
-  { seed, base, why, fromArtist, keep }: PoolContext,
+  { seed, store, base, why, fromArtist, keep, rankOwnedEqually }: PoolContext,
   poolSize: number
 ): Candidate[] {
   const seen = new Set([dedupKey(seed.artist, seed.title)])
@@ -99,16 +125,22 @@ function buildPool(
     const year = rel.year || null
     if (!keep({ artist, title, year, label })) continue
     seen.add(key)
-    out.push({
-      key,
-      artist,
-      title,
-      label,
-      year,
-      discogs_id: rel.id || null,
-      why,
-      score: scoreFor(rel, seed, base)
-    })
+    out.push(
+      applyOwned(
+        {
+          key,
+          artist,
+          title,
+          label,
+          year,
+          discogs_id: rel.id || null,
+          why,
+          score: scoreFor(rel, seed, base)
+        },
+        store,
+        rankOwnedEqually
+      )
+    )
   }
   return out.sort((a, b) => b.score - a.score).slice(0, poolSize)
 }
@@ -149,11 +181,13 @@ export async function discover(
   clients: DiscoverClients = {},
   onProgress?: (p: DiscoverProgress) => void
 ): Promise<DiscoverResult> {
-  const { lastfm = null, identity = null, tracklists = null } = clients
+  const { lastfm = null, identity = null, tracklists = null, deezer = null } = clients
   const poolSize = opts.poolSize ?? 24
   const maxDirections = opts.maxDirections ?? 8
   const filters = opts.filters ?? {}
-  const keep = makeKeep(filters, store)
+  const keep = makeKeep(filters)
+  // Owned tracks are surfaced + tagged; rank them at full score only when asked.
+  const rankOwnedEqually = !!filters.includeOwned
   // A route runs only when its type is enabled (empty/undefined routes = all).
   const routeEnabled = (type: RouteType): boolean =>
     !filters.routes?.length || filters.routes.includes(type)
@@ -175,6 +209,7 @@ export async function discover(
       (routeEnabled('label') ? labelList.length : 0) /* same-label */ +
       (routeEnabled('label') ? labelList.length : 0) /* sister-label sweep */ +
       (lastfm && routeEnabled('listener') ? 1 : 0) +
+      (deezer && routeEnabled('deezer') ? 1 : 0) +
       (identity && routeEnabled('sample') ? 1 : 0) +
       (seedArtistId && routeEnabled('comp') ? 1 : 0) +
       (tracklists && routeEnabled('set') ? 1 : 0),
@@ -206,7 +241,7 @@ export async function discover(
             title: p.name,
             pool: buildPool(
               releases,
-              { seed, store, base: 94, why: `${p.name} (credited on your seed) also worked on this`, fromArtist: true, keep },
+              { seed, store, base: 94, why: `${p.name} (credited on your seed) also worked on this`, fromArtist: true, keep, rankOwnedEqually },
               poolSize
             )
           })
@@ -229,7 +264,7 @@ export async function discover(
             title: p.name,
             pool: buildPool(
               releases,
-              { seed, store, base: 86, why: `Shares a player — ${p.name}${p.role ? ` (${p.role})` : ''}`, fromArtist: true, keep },
+              { seed, store, base: 86, why: `Shares a player — ${p.name}${p.role ? ` (${p.role})` : ''}`, fromArtist: true, keep, rankOwnedEqually },
               poolSize
             )
           })
@@ -253,7 +288,7 @@ export async function discover(
             title: label.name,
             pool: buildPool(
               releases,
-              { seed, store, base: 70, why: `Same label — ${label.name}`, fromArtist: false, keep },
+              { seed, store, base: 70, why: `Same label — ${label.name}`, fromArtist: false, keep, rankOwnedEqually },
               poolSize
             )
           })
@@ -281,7 +316,7 @@ export async function discover(
               title: sub.name,
               pool: buildPool(
                 releases,
-                { seed, store, base: 58, why: `Sister label — ${sub.name}`, fromArtist: false, keep },
+                { seed, store, base: 58, why: `Sister label — ${sub.name}`, fromArtist: false, keep, rankOwnedEqually },
                 poolSize
               )
             })
@@ -317,10 +352,10 @@ export async function discover(
             const year = rel.year || null
             if (seen.has(key) || !keep({ artist: a, title: tr.title, year, label })) continue
             seen.add(key)
-            pool.push({
+            pool.push(applyOwned({
               key, artist: a, title: tr.title, label, year,
               discogs_id: rel.id, why: `Same compilation — ${rel.title}`, score: 45
-            })
+            }, store, rankOwnedEqually))
           }
         }
         push({ id: 'comp', type: 'comp', title: 'SAME COMPILATION', pool: pool.slice(0, poolSize) })
@@ -342,17 +377,51 @@ export async function discover(
         const key = dedupKey(t.artist, t.title)
         if (seen.has(key) || !keep({ artist: t.artist, title: t.title, year: null, label: null })) continue
         seen.add(key)
-        pool.push({
+        pool.push(applyOwned({
           key, artist: t.artist, title: t.title, label: null, year: null,
           discogs_id: null, why: 'Listeners of your seed also play this',
           score: Math.round((t.match || 0) * 100)
-        })
+        }, store, rankOwnedEqually))
       }
       push({ id: 'listener', type: 'listener', title: 'LISTENERS ALSO', pool })
     } catch {
       /* listener route is best-effort */
     } finally {
       advance('Asking Last.fm…')
+    }
+  })()
+
+  // ── 5b. Sounds-like (Deezer related artists) — own host, concurrent, keyless. ──
+  const deezerWork = (async (): Promise<void> => {
+    if (!(deezer && routeEnabled('deezer'))) return
+    try {
+      const rel = await deezer.relatedTracks(seed.artist, seed.title)
+      const seen = new Set([seedKey])
+      const pool: Candidate[] = []
+      for (const t of rel) {
+        const key = dedupKey(t.artist, t.title)
+        if (seen.has(key) || !keep({ artist: t.artist, title: t.title, year: null, label: null }))
+          continue
+        seen.add(key)
+        pool.push(
+          applyOwned(
+            {
+              key, artist: t.artist, title: t.title, label: null, year: null,
+              discogs_id: null,
+              why: `Deezer lists this among artists like ${seed.artist}`,
+              score: 80 + Math.round((t.weight || 0) * 8)
+            },
+            store,
+            rankOwnedEqually
+          )
+        )
+      }
+      pool.sort((a, b) => b.score - a.score)
+      push({ id: 'deezer', type: 'deezer', title: 'SOUNDS LIKE', pool: pool.slice(0, poolSize) })
+    } catch {
+      /* sonic route is best-effort */
+    } finally {
+      advance('Asking Deezer…')
     }
   })()
 
@@ -370,10 +439,10 @@ export async function discover(
           const key = dedupKey(r.artist, r.title)
           if (seen.has(key) || !keep({ artist: r.artist, title: r.title, year: null, label: null })) continue
           seen.add(key)
-          pool.push({
+          pool.push(applyOwned({
             key, artist: r.artist, title: r.title, label: null, year: null,
             discogs_id: null, why: `Sample / version lineage — ${r.type}`, score: 90
-          })
+          }, store, rankOwnedEqually))
         }
         push({ id: 'sample', type: 'sample', title: 'SAMPLE LINEAGE', pool: pool.slice(0, poolSize) })
       }
@@ -395,11 +464,11 @@ export async function discover(
         const key = dedupKey(t.artist, t.title)
         if (seen.has(key) || !keep({ artist: t.artist, title: t.title, year: null, label: null })) continue
         seen.add(key)
-        pool.push({
+        pool.push(applyOwned({
           key, artist: t.artist, title: t.title, label: null, year: null,
           discogs_id: null, why: 'Played alongside your seed in DJ sets',
           score: 74 + (t.weight || 0)
-        })
+        }, store, rankOwnedEqually))
       }
       push({ id: 'set', type: 'set', title: 'PLAYED ALONGSIDE', pool })
     } catch {
@@ -409,7 +478,7 @@ export async function discover(
     }
   })()
 
-  await Promise.all([discogsWork, listenerWork, sampleWork, setWork])
+  await Promise.all([discogsWork, listenerWork, deezerWork, sampleWork, setWork])
 
   // Drop cross-branch duplicates (a track keeps a slot only in its strongest
   // branch), then surface the strongest branches first and cap the count.
