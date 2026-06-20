@@ -10,7 +10,16 @@
 
 import cytoscape from 'cytoscape'
 import type { Core, NodeSingular, EdgeSingular, EdgeCollection } from 'cytoscape'
+import fcose from 'cytoscape-fcose'
 import type { Candidate, Direction, DiscoverResult, RouteType } from '@shared/types'
+
+// Force-directed layout (fcose) — replaces the hand-rolled radial preset +
+// O(n²) relaxation. Registered once.
+let fcoseRegistered = false
+if (!fcoseRegistered) {
+  cytoscape.use(fcose)
+  fcoseRegistered = true
+}
 
 export interface HydrateFn {
   (artist: string, title: string): { bpm: number | null; key: string | null } | null
@@ -159,7 +168,10 @@ export function createLineageWeb(
     maxZoom: 2.4,
     elements: [],
     style: [
-      { selector: 'node', style: { opacity: 0, width: 14, height: 14, events: 'no' } },
+      // Invisible nodes; their width/height is the card footprint so fcose keeps
+      // the HTML cards from overlapping (the cards are positioned over the nodes).
+      { selector: 'node', style: { opacity: 0, events: 'no', shape: 'rectangle', width: 156, height: 96 } },
+      { selector: 'node[kind="dir"]', style: { width: 172, height: 54 } },
       { selector: 'edge', style: { width: 1.4, 'line-color': '#2c3a31', 'curve-style': 'bezier', opacity: 0.8 } },
       ...(Object.keys(TCOL) as RouteType[]).map((t) => ({
         selector: `edge[type="${t}"]`,
@@ -177,6 +189,7 @@ export function createLineageWeb(
 
   const seeds: Record<string, SeedModel> = {}
   const dirs: Record<string, DirModel> = {}
+  let originId: string | null = null // the root seed, pinned at centre by the layout
   let uidn = 0
   const uid = (p: string): string => `${p}_${++uidn}`
   const dirSeed = (d: NodeSingular): string => dirs[d.id()].seedId
@@ -261,7 +274,6 @@ export function createLineageWeb(
           el.dataset.dragged = '1'
           el.classList.add('dragging')
           draggingId = node.id()
-          relaxFrames = 0 // don't let the auto-untangle fight the drag
         }
         if (moved) {
           for (const n of group) {
@@ -275,7 +287,7 @@ export function createLineageWeb(
         el.removeEventListener('pointerup', up)
         el.classList.remove('dragging')
         if (draggingId === node.id()) draggingId = null
-        if (moved) requestRelax() // let neighbours settle around the moved card
+        // (no re-layout on drop — the manual placement is intentional)
         // clear the drag flag after the click handler has had a chance to bail
         setTimeout(() => {
           el.dataset.dragged = '0'
@@ -339,77 +351,41 @@ export function createLineageWeb(
       .finally(() => setTimeout(() => btn.classList.remove('on'), 1400))
   }
 
-  // ── layout: snap + sequencer stagger ─────────────────────────────────────
-  function placeAround(parent: NodeSingular, children: NodeSingular[], radius: number): void {
-    const pp = parent.position()
-    const ps = seeds[parent.id()]
-    const isRoot = !!ps && !ps.parentId
-    const base = isRoot ? -Math.PI / 2 : Math.atan2(pp.y - CY, pp.x - CX)
-    const n = children.length
-    const spread = isRoot ? Math.PI * 2 : Math.min(Math.PI * 1.5, (n - 1) * 0.82)
-    children.forEach((c, i) => {
-      const ang = isRoot ? base + (Math.PI * 2 * i) / n : base + (n > 1 ? spread * (i / (n - 1) - 0.5) : 0)
-      const tgt = { x: pp.x + Math.cos(ang) * radius, y: pp.y + Math.sin(ang) * radius }
-      c.position({ x: pp.x, y: pp.y })
-      setTimeout(() => c.animate({ position: tgt }, { duration: 200, easing: 'ease-out-expo' }), i * 55)
-    })
-    let cl = parent as unknown as ReturnType<NodeSingular['union']>
-    children.forEach((c) => (cl = cl.union(c)))
-    setTimeout(() => {
-      requestRelax()
-      fitEles(cl)
-    }, n * 55 + 260)
-  }
-  function fitEles(eles: Parameters<Core['fit']>[0]): void {
-    cy.animate({ fit: { eles: eles as never, padding: 60 }, duration: 380, easing: 'ease-out-cubic' })
+  // ── layout: force-directed (fcose) ────────────────────────────────────────
+  // Re-run the whole-graph force layout after each expansion. randomize:false
+  // seeds it from the current positions so additions settle in place rather than
+  // jumping; the origin is pinned at centre. This replaces the old radial preset
+  // + per-frame O(n²) relaxation (which caused the jitter/stutter).
+  let running: ReturnType<Core['layout']> | null = null
+  function runLayout(): void {
+    if (running) {
+      try { running.stop() } catch { /* ignore */ }
+    }
+    const layoutOpts = {
+      name: 'fcose',
+      quality: 'default',
+      randomize: false,
+      animate: true,
+      animationDuration: 520,
+      animationEasing: 'ease-out',
+      fit: true,
+      padding: 80,
+      nodeDimensionsIncludeLabels: false,
+      nodeRepulsion: 9000,
+      // route edges (seed→direction) sit wider than track edges (direction→track)
+      idealEdgeLength: (e: EdgeSingular) => (e.hasClass('tk') ? 120 : 200),
+      edgeElasticity: 0.45,
+      gravity: 0.32,
+      gravityRange: 3.6,
+      numIter: 1800,
+      // keep the origin anchored at the centre so the web grows around it
+      fixedNodeConstraint: originId ? [{ nodeId: originId, position: { x: CX, y: CY } }] : []
+    }
+    running = cy.layout(layoutOpts as never)
+    running.run()
   }
   function frame(): void {
-    cy.animate({ fit: { eles: cy.elements() as never, padding: 60 }, duration: 380, easing: 'ease-out-cubic' })
-  }
-
-  // ── auto-untangle: nudge overlapping cards apart until no boxes cross ───────
-  // Card footprint is ~constant in graph coordinates (cards scale with zoom),
-  // so we can separate axis-aligned boxes in graph space with fixed half-sizes.
-  const HALF: Record<string, { x: number; y: number }> = {
-    seed: { x: 70, y: 60 },
-    dir: { x: 88, y: 28 },
-    track: { x: 82, y: 62 }
-  }
-  let relaxFrames = 0
-  function requestRelax(): void {
-    relaxFrames = 46 // ~0.75s of settling
-  }
-  function relaxStep(): void {
-    const ns = cy.nodes()
-    const arr = ns.toArray() as NodeSingular[]
-    for (let i = 0; i < arr.length; i++) {
-      for (let j = i + 1; j < arr.length; j++) {
-        const a = arr[i]
-        const b = arr[j]
-        const ha = HALF[a.data('kind') as string] || HALF.track
-        const hb = HALF[b.data('kind') as string] || HALF.track
-        const pa = a.position()
-        const pb = b.position()
-        const dx = pa.x - pb.x
-        const dy = pa.y - pb.y
-        const ox = ha.x + hb.x - Math.abs(dx)
-        const oy = ha.y + hb.y - Math.abs(dy)
-        if (ox <= 0 || oy <= 0) continue // no overlap
-        const sa = seeds[a.id()]
-        const sb = seeds[b.id()]
-        const pinA = (!!sa && !sa.parentId) || a.id() === draggingId
-        const pinB = (!!sb && !sb.parentId) || b.id() === draggingId
-        if (pinA && pinB) continue
-        // push along the axis of least penetration, damped for a smooth settle
-        let pushX = 0
-        let pushY = 0
-        if (ox < oy) pushX = (ox + 1) * (dx >= 0 ? 1 : -1) * 0.5
-        else pushY = (oy + 1) * (dy >= 0 ? 1 : -1) * 0.5
-        const share = pinA || pinB ? 1 : 0.5
-        if (!pinA) a.position({ x: pa.x + pushX * share, y: pa.y + pushY * share })
-        if (!pinB) b.position({ x: pb.x - pushX * share, y: pb.y - pushY * share })
-      }
-    }
+    cy.animate({ fit: { eles: cy.elements() as never, padding: 70 }, duration: 380, easing: 'ease-out-cubic' })
   }
 
   // ── build ────────────────────────────────────────────────────────────────
@@ -429,6 +405,7 @@ export function createLineageWeb(
   ): NodeSingular {
     const id = uid('seed')
     const pSeed = parentDir ? dirSeed(parentDir) : null
+    if (!pSeed) originId = id // first seed with no parent = origin
     seeds[id] = {
       id,
       artist: data.artist,
@@ -449,7 +426,6 @@ export function createLineageWeb(
   }
 
   function addDirections(seedNode: NodeSingular, directions: Direction[]): void {
-    const seed = seeds[seedNode.id()]
     const nodes = directions.map((d) => {
       const id = uid('dir')
       dirs[id] = {
@@ -467,7 +443,10 @@ export function createLineageWeb(
       makeCard(n)
       return n
     })
-    if (nodes.length) placeAround(seedNode, nodes, seed.parentId ? 268 : 300)
+    // start new nodes at the parent so the force layout fans them out smoothly
+    const sp = seedNode.position()
+    nodes.forEach((n) => n.position({ x: sp.x, y: sp.y }))
+    if (nodes.length) runLayout()
   }
 
   function window5(d: DirModel): Candidate[] {
@@ -517,7 +496,9 @@ export function createLineageWeb(
       d.trackNodes.push(id)
       return n
     })
-    if (nodes.length) placeAround(dirNode, nodes, 236)
+    const dp = dirNode.position()
+    nodes.forEach((n) => n.position({ x: dp.x, y: dp.y }))
+    if (nodes.length) runLayout()
     d.expanded = true
   }
   function shuffleDir(dirNode: NodeSingular): void {
@@ -560,6 +541,9 @@ export function createLineageWeb(
     refreshCard(trackNode)
     select(trackNode)
 
+    // per-node loading state so it's obvious which card is enriching
+    const card = cards.get(trackNode.id())
+    card?.classList.add('digging')
     opts.onStatus?.(`digging — enriching "${title}"…`)
     try {
       const res = await opts.dig(artist, title, parentSeed.rootKey)
@@ -572,6 +556,7 @@ export function createLineageWeb(
     } catch {
       opts.onStatus?.('dig failed — Discogs rate limit or no match')
     } finally {
+      card?.classList.remove('digging')
       setTimeout(() => opts.onStatus?.(null), 2600)
     }
   }
@@ -604,7 +589,7 @@ export function createLineageWeb(
       return
     }
     collapseChildren(seedNode)
-    requestRelax()
+    runLayout()
     delete seeds[seedNode.id()]
     seedNode.data('kind', 'track')
     seedNode.removeClass('seed harmonic').addClass('track')
@@ -738,10 +723,6 @@ export function createLineageWeb(
   // ── sync loop ──────────────────────────────────────────────────────────────
   let raf = 0
   function tick(): void {
-    if (relaxFrames > 0) {
-      relaxStep()
-      relaxFrames--
-    }
     const z = Math.max(0.18, cy.zoom())
     for (const [id, el] of cards) {
       const n = cy.$id(id)
