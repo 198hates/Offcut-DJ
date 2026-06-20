@@ -291,7 +291,13 @@ export function registerAiHandlers(): void {
           model: AI_CHEAP_MODEL,
           max_tokens: 1536,
           system: DIG_SYSTEM,
-          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 2 }],
+          // allowed_callers:['direct'] pins web_search to the plain agentic loop.
+          // The _20260209 version defaults to programmatic (code-driven) calling
+          // for dynamic filtering, which Haiku 4.5 doesn't support — without this
+          // the request 400s. Direct calling works on every web-search model.
+          tools: [
+            { type: 'web_search_20260209', name: 'web_search', max_uses: 2, allowed_callers: ['direct'] }
+          ],
           messages: [{ role: 'user', content: `Research ${who} for crate-digging.` }]
         })
 
