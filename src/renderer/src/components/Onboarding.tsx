@@ -89,7 +89,7 @@ export function Onboarding({ onComplete, mode = 'onboard' }: OnboardingProps): J
         {/* Panel header */}
         <div className="mb-6 pb-4 border-b border-border/30 flex items-center justify-between">
           <p className="font-mono text-[12px] uppercase tracking-[0.22em] text-muted">
-            <span className="text-accent font-bold mr-1.5">cr·8</span>od-1 · {mode === 'tour' ? 'tour' : 'setup'}
+            <span className="text-accent font-bold mr-1.5">offcut</span>od·01 · {mode === 'tour' ? 'tour' : 'setup'}
           </p>
           {mode === 'tour' && (
             <button onClick={onComplete} className="font-mono text-[12px] text-muted hover:text-ink transition-colors">

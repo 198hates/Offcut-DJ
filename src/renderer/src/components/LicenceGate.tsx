@@ -36,7 +36,7 @@ export function LicenceGate({ onActivated }: { onActivated: () => void }): JSX.E
       >
         <div className="mb-6 pb-4 border-b border-border/30">
           <p className="font-mono text-[12px] uppercase tracking-[0.22em] text-muted">
-            <span className="text-accent font-bold mr-1.5">cr·8</span>od-1 · activation
+            <span className="text-accent font-bold mr-1.5">offcut</span>od·01 · activation
           </p>
         </div>
 
