@@ -36,7 +36,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22 # ≥22.12 — required by @electron/rebuild; ships npm 10.9
           cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
