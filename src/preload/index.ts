@@ -335,6 +335,11 @@ const api = {
       return () => ipcRenderer.removeListener('stems:progress', handler)
     }
   },
+  licence: {
+    status: (): Promise<{ activated: boolean; key: string }> => ipcRenderer.invoke('licence:status'),
+    activate: (key: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('licence:activate', key),
+    deactivate: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('licence:deactivate')
+  },
   ai: {
     status: (): Promise<{ enabled: boolean; hasKey: boolean }> =>
       ipcRenderer.invoke('ai:status'),

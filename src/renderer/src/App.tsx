@@ -37,11 +37,12 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 export default function App(): JSX.Element {
   const loadLibrary = useLibraryStore((s) => s.loadLibrary)
   const selectedTrackIds = useLibraryStore((s) => s.selectedTrackIds)
-  const tracks = useLibraryStore((s) => s.tracks)
   const isLoading = useLibraryStore((s) => s.isLoading)
   const [activePage, setActivePage] = useState<Section>('library')
   const [detailTrackId, setDetailTrackId] = useState<string | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  // 'onboard' = first-run (welcome → tour → import); 'tour' = re-opened tour only.
+  const [onboardMode, setOnboardMode] = useState<'onboard' | 'tour'>('onboard')
   const [showShortcuts, setShowShortcuts] = useState(false)
 
   // MIDI engine — initialise once on mount
@@ -88,9 +89,23 @@ export default function App(): JSX.Element {
   useEffect(() => {
     if (isLoading) return
     window.api.settings.get().then((s) => {
-      if (tracks.length === 0 && s.showWelcomeOnStartup) setShowOnboarding(true)
+      if (s.showWelcomeOnStartup) {
+        setOnboardMode('onboard')
+        setShowOnboarding(true)
+      }
     })
-  }, [isLoading, tracks.length])
+  }, [isLoading])
+
+  // Re-open the welcome tour on demand (Settings → "replay welcome tour", or a
+  // help button). Shows the feature tour without re-running the import flow.
+  useEffect(() => {
+    const open = (): void => {
+      setOnboardMode('tour')
+      setShowOnboarding(true)
+    }
+    window.addEventListener('offcut:show-tour', open)
+    return () => window.removeEventListener('offcut:show-tour', open)
+  }, [])
 
   useEffect(() => {
     setDetailTrackId(selectedTrackIds.size === 1 ? [...selectedTrackIds][0] : null)
@@ -167,7 +182,16 @@ export default function App(): JSX.Element {
 
       <Toast />
       <AnalysisProgressBar />
-      {showOnboarding && <Onboarding onComplete={() => setShowOnboarding(false)} />}
+      {showOnboarding && (
+        <Onboarding
+          mode={onboardMode}
+          onComplete={() => {
+            setShowOnboarding(false)
+            // Don't auto-show again after a first-run pass (import or skip alike).
+            if (onboardMode === 'onboard') void window.api.settings.save({ showWelcomeOnStartup: false })
+          }}
+        />
+      )}
       {showShortcuts && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowShortcuts(false)}>
           <div className="bg-chassis border border-border/40 rounded-lg shadow-2xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>

@@ -519,6 +519,10 @@ export interface AppSettings {
   cueTemplates?: CueTemplate[]
   /** Which auto-cue template is active (built-in id or a user template id). */
   activeCueTemplateId?: string
+  /** Licence key the user has entered (uppercased). */
+  licenceKey?: string
+  /** Whether the entered licence key validated. */
+  licenceActivated?: boolean
   /** Soft monthly spend cap (USD) for AI features. null/0 = no cap. When the
    *  month's estimated spend reaches it, AI calls are blocked until raised. */
   aiMonthlyBudgetUsd?: number | null

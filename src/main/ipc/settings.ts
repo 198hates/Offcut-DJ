@@ -1,6 +1,7 @@
 import { ipcMain, dialog, shell } from 'electron'
 import { cpus, totalmem, platform, arch } from 'os'
 import { getSettings, saveSettings, getDetectedPaths } from '../settings'
+import { isValidLicenceKey } from '../licence'
 import type { AppSettings } from '../settings'
 import type { SystemInfo } from '../../shared/types'
 
@@ -18,6 +19,21 @@ export function registerSettingsHandlers(): void {
   })
 
   ipcMain.handle('settings:getDetectedPaths', () => getDetectedPaths())
+
+  // ── Licence ───────────────────────────────────────────────────────────────
+  ipcMain.handle('licence:status', () => {
+    const s = getSettings()
+    return { activated: !!s.licenceActivated, key: s.licenceKey ?? '' }
+  })
+  ipcMain.handle('licence:activate', (_e, key: string) => {
+    const ok = isValidLicenceKey(key)
+    if (ok) saveSettings({ licenceKey: (key || '').trim().toUpperCase(), licenceActivated: true })
+    return { ok }
+  })
+  ipcMain.handle('licence:deactivate', () => {
+    saveSettings({ licenceKey: '', licenceActivated: false })
+    return { ok: true }
+  })
 
   ipcMain.handle('settings:systemInfo', (): SystemInfo => ({
     cpuCount: cpus().length || 4,

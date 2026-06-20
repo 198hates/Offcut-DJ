@@ -624,6 +624,22 @@ export function SettingsPage(): JSX.Element {
         </Section>
       )}
 
+      <Section title="Help" icon="?" category="general">
+        <p className="font-mono text-[12px] text-muted">
+          A guided tour of every workspace — also shown on first launch.
+        </p>
+        <button
+          onClick={() => window.dispatchEvent(new Event('offcut:show-tour'))}
+          className="px-3 py-1.5 rounded font-mono text-[12px] uppercase tracking-[0.1em] border border-border/40 text-ink hover:bg-ink/[0.05] transition-colors"
+        >
+          ▸ replay welcome tour
+        </button>
+      </Section>
+
+      <Section title="Licence" icon="⊜" category="general">
+        <LicenceSection />
+      </Section>
+
       </CategoryContext.Provider>
     </div>
   )
@@ -1000,6 +1016,144 @@ function AiSpend({
           Reset counter
         </button>
         {over && <span className="font-mono text-[11px] text-accent">cap reached — AI paused</span>}
+      </div>
+    </div>
+  )
+}
+
+// Bundled open-source libraries, shown in the Licence section as attribution.
+const ATTRIBUTIONS: { name: string; licence: string }[] = [
+  { name: 'Electron', licence: 'MIT' },
+  { name: 'React · React DOM', licence: 'MIT' },
+  { name: 'Tailwind CSS', licence: 'MIT' },
+  { name: 'zustand', licence: 'MIT' },
+  { name: '@anthropic-ai/sdk', licence: 'MIT' },
+  { name: 'better-sqlite3 · -multiple-ciphers', licence: 'MIT' },
+  { name: 'cytoscape · cytoscape-fcose', licence: 'MIT' },
+  { name: 'music-metadata', licence: 'MIT' },
+  { name: 'fast-xml-parser', licence: 'MIT' },
+  { name: 'onnxruntime-node', licence: 'MIT' },
+  { name: 'bonjour-service · castv2-client', licence: 'MIT' },
+  { name: 'kaitai-struct', licence: 'MIT' },
+  { name: 'qrcode · electron-updater', licence: 'MIT' },
+  { name: 'FFmpeg (via ffmpeg-static)', licence: 'LGPL-2.1+ / GPL' }
+]
+
+// Licence section: key activation (offline-validated in the main process) plus
+// the app's own terms and third-party attributions.
+function LicenceSection(): JSX.Element {
+  const [status, setStatus] = useState<{ activated: boolean; key: string } | null>(null)
+  const [keyInput, setKeyInput] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showLegal, setShowLegal] = useState(false)
+
+  const load = useCallback(() => {
+    window.api.licence
+      .status()
+      .then((s) => {
+        setStatus(s)
+        setKeyInput(s.key)
+      })
+      .catch(() => {})
+  }, [])
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const activate = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    const { ok } = await window.api.licence.activate(keyInput)
+    setBusy(false)
+    if (!ok) {
+      setError('That key isn’t valid. Check it and try again.')
+      return
+    }
+    load()
+  }
+  const deactivate = async (): Promise<void> => {
+    await window.api.licence.deactivate()
+    setKeyInput('')
+    load()
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted">Status</span>
+          {status?.activated ? (
+            <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-green-600/15 text-green-600 border border-green-600/25">
+              ✓ activated
+            </span>
+          ) : (
+            <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-ink/[0.05] text-muted border border-border/30">
+              unactivated · evaluation
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            value={keyInput}
+            onChange={(e) => setKeyInput(e.target.value)}
+            placeholder="OFFCUT-XXXX-XXXX-XXXX-XXXX"
+            spellCheck={false}
+            autoComplete="off"
+            className="flex-1 bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.08em] text-ink outline-none focus:border-accent transition-colors placeholder-muted/50"
+          />
+          {status?.activated ? (
+            <button
+              onClick={deactivate}
+              className="px-3 py-1.5 rounded font-mono text-[12px] uppercase tracking-[0.1em] border border-border/40 text-muted hover:text-ink transition-colors"
+            >
+              remove
+            </button>
+          ) : (
+            <button
+              onClick={activate}
+              disabled={busy || !keyInput.trim()}
+              className="px-4 py-1.5 rounded font-mono text-[12px] uppercase tracking-[0.1em] bg-accent text-paper disabled:opacity-40 hover:bg-accent/90 transition-colors"
+            >
+              {busy ? '…' : 'activate'}
+            </button>
+          )}
+        </div>
+        {error && <p className="font-mono text-[12px] text-accent">{error}</p>}
+      </div>
+
+      <div className="bg-ink/[0.03] border border-border/30 rounded p-3 space-y-2">
+        <p className="font-mono text-[12px] text-muted leading-relaxed">
+          <span className="text-ink font-bold">Offcut</span> © 2026 Between the Bridges / Peppermint
+          Events Limited. Licensed for personal use, not sold. <strong>Not for resale or
+          redistribution.</strong> Provided “as is”, without warranty of any kind; the authors accept
+          no liability for any loss arising from its use. Your library stays on your device; AI
+          features send only track metadata (never audio) to Anthropic when you enable them.
+        </p>
+        <button
+          onClick={() => setShowLegal((v) => !v)}
+          className="font-mono text-[12px] text-accent hover:underline"
+        >
+          {showLegal ? 'hide' : 'show'} third-party licences ▾
+        </button>
+        {showLegal && (
+          <div className="max-h-[28vh] overflow-y-auto space-y-1 pt-1">
+            <p className="font-mono text-[11px] text-muted/80 leading-relaxed">
+              Offcut is built with open-source software, used under their respective licences (MIT
+              unless noted). The audio engine is original work; FFmpeg is a separate binary under its
+              own LGPL/GPL terms.
+            </p>
+            {ATTRIBUTIONS.map((a) => (
+              <div
+                key={a.name}
+                className="flex items-center justify-between font-mono text-[11.5px] border-b border-border/15 py-1"
+              >
+                <span className="text-ink-soft">{a.name}</span>
+                <span className="text-muted/70">{a.licence}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

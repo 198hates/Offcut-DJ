@@ -46,7 +46,9 @@ const DEFAULTS: AppSettings = {
   analysisConcurrency: 0,
   cueTemplates: [],
   // Matches BUILTIN_CUE_TEMPLATES[0].id in the renderer's cueTemplates.ts.
-  activeCueTemplateId: 'builtin:standard'
+  activeCueTemplateId: 'builtin:standard',
+  licenceKey: '',
+  licenceActivated: false
 }
 
 // Simple JSON-file settings store (no external dependency)

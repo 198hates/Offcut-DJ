@@ -180,6 +180,11 @@ declare global {
         onProgress: (cb: (p: StemProgress) => void) => () => void
       }
       /** AI features bridge (Claude). Metadata only — never audio. */
+      licence: {
+        status: () => Promise<{ activated: boolean; key: string }>
+        activate: (key: string) => Promise<{ ok: boolean }>
+        deactivate: () => Promise<{ ok: boolean }>
+      }
       ai: {
         status: () => Promise<{ enabled: boolean; hasKey: boolean }>
         usage: () => Promise<{ usage: import('../shared/types').AiUsage; budgetUsd: number | null }>
