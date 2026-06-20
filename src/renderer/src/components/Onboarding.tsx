@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { useToastStore } from '../store/toastStore'
 import type { IntegrationId } from '@shared/types'
@@ -14,7 +14,7 @@ interface DetectedApp {
   description: string; isDirectory?: boolean
 }
 
-type Step = 'welcome' | 'tour' | 'detect' | 'import' | 'done'
+type Step = 'welcome' | 'tour' | 'rekordbox' | 'detect' | 'import' | 'done'
 
 // Every workspace the nav rail exposes, with a one-line "what it does". Keep in
 // step with NavRail's MAIN_ITEMS so the tour always reflects the real app.
@@ -46,7 +46,7 @@ export function Onboarding({ onComplete, mode = 'onboard' }: OnboardingProps): J
   const runDetect = async (): Promise<void> => {
     const paths = await window.api.settings.getDetectedPaths()
     const found: DetectedApp[] = []
-    if (paths.rekordboxDb)        found.push({ id: 'rekordbox', label: 'Rekordbox',  path: paths.rekordboxDb,        description: 'direct db access · full fidelity · fastest' })
+    // Rekordbox has its own dedicated step; only the other apps appear here.
     if (paths.traktorCollection)  found.push({ id: 'traktor',   label: 'Traktor Pro', path: paths.traktorCollection,  description: 'collection.nml · playlists, cues, bpm, key' })
     if (paths.seratoDir)          found.push({ id: 'serato',    label: 'Serato DJ',   path: paths.seratoDir,          description: 'crates and track metadata', isDirectory: true })
     setDetected(found)
@@ -54,9 +54,10 @@ export function Onboarding({ onComplete, mode = 'onboard' }: OnboardingProps): J
     setStep('detect')
   }
 
-  // From the tour: first run continues into library import; a re-opened tour closes.
+  // From the tour: first run continues into the Rekordbox link step; a re-opened
+  // tour just closes.
   const afterTour = (): void => {
-    if (mode === 'onboard') void runDetect()
+    if (mode === 'onboard') setStep('rekordbox')
     else onComplete()
   }
 
@@ -99,6 +100,7 @@ export function Onboarding({ onComplete, mode = 'onboard' }: OnboardingProps): J
 
         {step === 'welcome' && <WelcomeStep mode={mode} onGetStarted={() => setStep('tour')} onSkip={onComplete} />}
         {step === 'tour'    && <TourStep mode={mode} onBack={() => setStep('welcome')} onContinue={afterTour} />}
+        {step === 'rekordbox' && <RekordboxStep onContinue={() => void runDetect()} />}
         {step === 'detect'  && (
           <DetectStep
             detected={detected} selected={selected}
@@ -172,6 +174,103 @@ function TourStep({ mode, onBack, onContinue }: { mode: 'onboard' | 'tour'; onBa
           className="flex-1 py-2.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[13px] uppercase tracking-[0.14em] rounded transition-colors"
         >
           {mode === 'onboard' ? 'next · connect your library →' : 'done'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function RekordboxStep({ onContinue }: { onContinue: () => void }): JSX.Element {
+  const { importFromIntegration } = useLibraryStore()
+  const { show } = useToastStore()
+  const [path, setPath] = useState<string | null>(null)
+  const [checking, setChecking] = useState(true)
+  const [importing, setImporting] = useState(false)
+
+  useEffect(() => {
+    window.api.settings.getDetectedPaths().then((p) => {
+      setPath(p.rekordboxDb || null)
+      setChecking(false)
+    })
+  }, [])
+
+  const browse = async (): Promise<void> => {
+    const p = await window.api.settings.choosePath('Locate Rekordbox master.db', false)
+    if (p) setPath(p)
+  }
+
+  const link = async (): Promise<void> => {
+    if (!path) return
+    setImporting(true)
+    await window.api.settings.save({ rekordboxDbPath: path })
+    const res = await importFromIntegration('rekordbox', path)
+    setImporting(false)
+    show(`Rekordbox linked — ${res.tracksImported} tracks`, 'success')
+    onContinue()
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="font-sans font-bold text-lg text-ink mb-1">connect Rekordbox</h2>
+        <p className="font-mono text-[13px] text-muted leading-relaxed">
+          Offcut links straight to your Rekordbox database — your full library, playlists, cues and
+          grids, kept in sync both ways. No XML export needed.
+        </p>
+      </div>
+
+      {checking ? (
+        <div className="font-mono text-[13px] text-muted">looking for Rekordbox…</div>
+      ) : path ? (
+        <div className="bg-accent/[0.07] border border-accent/30 rounded p-3">
+          <p className="font-mono text-[12px] font-bold text-ink">✓ Rekordbox database found</p>
+          <p className="font-mono text-[11px] text-muted mt-1 break-all">{path}</p>
+          <button onClick={browse} className="font-mono text-[11px] text-accent hover:underline mt-1.5">
+            choose a different file
+          </button>
+        </div>
+      ) : (
+        <div className="bg-ink/[0.03] border border-border/30 rounded p-3 space-y-2">
+          <p className="font-mono text-[12px] text-ink">Couldn&apos;t find it automatically.</p>
+          <p className="font-mono text-[11px] text-muted leading-relaxed">
+            It usually lives at{' '}
+            <span className="text-ink-soft">~/Library/Pioneer/rekordbox/master.db</span>. Locate it
+            manually, or set it up later in Settings → Rekordbox (you can point at a collection XML
+            there instead).
+          </p>
+          <button
+            onClick={browse}
+            className="px-3 py-1.5 rounded font-mono text-[12px] uppercase tracking-[0.1em] border border-border/40 text-ink hover:bg-ink/[0.05] transition-colors"
+          >
+            locate master.db…
+          </button>
+        </div>
+      )}
+
+      <div className="flex items-start gap-2 font-mono text-[11px] text-muted bg-ink/[0.03] border border-border/30 rounded p-2.5">
+        <span className="shrink-0 text-accent">ℹ</span>
+        <span>
+          Quit Rekordbox before Offcut writes back to it — the two apps can&apos;t hold the database
+          at the same time.
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {path && (
+          <button
+            onClick={link}
+            disabled={importing}
+            className="w-full py-2.5 bg-accent hover:bg-accent/90 text-paper font-mono text-[13px] uppercase tracking-[0.14em] rounded transition-colors disabled:opacity-50"
+          >
+            {importing ? 'linking & importing…' : 'link rekordbox →'}
+          </button>
+        )}
+        <button
+          onClick={onContinue}
+          disabled={importing}
+          className="font-mono text-[12px] text-muted hover:text-ink transition-colors text-center"
+        >
+          skip · set up later in settings
         </button>
       </div>
     </div>
