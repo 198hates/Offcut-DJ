@@ -4,8 +4,12 @@ out
 .DS_Store
 *.local
 
-# Packaging inputs — fetched/built locally, far too large for git
-# (build/demucs-dist ~600MB, build/models/*.onnx; electron-builder reads them
-#  via extraResources at package time)
-build/
+# Packaging inputs — fetched/built locally, mostly far too large for git
+# (build/demucs-dist ~600MB ships as an on-demand download, not in the repo).
+# Exception: the small, platform-independent beat-detection model is tracked in
+# Git LFS so CI bundles it (see .gitattributes).
+build/*
+!build/models/
+build/models/*
+!build/models/*.onnx
 *.tsbuildinfo

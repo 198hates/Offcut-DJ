@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Track, IntegrationId, AppSettings, SmartRule, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent, BackupInfo, SystemInfo, CastDevice, CastStatus } from '../shared/types'
+import type { Track, IntegrationId, AppSettings, SmartRule, EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed, StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef, StemsStatus, StemPaths, StemSeparateResult, StemProgress, StemsPackStatus, StemsInstallProgress, UsbExport, AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent, BackupInfo, SystemInfo, CastDevice, CastStatus } from '../shared/types'
 
 const api = {
   library: {
@@ -333,6 +333,15 @@ const api = {
       const handler = (_e: unknown, p: StemProgress): void => cb(p)
       ipcRenderer.on('stems:progress', handler)
       return () => ipcRenderer.removeListener('stems:progress', handler)
+    },
+    packStatus: (): Promise<StemsPackStatus> => ipcRenderer.invoke('stems:packStatus'),
+    installPack: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('stems:installPack'),
+    removePack: (): Promise<boolean> => ipcRenderer.invoke('stems:removePack'),
+    onInstallProgress: (cb: (p: StemsInstallProgress) => void): (() => void) => {
+      const handler = (_e: unknown, p: StemsInstallProgress): void => cb(p)
+      ipcRenderer.on('stems:install-progress', handler)
+      return () => ipcRenderer.removeListener('stems:install-progress', handler)
     }
   },
   licence: {

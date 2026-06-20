@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, createContext, useContext } from 'react'
-import type { AppSettings, SystemInfo, AiUsage } from '@shared/types'
+import type { AppSettings, SystemInfo, AiUsage, StemsPackStatus } from '@shared/types'
 import { suggestConcurrency } from '../../lib/concurrency'
 import { CueTemplateEditor } from '../../components/CueTemplateEditor'
 import { CastPanel } from '../../components/CastPanel'
@@ -391,6 +391,9 @@ export function SettingsPage(): JSX.Element {
             autoComplete="off"
             className="w-full bg-paper border border-border/40 rounded px-3 py-1.5 font-mono text-[13px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/60"
           />
+        </div>
+        <div className="mt-4 pt-4 border-t border-border/30">
+          <StemsPackSection />
         </div>
       </Section>
 
@@ -1041,6 +1044,103 @@ const ATTRIBUTIONS: { name: string; licence: string }[] = [
 
 // Licence section: key activation (offline-validated in the main process) plus
 // the app's own terms and third-party attributions.
+function StemsPackSection(): JSX.Element {
+  const [status, setStatus] = useState<StemsPackStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState<{ percent: number; label: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(() => {
+    window.api.stems.packStatus().then(setStatus).catch(() => {})
+  }, [])
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const install = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    setProgress({ percent: 0, label: 'starting…' })
+    const off = window.api.stems.onInstallProgress((p) => setProgress(p))
+    try {
+      const { ok, error: err } = await window.api.stems.installPack()
+      if (!ok) setError(err || 'Install failed.')
+    } catch {
+      setError('Install failed.')
+    } finally {
+      off()
+      setBusy(false)
+      setProgress(null)
+      load()
+    }
+  }
+  const remove = async (): Promise<void> => {
+    await window.api.stems.removePack()
+    load()
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted">
+          Stem engine pack
+        </span>
+        {status?.installed ? (
+          <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-green-600/15 text-green-600 border border-green-600/25">
+            ✓ installed
+          </span>
+        ) : status?.downloadable ? (
+          <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-ink/[0.05] text-muted border border-border/30">
+            not installed
+          </span>
+        ) : (
+          <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-ink/[0.05] text-muted border border-border/30">
+            use Python
+          </span>
+        )}
+      </div>
+      <p className="font-mono text-[12px] text-muted/70 leading-relaxed">
+        Optionally install a self-contained separator (~600&nbsp;MB, no Python needed). Downloads once
+        and is used automatically.{' '}
+        {status && !status.downloadable && `No prebuilt pack for ${status.platform} — use the Python route above.`}
+      </p>
+
+      {progress && (
+        <div className="space-y-1">
+          <div className="h-1.5 bg-ink/[0.06] rounded overflow-hidden">
+            <div
+              className="h-full bg-accent transition-all"
+              style={{ width: `${progress.percent}%` }}
+            />
+          </div>
+          <p className="font-mono text-[11px] text-muted">
+            {progress.label} {progress.percent}%
+          </p>
+        </div>
+      )}
+      {error && <p className="font-mono text-[12px] text-accent">{error}</p>}
+
+      {status?.installed ? (
+        <button
+          onClick={remove}
+          disabled={busy}
+          className="px-3 py-1.5 rounded font-mono text-[12px] uppercase tracking-[0.1em] border border-border/40 text-muted hover:text-ink transition-colors disabled:opacity-40"
+        >
+          remove pack
+        </button>
+      ) : status?.downloadable ? (
+        <button
+          onClick={install}
+          disabled={busy}
+          className="px-4 py-1.5 rounded font-mono text-[12px] uppercase tracking-[0.1em] bg-accent text-paper disabled:opacity-40 hover:bg-accent/90 transition-colors"
+        >
+          {busy ? 'installing…' : 'download & install'}
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 function LicenceSection(): JSX.Element {
   const [status, setStatus] = useState<{ activated: boolean; key: string } | null>(null)
   const [keyInput, setKeyInput] = useState('')

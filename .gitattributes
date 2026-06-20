@@ -1,0 +1,5 @@
+# The beat-detection model (binary, ~tens of MB, platform-independent) is
+# stored in Git LFS so the repo stays lean and CI can bundle it. Generate it
+# once with scripts/export-beat-this.py, drop it at build/models/beat_this.onnx,
+# then `git add` it — the LFS filter handles the rest.
+build/models/*.onnx filter=lfs diff=lfs merge=lfs -text

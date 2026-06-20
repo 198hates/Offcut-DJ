@@ -19,16 +19,39 @@ const KINDS: StemKind[] = ['drums', 'bass', 'vocals', 'other']
 
 export type StemPaths = Record<StemKind, string>
 
+/** Platform-correct binary name inside an `offcut-demucs` pack folder. */
+export function demucsBinName(): string {
+  return process.platform === 'win32' ? 'offcut-demucs.exe' : 'offcut-demucs'
+}
+
+/** Where a user-installed (downloaded) stem-engine pack lives. */
+export function stemsEngineDir(): string {
+  return join(app.getPath('userData'), 'stems-engine')
+}
+
+/** A resolved offcut-demucs pack under `baseDir/offcut-demucs/`, or null. */
+function demucsAt(baseDir: string): { bin: string; torchHome: string } | null {
+  const root = join(baseDir, 'offcut-demucs')
+  const bin = join(root, demucsBinName())
+  return existsSync(bin) ? { bin, torchHome: join(root, 'torch-home') } : null
+}
+
+/** True if a downloaded stem-engine pack is installed in userData. */
+export function demucsPackInstalled(): boolean {
+  return demucsAt(stemsEngineDir()) !== null
+}
+
 /**
- * In a packaged build we ship a self-contained PyInstaller bundle of Demucs
- * (+ PyTorch + the model) under Resources/offcut-demucs — no Python needed.
- * In dev we fall back to the configured Python's `python -m demucs`.
+ * Resolve a self-contained Demucs binary (+ PyTorch + model — no Python needed).
+ * Prefers a user-installed pack (download-on-demand; works in dev and packaged),
+ * then the bundle shipped under Resources/offcut-demucs in a packaged build.
+ * Returns null when neither is present and we must fall back to system Python.
  */
 function bundledDemucs(): { bin: string; torchHome: string } | null {
-  if (!app.isPackaged) return null
-  const dir = join(process.resourcesPath, 'offcut-demucs')
-  const bin = join(dir, 'offcut-demucs')
-  return existsSync(bin) ? { bin, torchHome: join(dir, 'torch-home') } : null
+  const installed = demucsAt(stemsEngineDir())
+  if (installed) return installed
+  if (app.isPackaged) return demucsAt(process.resourcesPath)
+  return null
 }
 
 function stemsRoot(): string {

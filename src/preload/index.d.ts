@@ -4,7 +4,7 @@ import type {
   AppSettings, SmartRule, RunningOrder, EditLineage, CutHistory,
   EnrichInput, Seed, SeedCandidate, DiscoverOptions, DiscoverResult, DiscoverProgress, IdentityResult, PreviewResult, BandcampEmbed,
   StoredCandidate, LineageExportOptions, LineageExportResult, LineageStatus, LibraryTrackRef,
-  StemsStatus, StemPaths, StemSeparateResult, StemProgress, UsbExport, UsbPreflight, BeatgridMarker, CuePoint,
+  StemsStatus, StemPaths, StemSeparateResult, StemProgress, StemsPackStatus, StemsInstallProgress, UsbExport, UsbPreflight, BeatgridMarker, CuePoint,
   AiSearchFilter, AiSeqTrack, AiSequenceResult, AiTidyTrack, AiTidyResult, AiDigResult, AiAgentEvent,
   BackupInfo, SystemInfo, CastDevice, CastStatus,
   SyncStatus, SyncPairingInfo,
@@ -178,6 +178,10 @@ declare global {
         separate: (trackId: string, filePath: string) => Promise<StemSeparateResult>
         clear: (trackId: string) => Promise<boolean>
         onProgress: (cb: (p: StemProgress) => void) => () => void
+        packStatus: () => Promise<StemsPackStatus>
+        installPack: () => Promise<{ ok: boolean; error?: string }>
+        removePack: () => Promise<boolean>
+        onInstallProgress: (cb: (p: StemsInstallProgress) => void) => () => void
       }
       /** AI features bridge (Claude). Metadata only — never audio. */
       licence: {

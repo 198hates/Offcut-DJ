@@ -377,6 +377,21 @@ export interface StemProgress {
   label: string
 }
 
+/** State of the optional, download-on-demand self-contained stem-engine pack. */
+export interface StemsPackStatus {
+  installed: boolean
+  /** A prebuilt pack exists for this platform/arch. */
+  downloadable: boolean
+  url: string | null
+  platform: string
+}
+
+/** Progress tick emitted on `stems:install-progress` while downloading the pack. */
+export interface StemsInstallProgress {
+  percent: number
+  label: string
+}
+
 // ── Automix decision model ────────────────────────────────────────────────────
 
 /** Confidence band: how much the automix engine trusts itself on this transition. */
