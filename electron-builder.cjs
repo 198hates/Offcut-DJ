@@ -68,12 +68,12 @@ module.exports = {
       NSDownloadsFolderUsageDescription: 'Offcut reads your music files to analyse and play them.',
       NSRemovableVolumesUsageDescription: 'Offcut reads music files stored on external drives.'
     },
-    // Both Apple Silicon and Intel. CI passes --arm64 / --x64 to build one arch
-    // per native runner; locally `npm run build:mac` / `build:mac:x64` do the same.
-    target: [
-      { target: 'dmg', arch: ['arm64', 'x64'] },
-      { target: 'zip', arch: ['arm64', 'x64'] }
-    ]
+    // No explicit arch here on purpose: arch is chosen per-build by the CLI flag
+    // (--arm64 / --x64), so each run produces exactly one arch. Listing
+    // ['arm64','x64'] would override the flag and make a single --arm64 run ALSO
+    // cross-build x64 (which can't produce correct x64 ffmpeg/onnx on an arm64
+    // host). Intel is built natively on an Intel Mac via `npm run build:mac:x64`.
+    target: [{ target: 'dmg' }, { target: 'zip' }]
   },
   dmg: {
     title: '${productName} ${version}',
