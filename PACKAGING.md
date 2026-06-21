@@ -8,11 +8,24 @@ OS/arch). See `.github/workflows/release.yml`.
 
 | Trigger | Result |
 |---|---|
-| Push a `v*` tag (`git tag v0.1.1 && git push origin v0.1.1`) | Builds Mac arm64 + Mac Intel + Windows x64, **publishes to GitHub Releases** |
+| Push a `v*` tag (`git tag v0.1.2 && git push origin v0.1.2`) | Builds **Mac arm64 + Windows x64** on CI, **publishes to GitHub Releases** |
 | Actions → *Build & Release* → Run workflow | Same builds, installers attached as **run artifacts** (no release) |
 
-Locally you can build the host arch only: `npm run build:mac` (arm64),
-`npm run build:mac:x64` (Intel — needs an Intel Mac), `npm run build:win` (on Windows).
+Locally you can build the host arch: `npm run build:mac` (arm64),
+`npm run build:win` (on Windows).
+
+### Intel macOS — built natively, not on CI
+
+GitHub's hosted Intel runners (`macos-13`) no longer schedule, and
+cross-compiling x64 on an Apple Silicon runner can't produce correct x64
+`ffmpeg-static` / `onnxruntime-node` binaries (they ship host-arch prebuilts
+only). So build the Intel DMG **natively on any Intel Mac**:
+
+```bash
+npm install && npm run build:mac:x64   # → dist/Offcut-<ver>-mac-x64.dmg
+```
+
+Then attach that DMG to the matching GitHub Release (`gh release upload v0.1.2 dist/*-mac-x64.dmg`).
 
 ## Signing (currently OFF)
 

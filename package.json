@@ -1,6 +1,6 @@
 {
   "name": "offcut",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Cross-platform DJ library manager — sync Rekordbox, Serato, Traktor, Apple Music and Engine DJ",
   "main": "out/main/index.js",
   "private": true,

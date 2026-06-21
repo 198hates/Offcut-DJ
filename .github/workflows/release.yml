@@ -22,9 +22,9 @@ jobs:
           - name: macOS Apple Silicon (arm64)
             os: macos-14
             ebflags: --mac --arm64
-          - name: macOS Intel (x64)
-            os: macos-13
-            ebflags: --mac --x64
+          # Intel macOS is built natively on an Intel Mac (npm run build:mac:x64) —
+          # GitHub's hosted Intel runners (macos-13) no longer schedule, and
+          # cross-compiling on arm64 can't produce x64 ffmpeg-static / onnxruntime-node.
           - name: Windows (x64)
             os: windows-latest
             ebflags: --win --x64
