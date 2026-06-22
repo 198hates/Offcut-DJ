@@ -13,3 +13,6 @@ build/*
 build/models/*
 !build/models/*.onnx
 *.tsbuildinfo
+
+# Beta keygen — embeds the licence secret, never commit
+keygen/
