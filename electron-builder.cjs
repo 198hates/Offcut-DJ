@@ -51,7 +51,7 @@ module.exports = {
     '**/node_modules/ffmpeg-static/ffmpeg.exe',
     'out/main/beat-analysis-worker.js'
   ],
-  publish: { provider: 'github', owner: '198Hates', repo: 'DJ', releaseType: 'release' },
+  publish: { provider: 'github', owner: '198hates', repo: 'DJ', releaseType: 'release' },
   mac: {
     category: 'public.app-category.music',
     icon: 'resources/icon.icns',

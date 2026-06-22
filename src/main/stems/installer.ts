@@ -25,7 +25,7 @@ import { stemsEngineDir, demucsBinName, demucsPackInstalled } from './index'
 // asset size limit is 2 GB). Override at runtime with OFFCUT_STEMS_PACK_BASE to
 // point at a staging host without rebuilding. Fill in the real release tag once
 // the packs are built + uploaded.
-const DEFAULT_PACK_BASE = 'https://github.com/198Hates/DJ/releases/download/stems-pack-v1'
+const DEFAULT_PACK_BASE = 'https://github.com/198hates/DJ/releases/download/stems-pack-v1'
 
 function packBase(): string {
   return (process.env.OFFCUT_STEMS_PACK_BASE || DEFAULT_PACK_BASE).replace(/\/+$/, '')
