@@ -15,7 +15,13 @@ const path = require('path')
 
 const profile = process.argv.includes('--debug') ? 'debug' : 'release'
 const root = path.join(__dirname, '..')
-const targetDir = path.join(root, 'native', 'audio-engine', 'target', profile)
+// For a cross-build, cargo emits to target/<triple>/<profile>. ENGINE_TARGET
+// carries the triple (e.g. x86_64-apple-darwin when building the Intel app on an
+// Apple Silicon machine via scripts/build-mac-x64.sh).
+const engineTarget = process.env.ENGINE_TARGET
+const targetDir = engineTarget
+  ? path.join(root, 'native', 'audio-engine', 'target', engineTarget, profile)
+  : path.join(root, 'native', 'audio-engine', 'target', profile)
 const names = ['libcrate_audio_engine.dylib', 'crate_audio_engine.dll', 'libcrate_audio_engine.so']
 const src = names.map((n) => path.join(targetDir, n)).find((p) => fs.existsSync(p))
 

@@ -14,18 +14,26 @@ OS/arch). See `.github/workflows/release.yml`.
 Locally you can build the host arch: `npm run build:mac` (arm64),
 `npm run build:win` (on Windows).
 
-### Intel macOS — built natively, not on CI
+### Intel macOS — cross-built from Apple Silicon
 
-GitHub's hosted Intel runners (`macos-13`) no longer schedule, and
-cross-compiling x64 on an Apple Silicon runner can't produce correct x64
-`ffmpeg-static` / `onnxruntime-node` binaries (they ship host-arch prebuilts
-only). So build the Intel DMG **natively on any Intel Mac**:
+GitHub's hosted Intel runners (`macos-13`) no longer schedule, so Intel isn't on
+CI. A plain `electron-builder --x64` on an arm64 host silently bundles host-arch
+binaries (arm64 ffmpeg, etc.). Use the dedicated script instead — it cross-builds
+the Rust engine, fetches the correct x64 ffmpeg, packages, and **verifies every
+bundled binary is x86_64 before succeeding** (and restores your arm64 toolchain
+after):
 
 ```bash
-npm install && npm run build:mac:x64   # → dist/Offcut-<ver>-mac-x64.dmg
+bash scripts/build-mac-x64.sh        # → dist/Offcut-<ver>-mac-x64.dmg (verified x86_64)
 ```
 
-Then attach that DMG to the matching GitHub Release (`gh release upload v0.1.2 dist/*-mac-x64.dmg`).
+Note: `onnxruntime-node` has no Intel-macOS binary (Microsoft dropped it), so
+onnxruntime is loaded lazily and ONNX beat-analysis is unavailable on Intel (the
+JS beat tracker is the fallback). The script ends with the exact `gh release
+upload` command to attach the DMG to the matching release.
+
+(`npm run build:mac:x64` builds x64 directly only on a *real* Intel Mac; on
+Apple Silicon use the script above.)
 
 ## Signing (currently OFF)
 

@@ -1,9 +1,21 @@
-import * as ort from 'onnxruntime-node'
+import type * as ort from 'onnxruntime-node'
 import { app } from 'electron'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { MEL_CONFIG } from './mel-spectrogram'
 import type { BeatgridMarker } from '../../../shared/types'
+
+// onnxruntime-node is loaded lazily (dynamic import), never at module load. Its
+// native binary doesn't exist for every platform/arch — notably Intel macOS,
+// which onnxruntime-node no longer ships a binary for — so a static import would
+// crash the app on startup there. Loading on demand means the app always starts;
+// ONNX beat analysis is simply unavailable where the binary is missing (callers
+// fall back to the JS beat tracker). The model itself is optional too.
+let _ort: typeof import('onnxruntime-node') | null = null
+async function loadOrt(): Promise<typeof import('onnxruntime-node')> {
+  if (!_ort) _ort = await import('onnxruntime-node')
+  return _ort
+}
 
 // The model expects input named 'input' and outputs named 'beat' and 'downbeat'.
 // These names are set by the Python export script (scripts/export-beat-this.py).
@@ -48,7 +60,8 @@ async function getSession(modelPath?: string): Promise<ort.InferenceSession> {
 
   // CPU-only: CoreML can crash the main process on large/variable-length transformer inputs.
   // ONNX CPU provider uses SIMD and is fast enough for offline batch analysis.
-  _session = await ort.InferenceSession.create(mp, { executionProviders: ['cpu'] })
+  const ortRt = await loadOrt()
+  _session = await ortRt.InferenceSession.create(mp, { executionProviders: ['cpu'] })
   return _session
 }
 
@@ -84,6 +97,7 @@ export async function runBeatAnalysis(
   modelPath?: string
 ): Promise<BeatgridMarker[]> {
   const session = await getSession(modelPath)
+  const ortRt = await loadOrt()
   const nMels = MEL_CONFIG.nMels
 
   // Chunked inference, matching upstream split_predict_aggregate: the model is
@@ -110,7 +124,7 @@ export async function runBeatAnalysis(
         (from - start) * nMels
       )
 
-      const tensor = new ort.Tensor('float32', chunkBuf, [1, CHUNK, nMels])
+      const tensor = new ortRt.Tensor('float32', chunkBuf, [1, CHUNK, nMels])
       const results = await session.run({ [INPUT_NAME]: tensor })
       const beatOut     = results[BEAT_OUT].data     as Float32Array
       const downbeatOut = results[DOWNBEAT_OUT].data as Float32Array
