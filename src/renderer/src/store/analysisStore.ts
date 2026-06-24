@@ -45,6 +45,10 @@ interface AnalysisState {
   progress: AnalysisProgress | null
   /** True while any run is active (prevents overlapping runs). */
   running: boolean
+  /** Set by cancel(); checked by the runner loops to stop early. */
+  cancelled: boolean
+  /** Request the active run to stop after its in-flight tracks finish. */
+  cancel: () => void
   analyseBpm: (ids: string[]) => Promise<void>
   analyseEnergy: (ids: string[]) => Promise<void>
   analyseBeats: (ids: string[]) => Promise<void>
@@ -65,10 +69,12 @@ const plural = (n: number): string => (n !== 1 ? 's' : '')
 export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   progress: null,
   running: false,
+  cancelled: false,
+  cancel: () => set({ cancelled: true }),
 
   analyseBpm: async (ids) => {
     if (get().running || ids.length === 0) return
-    set({ running: true })
+    set({ running: true, cancelled: false })
     const updateTrack = useLibraryStore.getState().updateTrack
     const ctx = new AudioContext()
     set({ progress: { label: 'BPM + key', current: 0, total: ids.length, track: '' } })
@@ -105,15 +111,16 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
           : current.cuePoints
         await updateTrack({ id, bpm: newBpm, key: result.key ?? current.key, energy: result.energy ?? current.energy, beatgrid, cuePoints })
       }
-    }, { onProgress: (done) => set({ progress: { label: 'BPM + key', current: done, total: ids.length, track: '' } }) })
+    }, { onProgress: (done) => set({ progress: { label: 'BPM + key', current: done, total: ids.length, track: '' } }), cancelled: () => get().cancelled })
     await ctx.close()
+    const stopped = get().cancelled
     set({ progress: null, running: false })
-    toast(`Analysed ${ids.length} track${plural(ids.length)}`, 'success')
+    toast(stopped ? 'BPM + key analysis cancelled' : `Analysed ${ids.length} track${plural(ids.length)}`, stopped ? 'info' : 'success')
   },
 
   analyseEnergy: async (ids) => {
     if (get().running || ids.length === 0) return
-    set({ running: true })
+    set({ running: true, cancelled: false })
     const updateTrack = useLibraryStore.getState().updateTrack
     const ctx = new AudioContext()
     set({ progress: { label: 'energy', current: 0, total: ids.length, track: '' } })
@@ -128,15 +135,16 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
         ? generateBeatgrid(newBpm, result.offsetMs, buf.duration * 1000)
         : current.beatgrid
       await updateTrack({ id, energy: result.energy ?? current.energy, bpm: newBpm, key: result.key ?? current.key, beatgrid })
-    }, { onProgress: (done) => set({ progress: { label: 'energy', current: done, total: ids.length, track: '' } }) })
+    }, { onProgress: (done) => set({ progress: { label: 'energy', current: done, total: ids.length, track: '' } }), cancelled: () => get().cancelled })
     await ctx.close()
+    const stopped = get().cancelled
     set({ progress: null, running: false })
-    toast(`Energy scored for ${ids.length} track${plural(ids.length)}`, 'success')
+    toast(stopped ? 'Energy analysis cancelled' : `Energy scored for ${ids.length} track${plural(ids.length)}`, stopped ? 'info' : 'success')
   },
 
   analyseBeats: async (ids) => {
     if (get().running || ids.length === 0) return
-    set({ running: true })
+    set({ running: true, cancelled: false })
     set({ progress: { label: 'beat grid', current: 0, total: ids.length, track: '' } })
     await mapPool(ids, await concurrency(), async (id) => {
       const updated = await window.api.library.analyzeBeats(id)
@@ -148,15 +156,16 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       const sorted = [...updated.beatgrid].sort((a, b) => a.positionMs - b.positionMs)
       const v2 = fromBeatgridMarkers(sorted, 'beat-this')
       await window.api.library.updateTrack({ id, analysedBeatgrid: v2 })
-    }, { onProgress: (done) => set({ progress: { label: 'beat grid', current: done, total: ids.length, track: '' } }) })
+    }, { onProgress: (done) => set({ progress: { label: 'beat grid', current: done, total: ids.length, track: '' } }), cancelled: () => get().cancelled })
     await useLibraryStore.getState().loadLibrary()
+    const stopped = get().cancelled
     set({ progress: null, running: false })
-    toast(`Beat grid analysed for ${ids.length} track${plural(ids.length)}`, 'success')
+    toast(stopped ? 'Beat-grid analysis cancelled' : `Beat grid analysed for ${ids.length} track${plural(ids.length)}`, stopped ? 'info' : 'success')
   },
 
   autoCue: async (ids) => {
     if (get().running || ids.length === 0) return
-    set({ running: true })
+    set({ running: true, cancelled: false })
     const updateTrack = useLibraryStore.getState().updateTrack
     const actx = new AudioContext()
     const template = await activeCueTemplate()
@@ -172,10 +181,11 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
         const cuePoints = withPhraseCues(suggestedCuesToCuePoints(shaped), t.phrases)
         await updateTrack({ id, cuePoints })
       }
-    }, { onProgress: (done) => set({ progress: { label: 'auto-cue', current: done, total: ids.length, track: '' } }) })
+    }, { onProgress: (done) => set({ progress: { label: 'auto-cue', current: done, total: ids.length, track: '' } }), cancelled: () => get().cancelled })
     await actx.close()
+    const stopped = get().cancelled
     set({ progress: null, running: false })
-    toast(`Auto-cued ${ids.length} track${plural(ids.length)}`, 'success')
+    toast(stopped ? 'Auto-cue cancelled' : `Auto-cued ${ids.length} track${plural(ids.length)}`, stopped ? 'info' : 'success')
   },
 
   analyseAll: async (ids) => {
@@ -184,9 +194,13 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     // when BPM/key/energy and auto-cue read them (auto-cue anchors to the real
     // bars — Phase A). Each step manages the `running` flag itself, so analyseAll
     // simply awaits them in sequence rather than holding the flag across all.
+    set({ cancelled: false })
     await get().analyseBeats(ids)
+    if (get().cancelled) return
     await get().analyseBpm(ids)
+    if (get().cancelled) return
     await get().autoCue(ids)
+    if (get().cancelled) return
     toast(`Full analysis complete for ${ids.length} track${plural(ids.length)}`, 'success')
   },
 

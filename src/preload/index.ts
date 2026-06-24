@@ -184,6 +184,7 @@ const api = {
       ipcRenderer.invoke('audio:readFile', filePath),
     decodePcm: (filePath: string, sampleRate?: number): Promise<{ samples: Float32Array; sampleRate: number }> =>
       ipcRenderer.invoke('audio:decodePcm', filePath, sampleRate),
+    embed: (filePath: string): Promise<number[]> => ipcRenderer.invoke('audio:embed', filePath),
     readTags: (filePath: string) =>
       ipcRenderer.invoke('audio:readTags', filePath),
     readArtwork: (filePath: string): Promise<string | null> =>

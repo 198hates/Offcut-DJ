@@ -12,6 +12,7 @@ export default defineConfig({
     // only — same SQLite engine, no native build, app build untouched.
     alias: {
       'better-sqlite3': fileURLToPath(new URL('./test/shims/better-sqlite3.ts', import.meta.url)),
+      '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)),
     },
   },
 })

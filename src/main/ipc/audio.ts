@@ -38,6 +38,22 @@ export function registerAudioHandlers(): void {
     }
   )
 
+  /**
+   * Compute the audio-similarity fingerprint entirely in the main process and
+   * return only the small feature vector. The renderer used to fetch the whole
+   * track's PCM via audio:decodePcm and embed it client-side — but that ships
+   * ~5 MB/min over IPC per track, which OOMs/fails across a large library run
+   * concurrently (the "can't scan most tracks" bug). Doing it here transfers
+   * ~43 floats instead. Throws on decode failure so the caller can report it.
+   */
+  ipcMain.handle('audio:embed', async (_e, filePath: string): Promise<number[]> => {
+    if (!existsSync(filePath)) throw new Error(`File not found: ${filePath}`)
+    const { decodeAudioToPcm } = await import('../integrations/beat-analysis/audio-decode')
+    const { audioFeatureVector } = await import('../../shared/audioFeatures')
+    const samples = await decodeAudioToPcm(filePath, 22050)
+    return audioFeatureVector(samples, 22050)
+  })
+
   ipcMain.handle('audio:readTags', async (_e, filePath: string): Promise<TagResult | null> => {
     if (!existsSync(filePath)) return null
     try {

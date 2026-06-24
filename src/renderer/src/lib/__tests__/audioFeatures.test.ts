@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { audioFeatureVector, FEATURE_DIM } from '../audioFeatures'
+import { audioFeatureVector, FEATURE_DIM } from '@shared/audioFeatures'
 import { findSimilar } from '../similarity'
 
 const FS = 44100

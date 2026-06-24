@@ -9,7 +9,6 @@ import { useLibraryStore } from '../../store/libraryStore'
 import { useAnalysisStore } from '../../store/analysisStore'
 import { analyzeAudio, generateCuesForFile, downbeatsForTrack } from '../../lib/analyzer'
 import { integratedLufs, lufsGainDb } from '../../lib/loudness'
-import { audioFeatureVector } from '../../lib/audioFeatures'
 import { detectPhrasesFromMono } from '../../lib/phraseDetect'
 import { mapPool, resolveConcurrency } from '../../lib/concurrency'
 import { allCueTemplates, resolveCueTemplate, CUE_ROLE_ORDER, CUE_ROLE_DESC } from '../../lib/cueTemplates'
@@ -856,6 +855,7 @@ function SimilaritySection(): JSX.Element {
   const [running, setRunning]   = useState(false)
   const [progress, setProgress] = useState({ current: 0, total: 0, label: '' })
   const [done, setDone]         = useState(false)
+  const [failed, setFailed]     = useState<Track[]>([])
   const cancelRef = useRef(false)
 
   const unanalysed = tracks.filter((t) => t.embedding == null)
@@ -865,13 +865,22 @@ function SimilaritySection(): JSX.Element {
     cancelRef.current = false
     setRunning(true)
     setDone(false)
+    setFailed([])
     const toProcess = tracks.filter((t) => t.embedding == null)
+    const failedNow: Track[] = []
     setProgress({ current: 0, total: toProcess.length, label: '' })
+    // Embedding runs entirely in the main process (audio.embed) and returns just
+    // the feature vector — no whole-track PCM crosses IPC, which is what choked
+    // most tracks before. Per-track errors are collected and surfaced, not swallowed.
     await mapPool(toProcess, await runConcurrency(), async (t) => {
-      const { samples, sampleRate } = await window.api.audio.decodePcm(t.filePath, 22050)
-      const embedding = audioFeatureVector(samples, sampleRate)
-      await updateTrack({ id: t.id, embedding })
+      try {
+        const embedding = await window.api.audio.embed(t.filePath)
+        await updateTrack({ id: t.id, embedding })
+      } catch {
+        failedNow.push(t)
+      }
     }, { onProgress: (done, total) => setProgress({ current: done, total, label: '' }), cancelled: () => cancelRef.current })
+    setFailed(failedNow)
     setRunning(false)
     setDone(true)
     setProgress({ current: 0, total: 0, label: '' })
@@ -904,15 +913,24 @@ function SimilaritySection(): JSX.Element {
       <div className="grid grid-cols-3 gap-3">
         <StatCard label="analysed" value={analysedCount.toLocaleString()} sub={`of ${tracks.length.toLocaleString()} tracks`} accent={analysedCount > 0} />
         <StatCard label="pending" value={unanalysed.length.toLocaleString()} />
+        {failed.length > 0 && <StatCard label="failed" value={failed.length.toLocaleString()} />}
       </div>
 
       {running && progress.total > 0 && (
         <ProgressBar current={progress.current} total={progress.total} label="similarity analysis" title={progress.label} />
       )}
-      {unanalysed.length === 0 && !running && tracks.length > 0 && (
+      {unanalysed.length === 0 && failed.length === 0 && !running && tracks.length > 0 && (
         <p className="font-mono text-[13px] text-green-600 dark:text-green-400 flex items-center gap-2">
           <span>✓</span> every track has an audio fingerprint — use “Similar tracks” from a track’s menu
         </p>
+      )}
+      {done && failed.length > 0 && (
+        <div className="space-y-1">
+          <p className="font-mono text-[13px] text-red-500">
+            {failed.length} track{failed.length !== 1 ? 's' : ''} couldn’t be fingerprinted (unreadable / unsupported audio)
+          </p>
+          <FailedList tracks={failed} />
+        </div>
       )}
     </section>
   )
@@ -1009,17 +1027,21 @@ export function AnalysePage(): JSX.Element {
     setBusy(true)
     try {
       const store = useAnalysisStore.getState()
-      const snap = () => useLibraryStore.getState().tracks
+      const cancelled = (): boolean => useAnalysisStore.getState().cancelled
+      useAnalysisStore.setState({ cancelled: false })
+      const snap = (): typeof tracks => useLibraryStore.getState().tracks
       const grid = snap().filter((t) => !t.beatgrid?.length).map((t) => t.id)
       if (grid.length) await store.analyseBeats(grid)
+      if (cancelled()) return
       const meta = snap().filter((t) => !t.bpm || !t.key || t.energy == null).map((t) => t.id)
       if (meta.length) await store.analyseBpm(meta)
+      if (cancelled()) return
       const cues = snap().filter((t) => t.cuePoints.length === 0 && t.bpm != null).map((t) => t.id)
       if (cues.length) await store.autoCue(cues)
     } finally {
       setBusy(false)
     }
-  }, [])
+  }, [tracks])
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -1028,14 +1050,27 @@ export function AnalysePage(): JSX.Element {
         title="analyse"
         subtitle="automated batch processing — bpm, keys, beat grids, cue points, gain"
         right={
-          <button
-            onClick={runEverything}
-            disabled={busy || running || needAny === 0}
-            title="Run beat grid, BPM/key/energy and auto-cue across every track that still needs it"
-            className={btnPrimary}
-          >
-            {busy || running ? 'analysing…' : needAny === 0 ? 'all analysed' : `analyse everything (${needAny.toLocaleString()})`}
-          </button>
+          busy || running ? (
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[13px] text-muted">analysing…</span>
+              <button
+                onClick={() => useAnalysisStore.getState().cancel()}
+                title="Stop after the tracks currently in flight finish"
+                className="px-3 py-1.5 font-mono text-[13px] uppercase tracking-[0.1em] text-muted hover:text-ink border border-border/40 rounded transition-colors"
+              >
+                cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={runEverything}
+              disabled={needAny === 0}
+              title="Run beat grid, BPM/key/energy and auto-cue across every track that still needs it"
+              className={btnPrimary}
+            >
+              {needAny === 0 ? 'all analysed' : `analyse everything (${needAny.toLocaleString()})`}
+            </button>
+          )
         }
       />
 
