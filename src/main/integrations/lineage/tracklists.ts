@@ -10,7 +10,7 @@
 
 import { RateLimiter } from './rate-limiter'
 import { dedupKey } from './store'
-import { searchTracklistUrls, fetchTracklistTracks } from './tracklists-scrape'
+import { findTrackPage, trackSetUrls, fetchTracklistTracks } from './tracklists-scrape'
 
 const limiter = new RateLimiter(1500)
 
@@ -95,10 +95,12 @@ export class TracklistsClient {
   // each set's ordered tracks. tallyCoPlay keeps only sets that actually contain
   // the seed, so loosely-related search hits contribute nothing. Returns [] on
   // anything unexpected so discovery never breaks.
-  private async viaPublic({ artist, title }: SetTrack, maxSets = 8): Promise<SetTrack[][]> {
-    const urls = await searchTracklistUrls(`${artist} ${title}`, maxSets)
+  private async viaPublic({ artist, title }: SetTrack, maxSets = 10): Promise<SetTrack[][]> {
+    const trackUrl = await findTrackPage(`${artist} ${title}`)
+    if (!trackUrl) return []
+    const setUrls = await trackSetUrls(trackUrl, maxSets)
     const sets: SetTrack[][] = []
-    for (const url of urls) {
+    for (const url of setUrls) {
       const set = await limiter.schedule(() => fetchTracklistTracks(url))
       if (set.length) sets.push(set)
     }
