@@ -154,6 +154,16 @@ export async function installPack(onProgress?: (percent: number, label: string) 
         /* best effort */
       }
     }
+    if (process.platform === 'darwin') {
+      // The pack is unsigned; strip the quarantine flag so Gatekeeper doesn't
+      // block the binary + its bundled dylibs from launching. Best-effort —
+      // programmatic downloads usually aren't quarantined, but belt-and-braces.
+      await new Promise<void>((res) => {
+        const p = spawn('xattr', ['-dr', 'com.apple.quarantine', join(dir, 'offcut-demucs')])
+        p.on('close', () => res())
+        p.on('error', () => res())
+      })
+    }
     onProgress?.(100, 'installed')
     return bin
   } catch (err) {
