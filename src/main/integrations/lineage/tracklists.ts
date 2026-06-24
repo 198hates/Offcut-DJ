@@ -10,6 +10,7 @@
 
 import { RateLimiter } from './rate-limiter'
 import { dedupKey } from './store'
+import { searchTracklistUrls, fetchTracklistTracks } from './tracklists-scrape'
 
 const limiter = new RateLimiter(1500)
 
@@ -51,16 +52,21 @@ export function tallyCoPlay(sets: SetTrack[][], seedKey: string, limit = 24): Co
 export class TracklistsClient {
   private apiBase: string | null
   private apiKey: string | null
-  private userAgent: string
+  private scrape: boolean
 
   constructor({
     apiBase = null,
     apiKey = null,
-    userAgent = 'crate-digger'
-  }: { apiBase?: string | null; apiKey?: string | null; userAgent?: string } = {}) {
+    scrape = false
+  }: {
+    apiBase?: string | null
+    apiKey?: string | null
+    userAgent?: string
+    scrape?: boolean
+  } = {}) {
     this.apiBase = apiBase
     this.apiKey = apiKey
-    this.userAgent = userAgent
+    this.scrape = scrape
   }
 
   // -> [{ artist, title, weight }]
@@ -68,10 +74,8 @@ export class TracklistsClient {
     const seedKey = dedupKey(artist, title)
     let sets: SetTrack[][] = []
     try {
-      sets =
-        this.apiBase && this.apiKey
-          ? await this.viaApi({ artist, title })
-          : await this.viaPublic({ artist, title })
+      if (this.apiBase && this.apiKey) sets = await this.viaApi({ artist, title })
+      else if (this.scrape) sets = await this.viaPublic({ artist, title })
     } catch {
       sets = []
     }
@@ -86,19 +90,18 @@ export class TracklistsClient {
     return [] // implement against the partner API docs
   }
 
-  // Best-effort public fallback — fragile (Cloudflare + ToS). Isolated so it can
-  // be swapped for a maintained parser or disabled. Returns [] on anything unexpected.
-  private async viaPublic({ artist, title }: SetTrack): Promise<SetTrack[][]> {
-    const q = encodeURIComponent(`${artist} ${title}`)
-    const res = await limiter.schedule(() =>
-      fetch(`https://www.1001tracklists.com/search/result.php?main_search=${q}`, {
-        headers: { 'User-Agent': this.userAgent }
-      })
-    )
-    if (!res.ok) return []
-    // Their result/tracklist markup is JS-rendered and protected, so a robust
-    // parse needs maintained selectors (cheerio). Kept as a safe no-op until the
-    // API or a dedicated parser is wired, so the route never breaks discovery.
-    return []
+  // Best-effort public fallback — fragile (Cloudflare + ToS), opt-in only.
+  // Renders 1001TL's JS search to find tracklists featuring the seed, then parses
+  // each set's ordered tracks. tallyCoPlay keeps only sets that actually contain
+  // the seed, so loosely-related search hits contribute nothing. Returns [] on
+  // anything unexpected so discovery never breaks.
+  private async viaPublic({ artist, title }: SetTrack, maxSets = 8): Promise<SetTrack[][]> {
+    const urls = await searchTracklistUrls(`${artist} ${title}`, maxSets)
+    const sets: SetTrack[][] = []
+    for (const url of urls) {
+      const set = await limiter.schedule(() => fetchTracklistTracks(url))
+      if (set.length) sets.push(set)
+    }
+    return sets
   }
 }

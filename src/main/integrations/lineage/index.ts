@@ -89,10 +89,10 @@ export function createLineageEngine(opts: LineageEngineConfig): LineageEngine {
   // Deezer's public catalogue needs no key, so the sonic "sounds like" route is
   // always available — the one similarity signal that doesn't depend on config.
   const deezer = new DeezerClient()
-  // The "played alongside" route only has a real source via the 1001Tracklists
-  // partner API (apiBase + apiKey). The public scrape is a deliberate no-op
-  // (Cloudflare + ToS), so a scrape-only config would surface an always-empty
-  // route — we'd rather not advertise it. Require the partner API to enable it.
+  // The "played alongside" route prefers the 1001Tracklists partner API
+  // (apiBase + apiKey). Failing that, an opt-in public scrape (enableTracklistsScrape)
+  // renders 1001TL's JS pages to recover co-play data — best-effort and ToS-gray,
+  // so it's off unless the user explicitly enables it.
   const tracklists =
     opts.tracklistsApiKey && opts.tracklistsApiBase
       ? new TracklistsClient({
@@ -100,7 +100,9 @@ export function createLineageEngine(opts: LineageEngineConfig): LineageEngine {
           apiKey: opts.tracklistsApiKey,
           userAgent
         })
-      : null
+      : opts.enableTracklistsScrape
+        ? new TracklistsClient({ scrape: true, userAgent })
+        : null
 
   return {
     authenticated: discogs.authenticated,

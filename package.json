@@ -26,6 +26,7 @@
     "better-sqlite3-multiple-ciphers": "^12.9.0",
     "bonjour-service": "^1.4.1",
     "castv2-client": "^1.2.0",
+    "cheerio": "^1.2.0",
     "cytoscape": "^3.34.0",
     "cytoscape-fcose": "^2.2.0",
     "electron-updater": "^6.3.0",

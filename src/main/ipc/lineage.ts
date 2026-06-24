@@ -84,8 +84,9 @@ export function registerLineageHandlers(): void {
     return {
       hasToken: !!s.discogsToken?.trim(),
       hasLastfm: !!s.lastfmKey?.trim(),
-      // Only a real partner API counts — the public scrape returns nothing.
-      hasTracklists: !!(s.tracklistsApiKey?.trim() && s.tracklistsApiBase?.trim())
+      // Live via the partner API, or the opt-in public scrape.
+      hasTracklists:
+        !!(s.tracklistsApiKey?.trim() && s.tracklistsApiBase?.trim()) || !!s.enableTracklistsScrape
     }
   })
 
