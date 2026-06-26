@@ -364,7 +364,8 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
         />
       )}
 
-      {/* ── Pad-mode tabs + grid + 2×2 toggle block ───────────────────── */}
+      {/* ── Pad-mode tabs + grid + 2×2 toggle block (hidden in stems mode) ─ */}
+      {!stemsVisible && (
       <div className="px-2 pt-1 border-t" style={{ borderColor: dkRule2 }}>
         {/* Mode tabs */}
         <div className="flex items-center gap-1 mb-1">
@@ -408,6 +409,7 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           </div>
         </div>
       </div>
+      )}
 
       {/* ── Function strip: manual loop + secondary tools ─────────────────── */}
       <div className="flex items-center gap-1 px-2 py-1 border-t flex-wrap" style={{ borderColor: dkRule2 }}>
