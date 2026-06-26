@@ -21,21 +21,12 @@ export function Player(): JSX.Element {
 
   return (
     // deck-zone is always dark — sealed working surface
-    <div className="deck-zone flex flex-col shrink-0" style={{ height: 310 }}>
-      {/* Zone label strip — centred title, view switch on the right */}
+    <div className="deck-zone flex flex-col shrink-0" style={{ height: 364 }}>
+      {/* Thin strip — deck view switch on the right (no label) */}
       <div
-        className="shrink-0 relative flex items-center justify-center"
-        style={{ height: 18, borderBottom: '1px solid var(--deck-rule)' }}
+        className="shrink-0 relative flex items-center justify-end"
+        style={{ height: 15, borderBottom: '1px solid var(--deck-rule)' }}
       >
-        <span style={{
-          fontFamily: "'JetBrains Mono', monospace",
-          fontSize: 7, fontWeight: 700,
-          letterSpacing: '0.2em', textTransform: 'uppercase',
-          color: 'var(--deck-spot)',
-        }}>
-          working surface · {view === 'both' ? 'the decks' : `deck ${view}`}
-        </span>
-
         {/* View switch: solo A · dual · solo B */}
         <div className="absolute right-2 top-0 bottom-0 flex items-center gap-px">
           {(['A', 'both', 'B'] as const).map((v) => (

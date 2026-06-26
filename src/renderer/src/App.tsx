@@ -179,21 +179,12 @@ export default function App(): JSX.Element {
         <span className="font-mono text-[10px] tracking-[0.18em] uppercase text-muted/50">
           offcut · od·01 / firmware 1.0.0 · build 0028
         </span>
-        <span className="text-muted/40" style={{
-          fontFamily: "'Fraunces', serif",
-          fontStyle: 'italic',
-          fontWeight: 400,
-          fontSize: 8,
-          letterSpacing: '0.01em',
-        }}>
-          Set in Fraunces &amp; IBM Plex Mono. Made for the long mix.
-        </span>
         <button
           onClick={() => setShowShortcuts(true)}
-          className="font-mono text-[10px] tracking-[0.18em] uppercase text-muted/30 hover:text-muted/70 transition-colors"
+          className="font-mono text-[11px] tracking-[0.18em] uppercase text-muted/30 hover:text-muted/70 transition-colors"
           title="Keyboard shortcuts"
         >
-          sn 2026·0001 / field unit · not for resale · ?
+          ?
         </button>
       </div>
 

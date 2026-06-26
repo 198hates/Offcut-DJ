@@ -28,6 +28,14 @@ interface Props {
 const fmt = (s: number, ms = false): string =>
   ms ? formatTime(s) : formatDuration(s, { round: false, dash: '0:00' })
 
+// ── Performance-pad modes ──────────────────────────────────────────────────────
+type PadMode = 'hotcue' | 'loop' | 'jump' | 'roll'
+const PAD_MODES: PadMode[] = ['hotcue', 'loop', 'jump', 'roll']
+const PAD_MODE_LABELS: Record<PadMode, string> = { hotcue: 'Hot Cue', loop: 'Loop', jump: 'Jump', roll: 'Roll' }
+const PAD_MODE_ACCENT: Record<PadMode, string> = { hotcue: '#C2683E', loop: '#C2683E', jump: '#E0A23C', roll: '#8B5CF6' }
+const BAR_FRACTIONS: Record<number, string> = { 0.0625: '1⁄16', 0.125: '⅛', 0.25: '¼', 0.5: '½' }
+const fmtBars = (s: number): string => (s < 1 ? (BAR_FRACTIONS[s] ?? `${s}`) : String(s))
+
 export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
   const waveformStyle = useWaveformStore((s) => s.style)
   // KEY/SYNC are engine features — under the Web Audio fallback they'd be
@@ -48,7 +56,6 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
     toggleFlux, getFluxTime,
     toggleStemsVisible, setStemMuted, setStemSoloed, setStemGain,
     separateStems, unloadStems, checkStemsAvailable,
-    saveLoopSlot, jumpToLoopSlot, clearLoopSlot,
     beatJump, analyzeCurrentTrack, applyGridEdit
   } = useStore()
 
@@ -59,6 +66,8 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
 
   // ── Beatgrid edit mode (opens the full BeatgridEditor modal) ───────────────
   const [gridEditMode, setGridEditMode] = useState(false)
+  // ── Pad mode — what the 8 performance pads do (hot cue / loop / jump / roll) ─
+  const [padMode, setPadMode] = useState<PadMode>('hotcue')
 
   // Exit grid mode when track changes or unloads
   useEffect(() => { setGridEditMode(false) }, [currentTrack?.id])
@@ -163,12 +172,15 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
     cue: currentTrack?.cuePoints.find((c) => c.type === 'hotcue' && c.index === i),
     color: HOT_CUE_COLORS[i]
   }))
-  const memoryCues = currentTrack?.cuePoints.filter((c) => c.type === 'memory') ?? []
-  // Saved loop slots (CuePoint type:'loop' at fixed indices 0-7)
-  const loopSlots = Array.from({ length: 8 }, (_, i) =>
-    currentTrack?.cuePoints.find((c) => c.type === 'loop' && c.index === i) ?? null
-  )
   const remaining = duration - currentTime
+
+  // The 8 pads' function for the active mode (hot cue handled separately).
+  const padItems = useMemo(() => {
+    if (padMode === 'loop') return [0.25, 0.5, 1, 2, 4, 8, 16, 32].map((s) => ({ label: fmtBars(s), action: () => beatLoop(s) }))
+    if (padMode === 'roll') return [0.125, 0.25, 0.5, 1, 2, 4, 8, 16].map((s) => ({ label: fmtBars(s), action: () => loopRoll(s) }))
+    if (padMode === 'jump') return [-8, -4, -2, -1, 1, 2, 4, 8].map((b) => ({ label: b > 0 ? `+${b}` : `${b}`, action: () => beatJump(b) }))
+    return []
+  }, [padMode, beatLoop, loopRoll, beatJump])
 
   // Deck-zone colour helpers (always dark — not Tailwind theme aware)
   const dkRule  = 'rgba(42,36,28,0.6)'   // --deck-rule at 60%
@@ -346,276 +358,104 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
         />
       )}
 
-      {/* ── Loop controls + pitch ─────────────────────────────────────── */}
-      <div
-        className={`flex items-center gap-1 px-2 py-0.5 border-t flex-wrap`}
-        style={{ borderColor: dkRule2 }}
-      >
-        {/* Beat loop buttons */}
-        <span className="text-[11px] uppercase tracking-[0.15em] shrink-0 mr-0.5" style={{ color: 'var(--deck-mute)' }}>Loop</span>
-        {[0.5, 1, 2, 4, 8].map((bars) => (
-          <button
-            key={bars}
-            onClick={() => beatLoop(bars)}
-            disabled={!currentTrack}
-            title={`${bars} bar loop`}
-            className="deck-btn h-6 px-1.5 rounded text-[13px] font-bold border transition-colors disabled:opacity-40"
-          >
-            {bars < 1 ? '½' : bars}
-          </button>
-        ))}
+      {/* ── Pad-mode tabs + grid + 2×2 toggle block ───────────────────── */}
+      <div className="px-2 pt-1 border-t" style={{ borderColor: dkRule2 }}>
+        {/* Mode tabs */}
+        <div className="flex items-center gap-1 mb-1">
+          {PAD_MODES.map((m) => (
+            <button
+              key={m}
+              onClick={() => setPadMode(m)}
+              disabled={!currentTrack}
+              className={`h-5 px-2 rounded-sm text-[10px] font-bold uppercase tracking-[0.12em] border transition-colors disabled:opacity-40 ${padMode === m ? 'deck-btn-active' : 'deck-btn'}`}
+            >
+              {PAD_MODE_LABELS[m]}
+            </button>
+          ))}
+          <div className="flex-1" />
+          <span className="text-[9px] uppercase tracking-[0.2em] shrink-0" style={{ color: 'var(--deck-mute)', opacity: 0.65 }}>pads · A–H</span>
+        </div>
 
-        <div className="w-px h-4 mx-0.5 shrink-0" style={{ background: 'var(--deck-rule)' }} />
-
-        {/* Loop Roll buttons */}
-        <span className="text-[11px] uppercase tracking-[0.15em] shrink-0 mr-0.5" style={{ color: 'rgba(139,92,246,0.65)' }} title="Loop roll — slips back to where the track would have been">Roll</span>
-        {[0.5, 1, 2, 4].map((bars) => (
-          <button
-            key={bars}
-            onClick={() => loopRoll(bars)}
-            disabled={!currentTrack}
-            title={`${bars === 0.5 ? '½' : bars} bar loop roll (slip)`}
-            className="h-6 px-1.5 rounded text-[13px] font-bold border transition-colors disabled:opacity-40"
-            style={{ borderColor: 'rgba(139,92,246,0.4)', color: 'rgba(139,92,246,0.8)' }}
-          >
-            {bars < 1 ? '½' : bars}
-          </button>
-        ))}
-
-        <div className="w-px h-4 mx-0.5 shrink-0" style={{ background: 'var(--deck-rule)' }} />
-
-        {/* IN / OUT / LOOP */}
-        <button onClick={setLoopIn}  disabled={!currentTrack} className="deck-btn h-6 px-1.5 rounded text-[13px] font-bold border transition-colors disabled:opacity-40">IN</button>
-        <button onClick={setLoopOut} disabled={!currentTrack} className="deck-btn h-6 px-1.5 rounded text-[13px] font-bold border transition-colors disabled:opacity-40">OUT</button>
-        <button
-          onClick={toggleLoop}
-          disabled={!currentTrack || (loopStart === null && loopEnd === null)}
-          className={`h-6 px-2 rounded text-[13px] font-bold border transition-colors disabled:opacity-40 ${isLooping ? 'deck-btn-active' : 'deck-btn'}`}
-        >
-          LOOP
-        </button>
-        <button
-          onClick={clearLoop}
-          disabled={!currentTrack || (loopStart === null)}
-          className="deck-btn h-6 px-1.5 rounded text-[13px] border transition-colors disabled:opacity-40"
-          title="Clear loop"
-        >✕</button>
-
-        <div className="flex-1" />
-
-        {/* QUANT / SLIP / FLUX / KEY mode buttons */}
-        <button
-          onClick={toggleQuantize}
-          disabled={!currentTrack}
-          title="Quantize — cues and loops snap to nearest beat"
-          className={`h-6 px-1.5 rounded text-[13px] font-bold border transition-colors disabled:opacity-40 ${isQuantized ? 'deck-btn-active' : 'deck-btn'}`}
-        >
-          QUANT
-        </button>
-        <button
-          onClick={toggleSlipMode}
-          disabled={!currentTrack}
-          title="Slip mode — playhead advances under loops; exits to real position"
-          className={`h-6 px-1.5 rounded text-[13px] font-bold border transition-colors disabled:opacity-40 ${slipMode ? 'deck-btn-active' : 'deck-btn'}`}
-        >
-          SLIP
-        </button>
-        <button
-          onClick={toggleFlux}
-          disabled={!currentTrack}
-          title="Flux mode — shadow playhead advances at tempo while you juggle; release snaps back on-beat"
-          className={`h-6 px-1.5 rounded text-[13px] font-bold border transition-colors disabled:opacity-40 ${fluxEnabled ? 'deck-btn-active' : 'deck-btn'}`}
-        >
-          FLUX
-        </button>
-        <button
-          onClick={toggleKeylock}
-          disabled={!currentTrack || !engineIsNative}
-          title={engineIsNative
-            ? 'Key lock — maintain key when changing tempo'
-            : 'Key lock requires the native audio engine (not loaded)'}
-          className={`h-6 px-1.5 rounded text-[13px] font-bold border transition-colors disabled:opacity-40 ${keylockEnabled ? 'deck-btn-active' : 'deck-btn'}`}
-        >
-          KEY
-        </button>
-        <button
-          onClick={toggleSync}
-          disabled={!currentTrack || !engineIsNative}
-          title={engineIsNative
-            ? 'Sync — beat-lock this deck to the other deck (shared clock)'
-            : 'Sync requires the native audio engine (not loaded)'}
-          className={`h-6 px-1.5 rounded text-[13px] font-bold border transition-colors disabled:opacity-40 ${synced ? 'deck-btn-active' : 'deck-btn'}`}
-        >
-          SYNC
-        </button>
-
-        {/* Beatgrid edit toggle */}
-        <button
-          onClick={() => setGridEditMode((v) => !v)}
-          disabled={!currentTrack}
-          title="Edit beatgrid"
-          className={`h-6 px-2 rounded text-[13px] font-bold border transition-colors disabled:opacity-40 ${gridEditMode ? 'deck-btn-active' : 'deck-btn'}`}
-        >
-          GRID
-        </button>
-
-        {/* Stem buses toggle */}
-        <button
-          onClick={() => {
-            if (!stemsVisible) checkStemsAvailable()
-            toggleStemsVisible()
-          }}
-          disabled={!currentTrack}
-          title="Stem buses — drums / bass / vocals / other"
-          className={`h-6 px-1.5 rounded text-[13px] font-bold border transition-colors disabled:opacity-40 ${stemsVisible ? 'deck-btn-active' : 'deck-btn'}`}
-        >
-          STEMS
-        </button>
-
-        <div className="w-px h-4 mx-0.5 shrink-0" style={{ background: 'var(--deck-rule)' }} />
-
-        {/* Pitch range selector + slider */}
-        <div className={`flex items-center gap-1`}>
-          <span className="text-[11px] uppercase tracking-[0.15em] shrink-0 mr-0.5" style={{ color: 'var(--deck-mute)' }}>Pitch</span>
-          <span className="text-[12px] tabular-nums w-9 text-center" style={{ color: 'var(--deck-mute)' }}>
-            {playbackRate === 1 ? '±0%' : `${playbackRate > 1 ? '+' : ''}${((playbackRate - 1) * 100).toFixed(1)}%`}
-          </span>
-          <input
-            type="range"
-            min={1 - pitchRange / 100}
-            max={1 + pitchRange / 100}
-            step={0.001}
-            value={playbackRate}
-            onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
-            onDoubleClick={() => setPlaybackRate(1.0)}
-            disabled={!currentTrack}
-            className="w-16 h-1 cursor-pointer disabled:opacity-40"
-            style={{ accentColor: 'var(--deck-spot)' }}
-            title="Pitch/tempo — double-click to reset"
-          />
-          <select
-            value={pitchRange}
-            onChange={(e) => setPitchRange(Number(e.target.value))}
-            disabled={!currentTrack}
-            className="h-5 rounded text-[12px] border cursor-pointer disabled:opacity-40"
-            style={{ background: 'var(--deck-panel)', borderColor: 'var(--deck-rule)', color: 'var(--deck-mute)', paddingLeft: 2 }}
-            title="Pitch range"
-          >
-            {[4, 8, 16, 50].map((r) => (
-              <option key={r} value={r}>±{r}%</option>
-            ))}
-          </select>
+        {/* 8 performance pads (4×2) + 2×2 toggle block */}
+        <div className="flex gap-1.5 pb-1">
+          <div className="grid grid-cols-4 gap-1 flex-1 min-w-0">
+            {padMode === 'hotcue'
+              ? hotcues.map(({ label: lbl, index, cue, color }) => (
+                  <HotCuePad
+                    key={index} label={lbl} index={index} cue={cue} color={color}
+                    disabled={!currentTrack}
+                    onPress={() => (cue ? jumpToCue(index) : setCue(index))}
+                    onSet={() => setCue(index)} onClear={() => clearCue(index)}
+                  />
+                ))
+              : padItems.map((p, i) => (
+                  <FuncPad key={i} label={p.label} accent={PAD_MODE_ACCENT[padMode]} disabled={!currentTrack} onClick={p.action} />
+                ))}
+          </div>
+          <div className="grid grid-cols-2 gap-1 shrink-0" style={{ width: 94 }}>
+            <Toggle label="SYNC"  active={synced}         disabled={!currentTrack || !engineIsNative} onClick={toggleSync}
+                    title={engineIsNative ? 'Beat-sync to the other deck' : 'Sync needs the native engine'} />
+            <Toggle label="KEY"   active={keylockEnabled} disabled={!currentTrack || !engineIsNative} onClick={toggleKeylock}
+                    title={engineIsNative ? 'Key lock (master tempo)' : 'Key lock needs the native engine'} />
+            <Toggle label="QUANT" active={isQuantized}    disabled={!currentTrack} onClick={toggleQuantize} title="Quantise cues & loops to the grid" />
+            <Toggle label="SLIP"  active={slipMode}       disabled={!currentTrack} onClick={toggleSlipMode} title="Slip mode" />
+          </div>
         </div>
       </div>
 
-      {/* ── Beat jump ─────────────────────────────────────────────────────── */}
-      <div
-        className={`flex items-center gap-1 px-2 py-0.5 border-t`}
-        style={{ borderColor: dkRule2 }}
-      >
-        <span className="text-[11px] uppercase tracking-[0.15em] shrink-0 mr-0.5" style={{ color: 'var(--deck-mute)' }}>Jump</span>
-        {[-32, -16, -8, -4, -2, -1].map((b) => (
-          <button
-            key={b}
-            onClick={() => beatJump(b)}
-            disabled={!currentTrack}
-            title={`Beat jump ${b}`}
-            className="deck-btn h-6 px-1.5 rounded text-[13px] font-bold border transition-colors disabled:opacity-40"
-          >
-            {b}
-          </button>
-        ))}
-        {[1, 2, 4, 8, 16, 32].map((b) => (
-          <button
-            key={b}
-            onClick={() => beatJump(b)}
-            disabled={!currentTrack}
-            title={`Beat jump +${b}`}
-            className="deck-btn h-6 px-1.5 rounded text-[13px] font-bold border transition-colors disabled:opacity-40"
-          >
-            +{b}
-          </button>
-        ))}
+      {/* ── Function strip: manual loop + secondary tools ─────────────────── */}
+      <div className="flex items-center gap-1 px-2 py-1 border-t flex-wrap" style={{ borderColor: dkRule2 }}>
+        <span className="text-[10px] uppercase tracking-[0.15em] shrink-0 mr-0.5" style={{ color: 'var(--deck-mute)' }}>Loop</span>
+        <button onClick={setLoopIn}  disabled={!currentTrack} className="deck-btn h-6 px-1.5 rounded text-[12px] font-bold border transition-colors disabled:opacity-40">IN</button>
+        <button onClick={setLoopOut} disabled={!currentTrack} className="deck-btn h-6 px-1.5 rounded text-[12px] font-bold border transition-colors disabled:opacity-40">OUT</button>
+        <button onClick={toggleLoop} disabled={!currentTrack || (loopStart === null && loopEnd === null)}
+          className={`h-6 px-2 rounded text-[12px] font-bold border transition-colors disabled:opacity-40 ${isLooping ? 'deck-btn-active' : 'deck-btn'}`}>LOOP</button>
+        <button onClick={clearLoop} disabled={!currentTrack || loopStart === null} title="Clear loop"
+          className="deck-btn h-6 px-1.5 rounded text-[12px] border transition-colors disabled:opacity-40">✕</button>
+
+        <div className="w-px h-4 mx-1 shrink-0" style={{ background: 'var(--deck-rule)' }} />
+
+        <button onClick={toggleFlux} disabled={!currentTrack} title="Flux mode — shadow playhead juggling"
+          className={`h-6 px-1.5 rounded text-[12px] font-bold border transition-colors disabled:opacity-40 ${fluxEnabled ? 'deck-btn-active' : 'deck-btn'}`}>FLUX</button>
+        <button onClick={() => setGridEditMode((v) => !v)} disabled={!currentTrack} title="Edit beat grid"
+          className={`h-6 px-1.5 rounded text-[12px] font-bold border transition-colors disabled:opacity-40 ${gridEditMode ? 'deck-btn-active' : 'deck-btn'}`}>GRID</button>
+        <button onClick={() => { if (!stemsVisible) checkStemsAvailable(); toggleStemsVisible() }} disabled={!currentTrack} title="Stem buses"
+          className={`h-6 px-1.5 rounded text-[12px] font-bold border transition-colors disabled:opacity-40 ${stemsVisible ? 'deck-btn-active' : 'deck-btn'}`}>STEMS</button>
+        <button onClick={setMemoryCue} disabled={!currentTrack} title="Drop a memory cue"
+          className="h-6 px-1.5 rounded text-[12px] font-bold border transition-colors disabled:opacity-40"
+          style={{ borderColor: 'rgba(245,158,11,0.3)', color: 'rgba(245,158,11,0.7)' }}>MEM</button>
+      </div>
+
+      {/* ── Transport ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 px-2 pb-1.5 pt-1 border-t" style={{ borderColor: dkRule2 }}>
+        <button onClick={pressCue} disabled={!currentTrack}
+          className="deck-btn h-9 px-4 rounded text-[13px] font-black tracking-widest border transition-colors disabled:opacity-40">CUE</button>
+        <button onClick={togglePlay} disabled={!currentTrack}
+          className="h-9 px-5 rounded flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 text-[13px] font-black tracking-widest"
+          style={{ background: isPlaying ? 'var(--deck-spot)' : 'rgba(194,104,62,0.85)', color: 'var(--deck-bg)', boxShadow: isPlaying ? '0 0 14px var(--deck-glow)' : 'none' }}>
+          {isPlaying ? '❚❚ PLAY' : '▶ PLAY'}
+        </button>
 
         <div className="flex-1" />
 
-        {/* Saved loop slots — 8 pads */}
-        {loopSlots.map((slot, i) => (
-          <SavedLoopPad
-            key={i}
-            index={i}
-            slot={slot}
-            disabled={!currentTrack}
-            onJump={() => jumpToLoopSlot(i)}
-            onSave={() => saveLoopSlot(i)}
-            onClear={() => clearLoopSlot(i)}
-          />
-        ))}
-      </div>
-
-      {/* ── Transport + hotcue pads ───────────────────────────────────── */}
-      <div
-        className={`flex items-center gap-1 px-2 pb-1.5 pt-0.5 flex-wrap border-t`}
-        style={{ borderColor: dkRule2 }}
-      >
-        <button
-          onClick={pressCue}
-          disabled={!currentTrack}
-          className="deck-btn h-9 px-3 rounded text-[13px] font-black tracking-widest border transition-colors disabled:opacity-40"
+        <span className="text-[10px] uppercase tracking-[0.15em] shrink-0" style={{ color: 'var(--deck-mute)' }}>Tempo</span>
+        <span className="text-[12px] tabular-nums w-12 text-right shrink-0" style={{ color: 'var(--deck-ink)' }}>
+          {playbackRate === 1 ? '±0.0%' : `${playbackRate > 1 ? '+' : ''}${((playbackRate - 1) * 100).toFixed(1)}%`}
+        </span>
+        <input
+          type="range" min={1 - pitchRange / 100} max={1 + pitchRange / 100} step={0.001}
+          value={playbackRate} onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
+          onDoubleClick={() => setPlaybackRate(1.0)} disabled={!currentTrack}
+          className="w-20 h-1 cursor-pointer disabled:opacity-40" style={{ accentColor: 'var(--deck-spot)' }}
+          title="Tempo — double-click to reset"
+        />
+        <select
+          value={pitchRange} onChange={(e) => setPitchRange(Number(e.target.value))} disabled={!currentTrack}
+          className="h-5 rounded text-[11px] border cursor-pointer disabled:opacity-40"
+          style={{ background: 'var(--deck-panel)', borderColor: 'var(--deck-rule)', color: 'var(--deck-mute)', paddingLeft: 2 }}
         >
-          CUE
-        </button>
-        <button
-          onClick={togglePlay}
-          disabled={!currentTrack}
-          className="h-9 w-12 rounded flex items-center justify-center transition-all disabled:opacity-40 text-sm font-bold"
-          style={{
-            background: isPlaying ? 'var(--deck-spot)' : 'rgba(216,106,74,0.85)',
-            color: 'var(--deck-bg)',
-            boxShadow: isPlaying ? '0 0 14px var(--deck-glow)' : 'none',
-          }}
-        >
-          {isPlaying ? '❚❚' : '▶'}
-        </button>
-
-        <div className="w-px h-5 mx-0.5 shrink-0" style={{ background: 'var(--deck-rule)' }} />
-
-        <span className="text-[11px] uppercase tracking-[0.15em] shrink-0 mr-0.5" style={{ color: 'var(--deck-mute)' }} title="Hot cues — click to jump · right-click to set/clear">Cues</span>
-        {hotcues.map(({ label: lbl, index, cue, color }) => (
-          <HotCuePad
-            key={index}
-            label={lbl}
-            index={index}
-            cue={cue}
-            color={color}
-            disabled={!currentTrack}
-            onPress={() => cue ? jumpToCue(index) : setCue(index)}
-            onSet={() => setCue(index)}
-            onClear={() => clearCue(index)}
-          />
-        ))}
-
-        <div className="w-px h-5 mx-0.5 shrink-0" style={{ background: 'var(--deck-rule)' }} />
-
-        <button
-          onClick={setMemoryCue}
-          disabled={!currentTrack}
-          className="h-8 px-2 rounded text-[13px] font-bold border transition-colors disabled:opacity-40"
-          style={{ borderColor: 'rgba(245,158,11,0.3)', color: 'rgba(245,158,11,0.7)' }}
-        >
-          MEM
-        </button>
-
-        {memoryCues.map((c, i) => (
-          <button
-            key={i}
-            onClick={() => seek(c.positionMs / 1000)}
-            className="h-8 px-2 rounded text-[13px] font-mono border transition-colors tabular-nums"
-            style={{ borderColor: 'rgba(245,158,11,0.2)', color: 'rgba(245,158,11,0.5)' }}
-          >
-            {fmt(c.positionMs / 1000)}
-          </button>
-        ))}
+          {[4, 8, 16, 50].map((r) => (<option key={r} value={r}>±{r}%</option>))}
+        </select>
       </div>
     </div>
   )
@@ -669,46 +509,36 @@ function AnalysisIndicator({ state, onAnalyze, hasTrack }: {
   return null
 }
 
-// ── SavedLoopPad ──────────────────────────────────────────────────────────────
+// ── FuncPad — a performance pad in LOOP / JUMP / ROLL mode ───────────────────────
 
-interface SavedLoopPadProps {
-  index: number
-  slot: CuePoint | null
-  disabled: boolean
-  onJump: () => void
-  onSave: () => void
-  onClear: () => void
-}
-
-function SavedLoopPad({ index, slot, disabled, onJump, onSave, onClear }: SavedLoopPadProps): JSX.Element {
-  const hasSlot = slot !== null
-  const loopLen = slot && slot.endMs != null
-    ? fmt((slot.endMs - slot.positionMs) / 1000)
-    : null
-
+function FuncPad({ label, accent, disabled, onClick }: {
+  label: string; accent: string; disabled: boolean; onClick: () => void
+}): JSX.Element {
   return (
     <button
-      onClick={hasSlot ? onJump : onSave}
-      onContextMenu={(e) => { e.preventDefault(); hasSlot ? onClear() : onSave() }}
+      onClick={onClick}
       disabled={disabled}
-      title={
-        hasSlot
-          ? `Loop ${index + 1}: ${fmt(slot!.positionMs / 1000)} (${loopLen}) — click to jump · right-click clear`
-          : `Loop ${index + 1}: click to save current loop`
-      }
-      className="relative h-7 w-8 rounded text-[12px] font-bold transition-all disabled:opacity-40 disabled:cursor-default"
-      style={
-        hasSlot
-          ? { background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.6)', color: 'rgba(139,92,246,0.9)', boxShadow: '0 0 4px rgba(139,92,246,0.2)' }
-          : { background: 'rgba(42,36,28,0.4)', border: '1px solid rgba(42,36,28,0.8)', color: 'rgba(110,101,83,0.5)' }
-      }
+      className="h-9 w-full rounded text-[13px] font-bold tabular-nums transition-all disabled:opacity-40 disabled:cursor-default flex items-center justify-center"
+      style={{ background: `${accent}22`, border: `1px solid ${accent}66`, color: accent }}
     >
-      {index + 1}
-      {hasSlot && loopLen && (
-        <span className="absolute bottom-0.5 left-0 right-0 text-center font-normal leading-none" style={{ fontSize: 6, color: 'rgba(139,92,246,0.7)' }}>
-          {loopLen}
-        </span>
-      )}
+      {label}
+    </button>
+  )
+}
+
+// ── Toggle — small square latch (SYNC / KEY / QUANT / SLIP block) ────────────────
+
+function Toggle({ label, active, disabled, onClick, title }: {
+  label: string; active: boolean; disabled: boolean; onClick: () => void; title?: string
+}): JSX.Element {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`h-9 w-full rounded text-[11px] font-bold tracking-wide border transition-colors disabled:opacity-40 ${active ? 'deck-btn-active' : 'deck-btn'}`}
+    >
+      {label}
     </button>
   )
 }
@@ -726,7 +556,7 @@ function HotCuePad({ label, cue, color, disabled, onPress, onSet, onClear }: Hot
       onContextMenu={(e) => { e.preventDefault(); cue ? onClear() : onSet() }}
       disabled={disabled}
       title={cue ? `${label}: ${fmt(cue.positionMs / 1000, true)} — click to jump · right-click clear` : `${label}: right-click to set`}
-      className="relative h-9 w-9 rounded text-[13px] font-black tracking-wide transition-all disabled:opacity-40 disabled:cursor-default"
+      className="relative h-9 w-full rounded text-[13px] font-black tracking-wide transition-all disabled:opacity-40 disabled:cursor-default"
       style={
         cue
           ? { background: `linear-gradient(180deg,${color}44 0%,${color}18 100%)`, border: `1px solid ${color}`, color, boxShadow: `0 0 6px ${color}33` }

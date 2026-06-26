@@ -287,10 +287,9 @@ function ChannelStrip({
       {/* Hairline divider */}
       <div style={{ height: 1, background: 'var(--deck-rule)' }} />
 
-      {/* VU meter + label */}
+      {/* VU meter + level value */}
       <div className="space-y-1">
-        <div className="flex justify-between items-baseline">
-          <span className="font-mono text-[9px] uppercase tracking-[0.2em]" style={{ color: 'var(--deck-mute)' }}>level</span>
+        <div className="flex justify-center items-baseline">
           <span className="font-mono text-[10px] tabular-nums" style={{ color: 'rgba(235,229,211,0.4)' }}>
             {Math.round(volume * 100)}
           </span>
