@@ -73,6 +73,9 @@ export function createLineageEngine(opts: LineageEngineConfig): LineageEngine {
   const { discogsToken, userAgent, dbPath, acoustidKey, fpcalcPath = 'fpcalc', lastfmKey } = opts
 
   const store = new LineageStore(dbPath)
+  // Retain the raw library (the store only keeps composition-collapsed keys) so
+  // the versions route can surface owned remixes/versions of the seed.
+  let library: LibraryTrackRef[] = []
   // Discogs release/artist/label data is effectively immutable — cache it for
   // two weeks so re-digs and overlapping seeds skip the network and rate limit.
   const DISCOGS_TTL = 1000 * 60 * 60 * 24 * 14
@@ -110,15 +113,15 @@ export function createLineageEngine(opts: LineageEngineConfig): LineageEngine {
     hasTracklists: !!tracklists,
 
     // --- library / dedup ---
-    loadLibrary: (tracks) => store.loadLibrary(tracks),
-    loadRekordbox: (xmlPath) => store.loadLibrary(readRekordbox(xmlPath).tracks),
+    loadLibrary: (tracks) => { library = tracks; store.loadLibrary(tracks) },
+    loadRekordbox: (xmlPath) => { library = readRekordbox(xmlPath).tracks; store.loadLibrary(library) },
     loadSerato: (cratePath) => readSeratoCrate(cratePath),
 
     // --- enrichment + discovery ---
     enrich: (input) => enrich(discogs, input),
     searchSeeds: (input) => searchSeeds(discogs, input),
     discover: (seed, o, onProgress) =>
-      discover(discogs, store, seed, o, { lastfm, identity, tracklists, deezer }, onProgress),
+      discover(discogs, store, seed, o, { lastfm, identity, tracklists, deezer, library }, onProgress),
 
     // --- identity backbone ---
     identify: (input) => identity.identify(input),

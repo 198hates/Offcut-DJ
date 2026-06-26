@@ -130,6 +130,25 @@ describe('discover — versions & remixes route', () => {
     expect(dir!.pool[0].why).toContain('Seed Track')
   })
 
+  it('surfaces owned versions of the seed from the library (by composition title)', async () => {
+    const store = new LineageStore(':memory:')
+    const lib = [
+      { artist: 'Seed Artist', title: 'Seed Track (Owned Remix)' }, // same-artist version
+      { artist: 'Bootlegger', title: 'Seed Track (Bootleg Edit)' }, // remixer-credited — still the same track
+      { artist: 'Other Artist', title: 'A Different Song' } // different title — must NOT match
+    ]
+    store.loadLibrary(lib)
+    const res = await discover(versionDiscogs(), store, remixSeed(), {}, { library: lib })
+    store.close()
+    const dir = res.directions.find((d) => d.type === 'version')!
+    const owned = dir.pool.find((c) => c.title === 'Seed Track (Owned Remix)')
+    expect(owned).toBeDefined()
+    expect(owned!.owned).toBe(true)
+    // Matched by composition title regardless of the credited artist.
+    expect(dir.pool.some((c) => c.title === 'Seed Track (Bootleg Edit)')).toBe(true)
+    expect(dir.pool.some((c) => c.title === 'A Different Song')).toBe(false)
+  })
+
   it('is skipped when its route type is filtered out', async () => {
     const store = new LineageStore(':memory:')
     const res = await discover(versionDiscogs(), store, remixSeed(), { filters: { routes: ['deezer'] } })

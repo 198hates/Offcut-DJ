@@ -20,6 +20,7 @@ import type {
   DiscoverOptions,
   DiscoverProgress,
   DiscoverResult,
+  LibraryTrackRef,
   RouteType,
   Seed
 } from './types'
@@ -31,6 +32,8 @@ export interface DiscoverClients {
   tracklists?: TracklistsClient | null
   /** Keyless Deezer related-artists route — present on every dig. */
   deezer?: DeezerClient | null
+  /** The user's library ({artist,title}) — surfaces owned versions/remixes of the seed. */
+  library?: LibraryTrackRef[]
 }
 
 // Discogs formats release/result titles as "Artist - Title".
@@ -210,7 +213,7 @@ export async function discover(
   clients: DiscoverClients = {},
   onProgress?: (p: DiscoverProgress) => void
 ): Promise<DiscoverResult> {
-  const { lastfm = null, identity = null, tracklists = null, deezer = null } = clients
+  const { lastfm = null, identity = null, tracklists = null, deezer = null, library = [] } = clients
   const poolSize = opts.poolSize ?? 24
   // Higher than before: a dig now splits the sonic route into one branch per
   // related artist, so the cap has to leave room for those plus the credit /
@@ -267,6 +270,16 @@ export async function discover(
     //    (the original, edits, dubs and other artists' remixes of this track).
     if (routeEnabled('version')) {
       const base = compositionTitle(seed.title)
+      // Versions you already own — any track sharing the composition title (a
+      // different cut from the seed, whoever it's credited to: remixer edits,
+      // bootlegs, the original). The most reliable "remixes I have", and the one
+      // source that doesn't depend on Discogs coverage. dedupKey('', title) is the
+      // title-only composition key (artist dropped, remix suffix stripped).
+      const seedTitleKey = dedupKey('', seed.title)
+      const seedFull = fullKey(seed.artist, seed.title)
+      const ownedVersions: DiscogsReleaseSummary[] = library
+        .filter((t) => dedupKey('', t.title) === seedTitleKey && fullKey(t.artist, t.title) !== seedFull)
+        .map((t) => ({ title: `${t.artist} - ${t.title}` }))
       try {
         const { results = [] } = await discogs.searchRelease({ artist: seed.artist, track: base })
         push({
@@ -274,13 +287,24 @@ export async function discover(
           type: 'version',
           title: 'Remixes & versions',
           pool: buildPool(
-            results.map(searchToSummary),
-            { seed, store, base: 96, why: `A version or remix of “${base}”`, fromArtist: true, keep, rankOwnedEqually, keyOf: fullKey },
+            [...ownedVersions, ...results.map(searchToSummary)],
+            // Owned versions are the whole point here — rank them at full score.
+            { seed, store, base: 96, why: `A version or remix of “${base}”`, fromArtist: true, keep, rankOwnedEqually: true, keyOf: fullKey },
             poolSize
           )
         })
       } catch {
-        /* best-effort — no Discogs match for this composition */
+        // Discogs failed/empty — still surface owned versions on their own.
+        push({
+          id: `version:${seedKey}`,
+          type: 'version',
+          title: 'Remixes & versions',
+          pool: buildPool(
+            ownedVersions,
+            { seed, store, base: 96, why: `A version or remix of “${base}” in your library`, fromArtist: true, keep, rankOwnedEqually: true, keyOf: fullKey },
+            poolSize
+          )
+        })
       }
       advance('Finding remixes & versions…')
     }
