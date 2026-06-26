@@ -2,25 +2,27 @@
    never leaks into the rest of the app. Ported from lineage-web-v2.html. */
 
 .cd-root {
-  --ink: #070d09;
-  --ink-2: #0c140e;
-  --panel: #0e1812;
-  --panel-2: #13231a;
-  --line: #1d3026;
-  --text: #ece6d9;
-  --muted: #7e9085;
-  --dim: #586a5e;
-  --orange: #ef7a3c;
-  --lime: #bcd24c;
-  --peach: #f3cda1;
-  --teal: #54bba5;
-  --seed: #ff8c4d;
-  /* route-family colours (hybrid: tuned to the Offcut palette) */
-  --blue: #6ea8d8;
-  --amber: #e0a83c;
-  --silver: #c2c9b6;
-  --orchid: #c98bbf;
-  --violet: #b79cff; /* AI-suggested branch — distinct from the earthy route palette */
+  /* Field Unit warm base — matches the rest of the app (chassis/paper/ink). */
+  --ink: #0b0907;
+  --ink-2: #100d0a;
+  --panel: #14110c;
+  --panel-2: #1a1612;
+  --line: #2a241c;
+  --text: #ebe5d3;
+  --muted: #a39882;
+  --dim: #5a5142;
+  --seed: #c2683e; /* origin seed — the app's terracotta accent */
+  /* Route-family colours — the Offcut muted functional palette (as the Camelot
+     wheel / genre pills), so the web reads as part of the app. */
+  --orange: #c2683e; /* remix / producer — terracotta */
+  --amber:  #e0a23c; /* remixes & versions */
+  --lime:   #a9c23e; /* same / sister labels */
+  --teal:   #4e9a8e; /* listeners also play */
+  --blue:   #4e7090; /* sample lineage — ocean */
+  --peach:  #b07a4e; /* sounds-like (Deezer) — clay */
+  --silver: #9c9176; /* shared players — stone */
+  --orchid: #b86e72; /* same compilation — rose */
+  --violet: #8a6ea8; /* AI-suggested branch — muted purple */
 
   position: relative;
   height: 100%;
@@ -28,8 +30,8 @@
   color: var(--text);
   overflow: hidden;
   background:
-    radial-gradient(125% 95% at 10% -12%, #16271d 0%, transparent 52%),
-    radial-gradient(125% 95% at 100% 112%, #1c1408 0%, transparent 48%),
+    radial-gradient(125% 95% at 10% -12%, #1c1611 0%, transparent 52%),
+    radial-gradient(125% 95% at 100% 112%, #1f1509 0%, transparent 48%),
     var(--ink);
 }
 

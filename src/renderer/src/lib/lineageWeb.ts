@@ -191,12 +191,12 @@ export function createLineageWeb(
       // the HTML cards from overlapping (the cards are positioned over the nodes).
       { selector: 'node', style: { opacity: 0, events: 'no', shape: 'rectangle', width: 156, height: 96 } },
       { selector: 'node[kind="dir"]', style: { width: 172, height: 54 } },
-      { selector: 'edge', style: { width: 1.4, 'line-color': '#2c3a31', 'curve-style': 'bezier', opacity: 0.8 } },
+      { selector: 'edge', style: { width: 1.4, 'line-color': '#3a2f22', 'curve-style': 'bezier', opacity: 0.8 } },
       ...(Object.keys(TCOL) as RouteType[]).map((t) => ({
         selector: `edge[type="${t}"]`,
         style: { 'line-color': TCOL[t], opacity: 0.5 }
       })),
-      { selector: 'edge.tk', style: { 'line-color': '#3a4a40', opacity: 0.38, width: 1.1 } },
+      { selector: 'edge.tk', style: { 'line-color': '#473a2a', opacity: 0.38, width: 1.1 } },
       { selector: 'edge.lineage', style: { opacity: 0 } }
     ],
     layout: { name: 'preset' }
@@ -423,10 +423,10 @@ export function createLineageWeb(
       fit: true,
       padding: 80,
       nodeDimensionsIncludeLabels: false,
-      nodeRepulsion: 9000,
+      nodeRepulsion: 10500,
       // route edges (seed→direction) sit wider than track edges (direction→track)
-      idealEdgeLength: (e: EdgeSingular) => (e.hasClass('tk') ? 120 : 200),
-      edgeElasticity: 0.45,
+      idealEdgeLength: (e: EdgeSingular) => (e.hasClass('tk') ? 150 : 260),
+      edgeElasticity: 0.4,
       gravity: 0.32,
       gravityRange: 3.6,
       numIter: 1800,
