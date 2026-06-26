@@ -14,20 +14,32 @@ import { useMixerStore } from '../store/mixerStore'
 import { useRecordingStore } from '../store/recordingStore'
 import type { AudioEngineContract } from '../lib/audioEngineContract'
 
-// ── EQ Knob ──────────────────────────────────────────────────────────────────
-// TE-style: flat circle, single indicator line, range marks at ±140°.
-// No arc decoration — the pointer position is the communication.
-// Drag ↑ = boost  |  drag ↓ = cut  |  double-click = flat (0 dB)
+// ── Knob ──────────────────────────────────────────────────────────────────────
+// Flat circle, single indicator line, range marks at ±135°. Centre-split: 0 =
+// 12 o'clock. Drag ↑ = up / drag ↓ = down · double-click = reset. Size, pointer
+// colour and the optional ring come from the design's per-band differentiation
+// (TRIM stone · HI/MID/LOW terracotta · FILTER ochre + ring).
 
-function EqKnob({ label, value, min = -24, max = 6, onChange }: {
+const linToDb = (lin: number): number => 20 * Math.log10(Math.max(0.0001, lin))
+
+function Knob({
+  label, value, min = -24, max = 6, size = 30, pointer, glow, ring = false,
+  sensitivity = 80, reset = 0, format, onChange,
+}: {
   label: string
   value: number
   min?: number
   max?: number
-  onChange: (db: number) => void
+  size?: number
+  pointer?: string
+  glow?: string
+  ring?: boolean
+  sensitivity?: number
+  reset?: number
+  format?: (v: number) => { text: string; hot?: boolean }
+  onChange: (v: number) => void
 }): JSX.Element {
   const range = max - min
-  // Center-split: 0 dB = 12 o'clock (0 °), cuts go left, boosts go right
   const angleDeg = value <= 0 ? (value / Math.abs(min)) * 135 : (value / max) * 135
 
   const startRef = useRef<{ y: number; v: number } | null>(null)
@@ -39,29 +51,35 @@ function EqKnob({ label, value, min = -24, max = 6, onChange }: {
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     if (!startRef.current) return
-    const raw = startRef.current.v + (startRef.current.y - e.clientY) / 80 * range
-    onChange(Math.max(min, Math.min(max, Math.round(raw * 10) / 10)))
-  }, [min, max, range, onChange])
+    const raw = startRef.current.v + (startRef.current.y - e.clientY) / sensitivity * range
+    onChange(Math.max(min, Math.min(max, Math.round(raw * 100) / 100)))
+  }, [min, max, range, sensitivity, onChange])
 
   const onPointerUp = useCallback(() => { startRef.current = null }, [])
 
-  const isKill   = value <= min + 1.5
-  const isCentre = Math.abs(value) < 0.5
-  const display  = isCentre ? '0' : value > 0 ? `+${value.toFixed(0)}` : value.toFixed(0)
+  const fmt = format
+    ? format(value)
+    : { text: Math.abs(value) < 0.5 ? '0' : value > 0 ? `+${value.toFixed(0)}` : value.toFixed(0), hot: value <= min + 1.5 }
+
+  const knobStyle = {
+    '--rot': `${angleDeg}deg`,
+    '--knob-size': `${size}px`,
+    ...(pointer ? { '--knob-pointer': pointer } : {}),
+    ...(glow ? { '--knob-pointer-glow': glow } : {}),
+    touchAction: 'none',
+  } as React.CSSProperties
 
   return (
     <div className="flex items-center gap-2 w-full select-none">
-      {/* CSS knob — body + tick ring + indicator via ::before / ::after */}
       <div
-        className="knob cursor-ns-resize"
-        style={{ '--rot': `${angleDeg}deg`, touchAction: 'none' } as React.CSSProperties}
+        className={`knob cursor-ns-resize${ring ? ' knob-ring' : ''}`}
+        style={knobStyle}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onDoubleClick={() => onChange(0)}
-        title={`${label}: ${display}dB — drag ↑↓ · double-click to reset`}
+        onDoubleClick={() => onChange(reset)}
+        title={`${label}: ${fmt.text} — drag ↑↓ · double-click to reset`}
       />
-      {/* Label + value */}
       <div className="flex flex-col" style={{ minWidth: 0 }}>
         <span
           className="font-mono text-[10px] font-bold uppercase tracking-[0.02em] leading-none"
@@ -69,78 +87,58 @@ function EqKnob({ label, value, min = -24, max = 6, onChange }: {
         >{label}</span>
         <span
           className="font-mono text-[10px] tabular-nums leading-none mt-0.5"
-          style={{ color: isKill ? 'var(--deck-spot)' : 'var(--deck-ink)' }}
-        >{display}</span>
+          style={{ color: fmt.hot ? 'var(--deck-spot)' : 'var(--deck-ink)' }}
+        >{fmt.text}</span>
       </div>
     </div>
   )
 }
 
 // ── VU Meter ─────────────────────────────────────────────────────────────────
-// Horizontal single-bar meter — TE-minimal. No LED segments.
-// Accent colour for signal, shifts warm at peaks. Peak-hold dot.
+// 12-segment LED ladder — lit moss → ochre → red, peak-hold on the top segment.
+// Driven by a RAF loop reading the engine level (no React re-render per frame).
+
+const VU_SEGMENTS = 12
+const vuColor = (i: number): string => (i >= 10 ? '#C24E4E' : i >= 7 ? '#C9A02C' : '#6E8059')
 
 function VuMeter({ getLevel }: { getLevel: () => number }): JSX.Element {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const peakLv    = useRef(0)
-  const peakTick  = useRef(0)
+  const segs    = useRef<(HTMLDivElement | null)[]>([])
+  const peakLv  = useRef(0)
+  const peakTk  = useRef(0)
 
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const dpr = window.devicePixelRatio || 1
-
-    const resize = () => {
-      canvas.width  = canvas.offsetWidth  * dpr
-      canvas.height = canvas.offsetHeight * dpr
-    }
-    resize()
-    const ro = new ResizeObserver(resize)
-    ro.observe(canvas)
-
-    const ctx = canvas.getContext('2d')!
     let raf = 0
-
     const draw = () => {
-      const lv = getLevel()
-      if (lv >= peakLv.current) { peakLv.current = lv; peakTick.current = 0 }
-      else { peakTick.current++; if (peakTick.current > 50) peakLv.current *= 0.96 }
-
-      const W = canvas.width
-      const H = canvas.height
-
-      ctx.clearRect(0, 0, W, H)
-
-      // Track
-      ctx.fillStyle = 'rgba(var(--border-rgb), 0.4)'
-      // Use a literal colour since canvas doesn't resolve CSS vars
-      ctx.fillStyle = 'rgba(255,255,255,0.05)'
-      ctx.fillRect(0, 0, W, H)
-
-      // Active fill — terracotta, shifts warm at peaks
-      const fillW = Math.round(lv * W)
-      if (fillW > 0) {
-        const r = Math.round(216 + lv * 20)
-        const g = Math.round(106 - lv * 60)
-        const b = Math.round(74  - lv * 60)
-        ctx.fillStyle = `rgba(${r},${g},${b},0.70)`
-        ctx.fillRect(0, 0, fillW, H)
+      const lv  = getLevel()
+      if (lv >= peakLv.current) { peakLv.current = lv; peakTk.current = 0 }
+      else { peakTk.current++; if (peakTk.current > 40) peakLv.current *= 0.95 }
+      const lit  = Math.round(lv * VU_SEGMENTS)
+      const peak = Math.round(peakLv.current * VU_SEGMENTS) - 1
+      for (let i = 0; i < VU_SEGMENTS; i++) {
+        const el = segs.current[i]
+        if (!el) continue
+        const on = i < lit || i === peak
+        el.style.background = on ? vuColor(i) : 'rgba(255,255,255,0.06)'
+        el.style.boxShadow  = on && i >= 10 ? '0 0 4px rgba(194,78,78,0.6)' : 'none'
       }
-
-      // Peak dot
-      const pkX = Math.round(peakLv.current * W)
-      if (pkX > 1) {
-        ctx.fillStyle = 'rgba(216,106,74,0.85)'
-        ctx.fillRect(Math.max(0, pkX - 1), 0, 1, H)
-      }
-
       raf = requestAnimationFrame(draw)
     }
     raf = requestAnimationFrame(draw)
-    return () => { cancelAnimationFrame(raf); ro.disconnect() }
+    return () => cancelAnimationFrame(raf)
   }, [getLevel])
 
-  return <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 3 }} />
+  return (
+    <div className="flex gap-px" style={{ height: 6 }}>
+      {Array.from({ length: VU_SEGMENTS }, (_, i) => (
+        <div
+          key={i}
+          ref={(el) => { segs.current[i] = el }}
+          className="flex-1"
+          style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 1 }}
+        />
+      ))}
+    </div>
+  )
 }
 
 // ── Vertical Fader ────────────────────────────────────────────────────────────
@@ -231,19 +229,23 @@ function VerticalFader({ value, onChange }: { value: number; onChange: (v: numbe
 // ── Channel Strip ─────────────────────────────────────────────────────────────
 
 function ChannelStrip({
-  label, eqHigh, eqMid, eqLow, volume, isPlaying, hasTrack, engine, onEq, onVolume,
+  label, trimDb, eqHigh, eqMid, eqLow, filter, volume, isPlaying, hasTrack, engine,
+  onTrim, onEq, onFilter, onVolume,
 }: {
   label: 'A' | 'B'
-  eqHigh: number; eqMid: number; eqLow: number
+  trimDb: number; eqHigh: number; eqMid: number; eqLow: number; filter: number
   volume: number; isPlaying: boolean; hasTrack: boolean
   engine: AudioEngineContract
+  onTrim: (db: number) => void
   onEq: (band: 'high' | 'mid' | 'low', db: number) => void
+  onFilter: (knob: number) => void
   onVolume: (v: number) => void
 }): JSX.Element {
   const getLevel = useCallback(() => engine.getLevel(), [engine])
+  const dbFmt = (v: number): { text: string } => ({ text: Math.abs(v) < 0.5 ? '0' : v > 0 ? `+${v.toFixed(0)}` : v.toFixed(0) })
 
   return (
-    <div className="flex flex-col gap-2 flex-1 min-w-0 px-2 py-2">
+    <div className="flex flex-col gap-1.5 flex-1 min-w-0 px-2 py-2">
       {/* Channel label */}
       <div className="flex items-center justify-between">
         <span
@@ -261,12 +263,26 @@ function ChannelStrip({
         />
       </div>
 
-      {/* EQ */}
-      <div className="space-y-2">
-        <EqKnob label="HI"  value={eqHigh} onChange={(v) => onEq('high', v)} />
-        <EqKnob label="MID" value={eqMid}  onChange={(v) => onEq('mid',  v)} />
-        <EqKnob label="LOW" value={eqLow}  onChange={(v) => onEq('low',  v)} />
+      {/* TRIM — stone pointer, smaller */}
+      <Knob label="TRIM" value={trimDb} min={-12} max={12} size={22}
+            pointer="#8E8473" glow="rgba(142,132,115,0.45)" sensitivity={90}
+            format={dbFmt} onChange={onTrim} />
+
+      <div style={{ height: 1, background: 'var(--deck-rule)' }} />
+
+      {/* EQ trio — terracotta pointers (the prominent band) */}
+      <div className="space-y-1.5">
+        <Knob label="HI"  value={eqHigh} size={30} onChange={(v) => onEq('high', v)} />
+        <Knob label="MID" value={eqMid}  size={30} onChange={(v) => onEq('mid',  v)} />
+        <Knob label="LOW" value={eqLow}  size={30} onChange={(v) => onEq('low',  v)} />
       </div>
+
+      {/* FILTER — ochre pointer + ring; centre 0 = off, ±1 = full LP/HP */}
+      <div style={{ height: 1, background: 'var(--deck-rule)' }} />
+      <Knob label="FILTER" value={filter} min={-1} max={1} size={26}
+            pointer="#C9A02C" glow="rgba(201,160,44,0.5)" ring sensitivity={130}
+            format={(v) => ({ text: Math.abs(v) < 0.05 ? '0' : `${v > 0 ? '+' : ''}${Math.round(v * 100)}` })}
+            onChange={onFilter} />
 
       {/* Hairline divider */}
       <div style={{ height: 1, background: 'var(--deck-rule)' }} />
@@ -354,6 +370,10 @@ export function Mixer(): JSX.Element {
   const { volA, volB, xfade, setVolA, setVolB, setXfade } = useMixerStore()
 
   const setEqA     = useDeckAStore((s) => s.setEq)
+  const setTrimA   = useDeckAStore((s) => s.setTrimDb)
+  const setFilterA = useDeckAStore((s) => s.setFilter)
+  const trimGainA  = useDeckAStore((s) => s.trimGain)
+  const filterA    = useDeckAStore((s) => s.filterKnob)
   const eqHighA    = useDeckAStore((s) => s.eqHigh)
   const eqMidA     = useDeckAStore((s) => s.eqMid)
   const eqLowA     = useDeckAStore((s) => s.eqLow)
@@ -362,6 +382,10 @@ export function Mixer(): JSX.Element {
   const engineA    = useDeckAStore((s) => s._engine)
 
   const setEqB     = useDeckBStore((s) => s.setEq)
+  const setTrimB   = useDeckBStore((s) => s.setTrimDb)
+  const setFilterB = useDeckBStore((s) => s.setFilter)
+  const trimGainB  = useDeckBStore((s) => s.trimGain)
+  const filterB    = useDeckBStore((s) => s.filterKnob)
   const eqHighB    = useDeckBStore((s) => s.eqHigh)
   const eqMidB     = useDeckBStore((s) => s.eqMid)
   const eqLowB     = useDeckBStore((s) => s.eqLow)
@@ -386,9 +410,9 @@ export function Mixer(): JSX.Element {
       <div className="flex flex-1 min-h-0" style={{ borderBottom: '1px solid var(--deck-rule)' }}>
         <ChannelStrip
           label="A"
-          eqHigh={eqHighA} eqMid={eqMidA} eqLow={eqLowA}
+          trimDb={linToDb(trimGainA)} eqHigh={eqHighA} eqMid={eqMidA} eqLow={eqLowA} filter={filterA}
           volume={volA} isPlaying={isPlayingA} hasTrack={hasTrackA}
-          engine={engineA} onEq={setEqA} onVolume={setVolA}
+          engine={engineA} onTrim={setTrimA} onEq={setEqA} onFilter={setFilterA} onVolume={setVolA}
         />
 
         {/* Hairline divider between channels */}
@@ -396,9 +420,9 @@ export function Mixer(): JSX.Element {
 
         <ChannelStrip
           label="B"
-          eqHigh={eqHighB} eqMid={eqMidB} eqLow={eqLowB}
+          trimDb={linToDb(trimGainB)} eqHigh={eqHighB} eqMid={eqMidB} eqLow={eqLowB} filter={filterB}
           volume={volB} isPlaying={isPlayingB} hasTrack={hasTrackB}
-          engine={engineB} onEq={setEqB} onVolume={setVolB}
+          engine={engineB} onTrim={setTrimB} onEq={setEqB} onFilter={setFilterB} onVolume={setVolB}
         />
       </div>
 

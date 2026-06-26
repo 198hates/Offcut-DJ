@@ -169,13 +169,20 @@
    indicator line driven by --rot CSS custom property.
    Used inside the deck-zone only (always-dark context). */
 .knob {
-  width: 34px; height: 34px; border-radius: 50%;
+  --knob-size: 34px;
+  --knob-pointer: var(--deck-spot);
+  --knob-pointer-glow: var(--deck-glow);
+  width: var(--knob-size); height: var(--knob-size); border-radius: 50%;
   background: radial-gradient(circle at 38% 34%, #2A2620, #14110C 75%);
   border: 1px solid var(--deck-rule);
   position: relative;
   flex-shrink: 0;
 }
-/* Outer tick ring — 6 marks spanning the control arc */
+/* FILTER variant — ochre ring hugging the knob body */
+.knob-ring {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--knob-pointer) 60%, transparent);
+}
+/* Outer tick ring — 6 marks spanning the control arc (scales with --knob-size) */
 .knob::before {
   content: ''; position: absolute; inset: -4px;
   border-radius: 50%;
@@ -186,18 +193,18 @@
     var(--deck-mute) 78deg 79.5deg, transparent 79.5deg 104deg,
     var(--deck-mute) 104deg 105.5deg, transparent 105.5deg 130deg,
     var(--deck-mute) 130deg 131.5deg, transparent 131.5deg 285deg);
-  -webkit-mask: radial-gradient(circle, transparent 18px, #000 18px, #000 21px, transparent 21px);
-          mask: radial-gradient(circle, transparent 18px, #000 18px, #000 21px, transparent 21px);
+  -webkit-mask: radial-gradient(circle, transparent calc(var(--knob-size) / 2 + 1px), #000 calc(var(--knob-size) / 2 + 1px), #000 calc(var(--knob-size) / 2 + 4px), transparent calc(var(--knob-size) / 2 + 4px));
+          mask: radial-gradient(circle, transparent calc(var(--knob-size) / 2 + 1px), #000 calc(var(--knob-size) / 2 + 1px), #000 calc(var(--knob-size) / 2 + 4px), transparent calc(var(--knob-size) / 2 + 4px));
 }
-/* Terracotta indicator line, rotated by --rot */
+/* Indicator line, rotated by --rot — geometry derived from --knob-size */
 .knob::after {
-  content: ''; position: absolute; top: 4px; left: 50%;
-  width: 2px; height: 11px;
-  background: var(--deck-spot);
+  content: ''; position: absolute; top: calc(var(--knob-size) * 0.118); left: 50%;
+  width: 2px; height: calc(var(--knob-size) * 0.32);
+  background: var(--knob-pointer);
   border-radius: 1px;
   transform: translateX(-50%) rotate(var(--rot, 0deg));
-  transform-origin: 50% 13px;
-  box-shadow: 0 0 4px var(--deck-glow);
+  transform-origin: 50% calc(var(--knob-size) * 0.382);
+  box-shadow: 0 0 4px var(--knob-pointer-glow);
 }
 
 @layer base {

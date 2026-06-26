@@ -33,13 +33,15 @@ const OVERSCAN      = 8
 
 interface ColumnDef {
   id: string
-  sortKey: keyof Track
+  /** Omitted for non-sortable columns (e.g. the waveform preview). */
+  sortKey?: keyof Track
   label: string
   width: string
   defaultVisible: boolean
 }
 
 const COLUMN_DEFS: ColumnDef[] = [
+  { id: 'wave',                                        label: 'Wave',     width: '62px',  defaultVisible: true  },
   { id: 'title',           sortKey: 'title',           label: 'Title',    width: 'auto',  defaultVisible: true  },
   { id: 'artist',          sortKey: 'artist',          label: 'Artist',   width: '110px', defaultVisible: true  },
   { id: 'genre',           sortKey: 'genre',           label: 'Genre',    width: '80px',  defaultVisible: true  },
@@ -91,11 +93,22 @@ export function LibraryPage(): JSX.Element {
 
   // Column visibility — persisted to localStorage
   const [visibleColIds, setVisibleColIds] = useState<Set<string>>(() => {
+    const defaults = (): Set<string> => new Set(COLUMN_DEFS.filter((c) => c.defaultVisible).map((c) => c.id))
+    let visible: Set<string>
     try {
       const stored = localStorage.getItem('offcut-col-visibility')
-      if (stored) return new Set(JSON.parse(stored) as string[])
+      visible = stored ? new Set(JSON.parse(stored) as string[]) : defaults()
+    } catch { visible = defaults() }
+    // One-time migration: surface newly-added default-visible columns (e.g. the
+    // 'wave' preview) the first time they appear, without re-showing columns the
+    // user has deliberately hidden.
+    try {
+      const seen = new Set(JSON.parse(localStorage.getItem('offcut-col-seen') || '[]') as string[])
+      if (seen.size) for (const c of COLUMN_DEFS) if (c.defaultVisible && !seen.has(c.id)) visible.add(c.id)
+      localStorage.setItem('offcut-col-seen', JSON.stringify(COLUMN_DEFS.map((c) => c.id)))
+      localStorage.setItem('offcut-col-visibility', JSON.stringify([...visible]))
     } catch { /* ignore */ }
-    return new Set(COLUMN_DEFS.filter((c) => c.defaultVisible).map((c) => c.id))
+    return visible
   })
   const toggleCol = useCallback((id: string) => {
     setVisibleColIds((prev) => {
@@ -431,9 +444,9 @@ export function LibraryPage(): JSX.Element {
                 return (
                   <th
                     key={col.id}
-                    onClick={(e) => handleSort(col.sortKey, e)}
-                    title={sortSpec.length > 1 ? 'Click: primary sort · Shift+click: add/toggle secondary sort' : 'Click to sort · Shift+click to add secondary sort'}
-                    className="text-left px-2 text-[12px] font-mono font-bold uppercase tracking-[0.06em] text-muted cursor-pointer hover:text-ink transition-colors select-none border-b border-border/30 truncate"
+                    onClick={(e) => col.sortKey && handleSort(col.sortKey, e)}
+                    title={!col.sortKey ? '' : sortSpec.length > 1 ? 'Click: primary sort · Shift+click: add/toggle secondary sort' : 'Click to sort · Shift+click to add secondary sort'}
+                    className={`text-left px-2 text-[12px] font-mono font-bold uppercase tracking-[0.06em] text-muted transition-colors select-none border-b border-border/30 truncate ${col.sortKey ? 'cursor-pointer hover:text-ink' : ''}`}
                   >
                     {col.label}
                     {sortLevel && (
@@ -526,6 +539,46 @@ interface TrackRowProps {
   onCheckbox: (checked: boolean) => void
   onDragStart: (e: React.DragEvent, track: Track) => void
   onDragEnd: () => void
+}
+
+// ── Mini-waveform preview (WAVE column) ───────────────────────────────────────
+// The library doesn't store per-track peaks (4k+ rows), so this is a *stable
+// synthetic* envelope seeded from the track id + energy — same approach the
+// design prototype uses. It reads as a per-track silhouette, not real audio.
+const MINI_WAVE_BARS = 22
+const MINI_WAVE_GRAD =
+  'linear-gradient(180deg,#EDE3CB,#C9A02C 26%,#C2683E 50%,#C9A02C 74%,#EDE3CB)'
+
+function fnv1a(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) }
+  return h >>> 0
+}
+
+function MiniWaveform({ track }: { track: Track }): JSX.Element {
+  const bars = useMemo(() => {
+    let seed = fnv1a(track.id || track.filePath || track.title || 'x') || 1
+    const rnd = (): number => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296 }
+    const loud = 0.6 + 0.8 * ((track.energy ?? 5) / 10)
+    return Array.from({ length: MINI_WAVE_BARS }, (_, i) => {
+      // centre-weighted envelope shaped by energy + per-track noise
+      const env = 0.4 + 0.6 * Math.sin((i / (MINI_WAVE_BARS - 1)) * Math.PI)
+      return Math.max(0.12, Math.min(1, env * (0.45 + 0.55 * rnd()) * loud))
+    })
+  }, [track.id, track.filePath, track.title, track.energy])
+
+  return (
+    <div className="flex items-center gap-px" style={{ height: 22 }}>
+      {bars.map((h, i) => (
+        <div key={i} style={{
+          flex: 1, height: `${Math.round(h * 100)}%`,
+          minHeight: 1, borderRadius: 0.5,
+          background: MINI_WAVE_GRAD,
+          opacity: track.bpm != null ? 0.92 : 0.32,
+        }} />
+      ))}
+    </div>
+  )
 }
 
 function TrackRow({ track, isSelected, visibleColIds, onClick, onDoubleClick, onContextMenu, onCheckbox, onDragStart, onDragEnd }: TrackRowProps): JSX.Element {
@@ -654,6 +707,13 @@ function TrackRow({ track, isSelected, visibleColIds, onClick, onDoubleClick, on
           })()}
         </div>
       </td>
+
+      {/* Mini-waveform preview */}
+      {show('wave') && (
+        <td className="px-1.5">
+          <MiniWaveform track={track} />
+        </td>
+      )}
 
       {/* Title + album */}
       {show('title') && (

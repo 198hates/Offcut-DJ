@@ -40,6 +40,8 @@ export interface DeckStore {
   /** Per-track auto-gain trim (linear). Applied by lib/mixBus.ts as
    *  engine.volume = trimGain × channel fader × crossfader leg. */
   trimGain: number
+  /** DJ filter knob: −1 = full low-pass, 0 = off (transparent), +1 = full high-pass. */
+  filterKnob: number
   // Performance modes
   isQuantized: boolean        // cues/loops snap to nearest beat
   slipMode: boolean           // playhead advances under loops; exits to real position
@@ -72,6 +74,10 @@ export interface DeckStore {
   scrubStart: () => void
   scrubEnd: () => void
   setEq: (band: 'high' | 'mid' | 'low', db: number) => void
+  /** DJ filter sweep (−1 LP … 0 off … +1 HP). */
+  setFilter: (knob: number) => void
+  /** Manual input-trim knob, in dB (drives the linear trimGain stage). */
+  setTrimDb: (db: number) => void
   pressCue: () => void
   setCue: (index: number) => Promise<void>
   clearCue: (index: number) => Promise<void>
@@ -285,6 +291,7 @@ function createDeckStore(deckId: 'A' | 'B') {
       eqMid:  0,
       eqLow:  0,
       trimGain: 1,
+      filterKnob: 0,
       isQuantized: false,
       slipMode: false,
       fluxEnabled: false,
@@ -307,7 +314,7 @@ function createDeckStore(deckId: 'A' | 'B') {
         // A track that already has BPM + key needs no analysis — start in 'done'
         // so the "analyse" button doesn't show for fully-analysed tracks.
         const initialAnalysis: AnalysisState = track.bpm && track.key ? 'done' : 'idle'
-        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, eqHigh: 0, eqMid: 0, eqLow: 0, analysisState: initialAnalysis, keylockEnabled: false, synced: false, fluxEnabled: false, stems: { ...DEFAULT_STEMS }, stemsLoaded: false, stemsSeparating: false, stemsProgress: 0 })
+        set({ isLoading: true, currentTrack: track, waveformPeaks: null, detailPeaks: null, lowPeaks: null, midPeaks: null, highPeaks: null, currentTime: 0, mainCueTime: null, loopStart: null, loopEnd: null, isLooping: false, playbackRate: 1.0, eqHigh: 0, eqMid: 0, eqLow: 0, filterKnob: 0, analysisState: initialAnalysis, keylockEnabled: false, synced: false, fluxEnabled: false, stems: { ...DEFAULT_STEMS }, stemsLoaded: false, stemsSeparating: false, stemsProgress: 0 })
 
         // Per-track auto-gain → trim stage (applied by lib/mixBus.ts as
         // trim × fader × crossfader, so it never compounds across loads and
@@ -333,6 +340,7 @@ function createDeckStore(deckId: 'A' | 'B') {
           // must match regardless of which engine is active.
           engine.keylockEnabled = false
           engine.playbackRate = 1.0
+          engine.setFilter(0)
           engine.setEqGain('high', 0)
           engine.setEqGain('mid', 0)
           engine.setEqGain('low', 0)
@@ -413,6 +421,19 @@ function createDeckStore(deckId: 'A' | 'B') {
       setEq: (band, db) => {
         engine.setEqGain(band, db)
         set(band === 'high' ? { eqHigh: db } : band === 'mid' ? { eqMid: db } : { eqLow: db })
+      },
+
+      setFilter: (knob) => {
+        const k = Math.max(-1, Math.min(1, knob))
+        engine.setFilter(k)
+        set({ filterKnob: k })
+      },
+
+      // Manual input trim → linear trimGain stage (lib/mixBus applies it as
+      // trim × fader × crossfader). Overrides the auto-gain value until reload.
+      setTrimDb: (db) => {
+        const clamped = Math.max(-12, Math.min(12, db))
+        set({ trimGain: Math.pow(10, clamped / 20) })
       },
 
       pressCue: () => {
