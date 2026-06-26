@@ -102,3 +102,38 @@ describe('discover — Deezer route + owned tagging', () => {
     expect(owned.score).toBe(84)
   })
 })
+
+// ── Versions & remixes OF THE SEED ITSELF (Discogs composition search) ─────────
+const versionDiscogs = (): DiscogsClient =>
+  ({
+    searchRelease: async (_p: { artist?: string; track?: string }) => ({
+      results: [
+        { id: 11, title: 'Seed Artist - Seed Track', year: 2019 },
+        { id: 12, title: 'Seed Artist - Seed Track (Club Mix)', year: 2020 }
+      ]
+    })
+  }) as unknown as DiscogsClient
+
+const remixSeed = (): Seed => ({ ...bareSeed(), title: 'Seed Track (Some Remix)' })
+
+describe('discover — versions & remixes route', () => {
+  it('surfaces other versions of the seed composition as a "version" branch', async () => {
+    const store = new LineageStore(':memory:')
+    const res = await discover(versionDiscogs(), store, remixSeed(), {})
+    store.close()
+    const dir = res.directions.find((d) => d.type === 'version')
+    expect(dir).toBeDefined()
+    expect(dir!.title).toBe('Remixes & versions')
+    // Searches the composition ("Seed Track", remix suffix stripped); the seed's
+    // own version is deduped, every other release of it is surfaced.
+    expect(dir!.pool.map((c) => c.title).sort()).toEqual(['Seed Track', 'Seed Track (Club Mix)'])
+    expect(dir!.pool[0].why).toContain('Seed Track')
+  })
+
+  it('is skipped when its route type is filtered out', async () => {
+    const store = new LineageStore(':memory:')
+    const res = await discover(versionDiscogs(), store, remixSeed(), { filters: { routes: ['deezer'] } })
+    store.close()
+    expect(res.directions.find((d) => d.type === 'version')).toBeUndefined()
+  })
+})

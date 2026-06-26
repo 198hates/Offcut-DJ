@@ -8,7 +8,7 @@
 
 import { dedupKey } from './store'
 import type { LineageStore } from './store'
-import type { DiscogsClient, DiscogsReleaseSummary } from './discogs'
+import type { DiscogsClient, DiscogsReleaseSummary, DiscogsSearchResult } from './discogs'
 import type { Identity } from './identity'
 import type { LastfmClient } from './lastfm'
 import type { DeezerClient } from './deezer'
@@ -37,6 +37,31 @@ export interface DiscoverClients {
 function splitTitle(t = ''): { artist: string; title: string } {
   const i = t.indexOf(' - ')
   return i === -1 ? { artist: '', title: t } : { artist: t.slice(0, i), title: t.slice(i + 3) }
+}
+
+// /database/search results carry label/format as arrays and year as a string —
+// normalise to the release-summary shape buildPool consumes.
+function searchToSummary(r: DiscogsSearchResult): DiscogsReleaseSummary {
+  return {
+    id: r.id,
+    title: r.title,
+    year: r.year != null ? Number(r.year) || undefined : undefined,
+    label: r.label?.[0],
+    format: r.format?.join(', ')
+  }
+}
+
+// The underlying composition title, stripping the "(… Remix/Edit/Mix)" suffix so
+// we can search Discogs for every other version of the same track.
+function compositionTitle(title: string): string {
+  return (title.split(/\s*[([]/)[0] || title).trim()
+}
+
+// Identity key that PRESERVES the version descriptor (unlike dedupKey, which
+// collapses "(… Remix)"). Lets the versions route keep each remix/version of one
+// composition as a distinct candidate while still excluding the seed's own cut.
+function fullKey(artist = '', title = ''): string {
+  return `${artist} ${title}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
 // All routes score on a shared 0–100 scale so directions rank by how reliably
@@ -104,22 +129,26 @@ interface PoolContext {
   fromArtist: boolean
   keep: (c: CandidateLike) => boolean
   rankOwnedEqually: boolean
+  /** Dedup/identity key. Defaults to dedupKey (composition-level — collapses
+   *  remixes of one track). The versions route overrides it with fullKey so each
+   *  remix/version of the seed stays a distinct candidate. */
+  keyOf?: (artist: string, title: string) => string
 }
 
 // Discogs release summaries -> one direction's ranked, deduped, filtered pool.
 function buildPool(
   releases: DiscogsReleaseSummary[],
-  { seed, store, base, why, fromArtist, keep, rankOwnedEqually }: PoolContext,
+  { seed, store, base, why, fromArtist, keep, rankOwnedEqually, keyOf = dedupKey }: PoolContext,
   poolSize: number
 ): Candidate[] {
-  const seen = new Set([dedupKey(seed.artist, seed.title)])
+  const seen = new Set([keyOf(seed.artist, seed.title)])
   const out: Candidate[] = []
   for (const rel of releases) {
     const parsed = splitTitle(rel.title)
     const artist = fromArtist ? parsed.artist || rel.artist || '' : rel.artist || ''
     const title = fromArtist ? parsed.title : rel.title
     if (!artist || !title) continue
-    const key = dedupKey(artist, title)
+    const key = keyOf(artist, title)
     if (seen.has(key)) continue
     const label = rel.label || null
     const year = rel.year || null
@@ -207,7 +236,8 @@ export async function discover(
   const labelList = (seed.labels || []).filter((l) => l.id)
   const seedArtistId = (seed.artists || [])[0]?.id
   const total = Math.max(
-    (routeEnabled('remix') ? persons.length : 0) +
+    (routeEnabled('version') ? 1 : 0) +
+      (routeEnabled('remix') ? persons.length : 0) +
       (routeEnabled('players') ? playerList.length : 0) +
       (routeEnabled('label') ? labelList.length : 0) /* same-label */ +
       (routeEnabled('label') ? labelList.length : 0) /* sister-label sweep */ +
@@ -232,6 +262,29 @@ export async function discover(
 
   // ── Discogs chain: remix → players → label + sister labels → compilations ──
   const discogsWork = (async (): Promise<void> => {
+    // 0. Other versions & remixes OF THE SEED ITSELF — the most direct lineage:
+    //    search Discogs for the composition and surface every release of it
+    //    (the original, edits, dubs and other artists' remixes of this track).
+    if (routeEnabled('version')) {
+      const base = compositionTitle(seed.title)
+      try {
+        const { results = [] } = await discogs.searchRelease({ artist: seed.artist, track: base })
+        push({
+          id: `version:${seedKey}`,
+          type: 'version',
+          title: 'Remixes & versions',
+          pool: buildPool(
+            results.map(searchToSummary),
+            { seed, store, base: 96, why: `A version or remix of “${base}”`, fromArtist: true, keep, rankOwnedEqually, keyOf: fullKey },
+            poolSize
+          )
+        })
+      } catch {
+        /* best-effort — no Discogs match for this composition */
+      }
+      advance('Finding remixes & versions…')
+    }
+
     // 1. Remixers / producers — strongest "more of this sound".
     if (routeEnabled('remix')) {
       for (const p of [...(seed.remixers || []), ...(seed.producers || [])]) {

@@ -52,6 +52,7 @@ export interface SelNode {
 /** Which data source backs each route family. */
 const ROUTE_SOURCE: Record<RouteType, string> = {
   remix: 'Discogs',
+  version: 'Discogs',
   players: 'Discogs',
   label: 'Discogs',
   comp: 'Discogs',
@@ -169,6 +170,7 @@ export function createLineageWeb(
 
   const TCOL: Record<RouteType, string> = {
     remix: col('--orange'),
+    version: col('--amber'),
     label: col('--lime'),
     sample: col('--blue'),
     set: col('--amber'),

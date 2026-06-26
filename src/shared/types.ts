@@ -824,6 +824,7 @@ export interface Candidate {
  */
 export type RouteType =
   | 'remix'
+  | 'version'
   | 'label'
   | 'players'
   | 'listener'
