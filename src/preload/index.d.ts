@@ -30,6 +30,9 @@ declare global {
         getPlaylists: () => Promise<Playlist[]>
         getStats: () => Promise<LibraryStats>
         updateTrack: (patch: Partial<Track> & { id: string }) => Promise<Track>
+        overviewPeaks: (trackId: string, filePath: string) => Promise<number[] | null>
+        putOverviewPeaks: (trackId: string, peaks: number[]) => Promise<void>
+        backfillFileMeta: () => Promise<number>
         bulkUpdateTracks: (ids: string[], patch: Partial<Track>) => Promise<Track[]>
         deleteTrack: (id: string) => Promise<void>
         deleteTracks: (ids: string[]) => Promise<void>

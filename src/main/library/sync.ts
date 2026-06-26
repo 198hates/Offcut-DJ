@@ -22,7 +22,7 @@ import type { Track, Playlist, SyncChange, SyncPull } from '../../shared/types'
  * when something actually renders them.
  */
 export function leanTrack(t: Track): Track {
-  return { ...t, beatgrid: [], analysedBeatgrid: null, embedding: null }
+  return { ...t, beatgrid: [], analysedBeatgrid: null, embedding: null, overviewPeaks: null }
 }
 
 /** The current high-water mark of the journal. 0 means nothing logged yet. */

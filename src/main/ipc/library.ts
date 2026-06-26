@@ -4,6 +4,7 @@ import { execFile } from 'child_process'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { getLibraryDb, rowToTrack, rowToPlaylist } from '../library/db'
+import { computeOverviewPeaks } from '../library/overview-peaks'
 import { resolveSmartPlaylist } from '../library/smart-playlist'
 import { importFromIntegration as importRekordbox } from '../integrations/rekordbox/reader'
 import { exportToIntegration as exportRekordbox } from '../integrations/rekordbox/writer'
@@ -175,6 +176,52 @@ export function registerLibraryHandlers(): void {
         .run({ ...patchParams(fields), id })
     }
     return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown>)
+  })
+
+  // ── Mini-waveform overview peaks ──────────────────────────────────────────
+  // Returns the stored overview, or computes it from the file once (decode +
+  // down-sample), caches it, and returns it. Used lazily by the library table.
+  ipcMain.handle('library:overviewPeaks', async (_e, trackId: string, filePath: string): Promise<number[] | null> => {
+    const row = db.prepare('SELECT overview_peaks FROM tracks WHERE id = ?').get(trackId) as { overview_peaks?: string } | undefined
+    if (row?.overview_peaks) { try { return JSON.parse(row.overview_peaks) } catch { /* recompute */ } }
+    if (!filePath || !existsSync(filePath)) return null
+    try {
+      const peaks = await computeOverviewPeaks(filePath)
+      db.prepare('UPDATE tracks SET overview_peaks = ? WHERE id = ?').run(JSON.stringify(peaks), trackId)
+      return peaks
+    } catch {
+      return null
+    }
+  })
+
+  // Store peaks the renderer already computed (e.g. captured when a track is
+  // loaded on a deck). COALESCE → only fills if none stored yet.
+  ipcMain.handle('library:putOverviewPeaks', (_e, trackId: string, peaks: number[]): void => {
+    if (!Array.isArray(peaks) || !peaks.length) return
+    db.prepare('UPDATE tracks SET overview_peaks = COALESCE(overview_peaks, ?) WHERE id = ?')
+      .run(JSON.stringify(peaks), trackId)
+  })
+
+  // Backfill bit depth + sample rate for lossless tracks imported from external
+  // libraries (rekordbox/Serato/…), which carry no file-level format metadata.
+  // Lossy formats have no bit depth, so they're excluded (won't re-scan forever).
+  ipcMain.handle('library:backfillFileMeta', async (): Promise<number> => {
+    const rows = db.prepare(
+      "SELECT id, file_path FROM tracks WHERE bit_depth IS NULL AND lower(file_type) IN ('wav','aiff','aif','flac')"
+    ).all() as { id: string; file_path: string }[]
+    if (!rows.length) return 0
+    const { parseFile } = await import('music-metadata')
+    const upd = db.prepare('UPDATE tracks SET bit_depth = ?, sample_rate = COALESCE(sample_rate, ?) WHERE id = ?')
+    let n = 0
+    for (const r of rows) {
+      try {
+        if (!existsSync(r.file_path)) continue
+        const meta = await parseFile(r.file_path, { duration: false })
+        const bits = meta.format.bitsPerSample ?? null
+        if (bits != null) { upd.run(bits, meta.format.sampleRate ?? null, r.id); n++ }
+      } catch { /* skip unreadable files */ }
+    }
+    return n
   })
 
   // ── Write: bulk update ────────────────────────────────────────────────────

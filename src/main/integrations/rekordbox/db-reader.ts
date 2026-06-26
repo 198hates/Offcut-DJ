@@ -145,7 +145,7 @@ export function importFromRekordboxDb(
           bitDepth: null,
           gainDb: null,
           phrases: null,
-          embedding: null,
+          embedding: null, overviewPeaks: null,
           sourceIds: { rekordbox: rbId }
         }
 

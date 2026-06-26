@@ -60,7 +60,7 @@ async function importFile(filePath: string): Promise<void> {
       bitDepth:   f.bitsPerSample ?? null,
       gainDb:     null,
       phrases:    null,
-      embedding:    null,
+      embedding: null, overviewPeaks: null,
     }
 
     insertOrUpdateTrack(db, track)

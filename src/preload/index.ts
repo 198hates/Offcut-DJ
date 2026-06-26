@@ -9,6 +9,12 @@ const api = {
     getStats: () => ipcRenderer.invoke('library:getStats'),
     updateTrack: (patch: Partial<Track> & { id: string }) =>
       ipcRenderer.invoke('library:updateTrack', patch),
+    overviewPeaks: (trackId: string, filePath: string): Promise<number[] | null> =>
+      ipcRenderer.invoke('library:overviewPeaks', trackId, filePath),
+    putOverviewPeaks: (trackId: string, peaks: number[]): Promise<void> =>
+      ipcRenderer.invoke('library:putOverviewPeaks', trackId, peaks),
+    backfillFileMeta: (): Promise<number> =>
+      ipcRenderer.invoke('library:backfillFileMeta'),
     bulkUpdateTracks: (ids: string[], patch: Partial<Track>) =>
       ipcRenderer.invoke('library:bulkUpdateTracks', ids, patch),
     deleteTrack: (id: string) => ipcRenderer.invoke('library:deleteTrack', id),

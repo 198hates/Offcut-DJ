@@ -586,12 +586,37 @@ interface TrackRowProps {
 }
 
 // ── Mini-waveform preview (WAVE column) ───────────────────────────────────────
-// The library doesn't store per-track peaks (4k+ rows), so this is a *stable
-// synthetic* envelope seeded from the track id + energy — same approach the
-// design prototype uses. It reads as a per-track silhouette, not real audio.
-const MINI_WAVE_BARS = 22
+// Shows each track's REAL amplitude overview (matching the deck). Stored peaks
+// (track.overviewPeaks) render immediately; otherwise we lazily ask the main
+// process to compute + cache them (throttled queue), showing a faint synthetic
+// silhouette until the real shape arrives.
+const MINI_WAVE_BARS = 38
 const MINI_WAVE_GRAD =
   'linear-gradient(180deg,#EDE3CB,#C9A02C 26%,#C2683E 50%,#C9A02C 74%,#EDE3CB)'
+
+// Throttled lazy-load queue, shared across all rows (only visible rows request).
+const peaksCache = new Map<string, number[]>()
+interface PeaksJob { id: string; filePath: string; cb: (p: number[]) => void; cancelled: boolean }
+const peaksQueue: PeaksJob[] = []
+let peaksActive = 0
+const PEAKS_MAX = 3
+function pumpPeaks(): void {
+  while (peaksActive < PEAKS_MAX && peaksQueue.length) {
+    const job = peaksQueue.shift()!
+    if (job.cancelled) continue
+    peaksActive++
+    window.api.library.overviewPeaks(job.id, job.filePath)
+      .then((p) => { if (p && p.length) { peaksCache.set(job.id, p); if (!job.cancelled) job.cb(p) } })
+      .catch(() => { /* ignore */ })
+      .finally(() => { peaksActive--; pumpPeaks() })
+  }
+}
+function requestPeaks(id: string, filePath: string, cb: (p: number[]) => void): () => void {
+  const job: PeaksJob = { id, filePath, cb, cancelled: false }
+  peaksQueue.push(job)
+  pumpPeaks()
+  return () => { job.cancelled = true }
+}
 
 function fnv1a(s: string): number {
   let h = 2166136261
@@ -599,17 +624,45 @@ function fnv1a(s: string): number {
   return h >>> 0
 }
 
+/** Group stored peaks (~128) into N display bars (max-per-group). */
+function barsFromPeaks(peaks: number[], n: number): number[] {
+  if (peaks.length <= n) return peaks
+  const per = peaks.length / n
+  return Array.from({ length: n }, (_, b) => {
+    let m = 0
+    for (let i = Math.floor(b * per); i < Math.floor((b + 1) * per); i++) if (peaks[i] > m) m = peaks[i]
+    return Math.max(0.04, m)
+  })
+}
+
+/** Stable synthetic silhouette — placeholder until real peaks load. */
+function syntheticBars(track: Track): number[] {
+  let seed = fnv1a(track.id || track.filePath || track.title || 'x') || 1
+  const rnd = (): number => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296 }
+  const loud = 0.6 + 0.8 * ((track.energy ?? 5) / 10)
+  return Array.from({ length: MINI_WAVE_BARS }, (_, i) => {
+    const env = 0.4 + 0.6 * Math.sin((i / (MINI_WAVE_BARS - 1)) * Math.PI)
+    return Math.max(0.12, Math.min(1, env * (0.45 + 0.55 * rnd()) * loud))
+  })
+}
+
 function MiniWaveform({ track }: { track: Track }): JSX.Element {
-  const bars = useMemo(() => {
-    let seed = fnv1a(track.id || track.filePath || track.title || 'x') || 1
-    const rnd = (): number => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296 }
-    const loud = 0.6 + 0.8 * ((track.energy ?? 5) / 10)
-    return Array.from({ length: MINI_WAVE_BARS }, (_, i) => {
-      // centre-weighted envelope shaped by energy + per-track noise
-      const env = 0.4 + 0.6 * Math.sin((i / (MINI_WAVE_BARS - 1)) * Math.PI)
-      return Math.max(0.12, Math.min(1, env * (0.45 + 0.55 * rnd()) * loud))
-    })
-  }, [track.id, track.filePath, track.title, track.energy])
+  const [peaks, setPeaks] = useState<number[] | null>(
+    track.overviewPeaks ?? peaksCache.get(track.id) ?? null
+  )
+
+  useEffect(() => {
+    const stored = track.overviewPeaks ?? peaksCache.get(track.id)
+    if (stored) { setPeaks(stored); return }
+    setPeaks(null)
+    return requestPeaks(track.id, track.filePath, setPeaks)
+  }, [track.id, track.filePath, track.overviewPeaks])
+
+  const real = peaks != null
+  const bars = useMemo(
+    () => (peaks ? barsFromPeaks(peaks, MINI_WAVE_BARS) : syntheticBars(track)),
+    [peaks, track.id, track.energy]
+  )
 
   return (
     <div className="flex items-center gap-px" style={{ height: 22 }}>
@@ -618,7 +671,7 @@ function MiniWaveform({ track }: { track: Track }): JSX.Element {
           flex: 1, height: `${Math.round(h * 100)}%`,
           minHeight: 1, borderRadius: 0.5,
           background: MINI_WAVE_GRAD,
-          opacity: track.bpm != null ? 0.92 : 0.32,
+          opacity: real ? 0.95 : 0.28,
         }} />
       ))}
     </div>

@@ -216,6 +216,9 @@ export interface Track {
   // ── Audio-content similarity ──────────────────────────────────────────────
   /** Handcrafted audio feature vector (see lib/audioFeatures); null until analysed */
   embedding: number[] | null
+  /** Down-sampled amplitude overview (~128 buckets, 0–1) for the library
+   *  mini-waveform. Filled lazily on view, or captured when loaded on a deck. */
+  overviewPeaks: number[] | null
 }
 
 // ── Library sync (mobile companion / multi-device) ─────────────────────────────

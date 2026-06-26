@@ -86,7 +86,7 @@ export function importFromIntegration(db: Database.Database, nmlPath: string): I
         bitDepth: null,
         gainDb: null,
         phrases: null,
-        embedding: null,
+        embedding: null, overviewPeaks: null,
         sourceIds: { traktor: traktorKey }
       }
 

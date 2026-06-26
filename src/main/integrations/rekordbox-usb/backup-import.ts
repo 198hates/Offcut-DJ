@@ -116,7 +116,7 @@ export async function importFromUsbBackup(
             bitDepth: null,
             gainDb: null,
             phrases: null,
-            embedding: null,
+            embedding: null, overviewPeaks: null,
             sourceIds: { rekordbox: String(t.id) }
           }
           insertOrUpdateTrack(appDb, track)

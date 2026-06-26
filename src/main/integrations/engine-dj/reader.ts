@@ -82,7 +82,7 @@ export function importFromIntegration(appDb: Database.Database, dbPath: string):
           bitDepth: null,
           gainDb: null,
           phrases: null,
-          embedding: null,
+          embedding: null, overviewPeaks: null,
           sourceIds: { 'engine-dj': engId }
         }
 

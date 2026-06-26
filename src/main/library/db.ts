@@ -70,6 +70,7 @@ export function rowToTrack(row: Record<string, unknown>): Track {
     gainDb:     (row.gain_db     as number | null) ?? null,
     phrases:    row.phrases ? JSON.parse(row.phrases as string) : null,
     embedding:  row.embedding ? JSON.parse(row.embedding as string) : null,
+    overviewPeaks: row.overview_peaks ? JSON.parse(row.overview_peaks as string) : null,
   }
 }
 

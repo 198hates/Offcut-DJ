@@ -112,6 +112,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         window.api.library.getStats()
       ])
       set({ tracks, playlists, stats, isLoading: false })
+      // Backfill bit depth / sample rate for lossless tracks that came from
+      // external libraries without it (self-limiting — skips once filled).
+      void window.api.library.backfillFileMeta().then((n) => {
+        if (n > 0) void window.api.library.getTracks().then((updated) => set({ tracks: updated }))
+      }).catch(() => { /* non-fatal */ })
     } catch (err) {
       set({ isLoading: false })
     }

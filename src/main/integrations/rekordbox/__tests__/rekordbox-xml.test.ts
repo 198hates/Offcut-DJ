@@ -10,7 +10,7 @@ function track(id: string, over: Partial<Track> = {}): Track {
     cuePoints: [], beatgrid: [], energy: null, danceability: null, mood: null,
     analysedBeatgrid: null, editLineage: null, color: '', playCount: 0,
     lastPlayedAt: null, updatedAt: null, fileSize: null, fileType: null,
-    sampleRate: null, bitDepth: null, gainDb: null, phrases: null, embedding: null, sourceIds: {},
+    sampleRate: null, bitDepth: null, gainDb: null, phrases: null, embedding: null, overviewPeaks: null, sourceIds: {},
     ...over,
   } as Track
 }

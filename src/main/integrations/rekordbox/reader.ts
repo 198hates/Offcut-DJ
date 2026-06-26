@@ -85,7 +85,7 @@ export function importFromIntegration(appDb: Database.Database, xmlPath: string)
         bitDepth: null,
         gainDb: null,
         phrases: null,
-        embedding: null,
+        embedding: null, overviewPeaks: null,
         sourceIds: { rekordbox: rbId }
       }
 

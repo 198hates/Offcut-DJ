@@ -10,6 +10,23 @@ export const HOT_CUE_COLORS = [
 ]
 export const HOT_CUE_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
+/** Reduce the engine's overview peaks to N normalised buckets (max-per-bucket)
+ *  for the library mini-waveform. */
+function downsampleOverview(src: ArrayLike<number>, n: number): number[] {
+  const out: number[] = []
+  const per = src.length / n
+  let max = 0
+  for (let b = 0; b < n; b++) {
+    let m = 0
+    for (let i = Math.floor(b * per); i < Math.floor((b + 1) * per); i++) {
+      const a = Math.abs(src[i]); if (a > m) m = a
+    }
+    out.push(m); if (m > max) max = m
+  }
+  if (max > 0) for (let b = 0; b < n; b++) out[b] = Math.round((out[b] / max) * 1000) / 1000
+  return out
+}
+
 export type AnalysisState = 'idle' | 'reading-tags' | 'analyzing' | 'done' | 'error'
 
 export interface DeckStore {
@@ -335,6 +352,12 @@ function createDeckStore(deckId: 'A' | 'B') {
           const { peaks, detailPeaks, lowPeaks, midPeaks, highPeaks, duration } = await engine.load(track.filePath)
           if (gen !== _loadGen) return // superseded by a newer load on this deck
           set({ waveformPeaks: peaks, detailPeaks, lowPeaks, midPeaks, highPeaks, duration, isLoading: false })
+
+          // Capture a compact overview for the library mini-waveform — we just
+          // decoded these peaks, so it's free + an exact match to the deck.
+          if (peaks && peaks.length && !track.overviewPeaks) {
+            try { window.api.library.putOverviewPeaks(track.id, downsampleOverview(peaks, 128)) } catch { /* non-fatal */ }
+          }
           // Keep the engine in step with the state reset above — the UI shows
           // keylock off / pitch 1.0 / EQ flat for a fresh track, so the audio
           // must match regardless of which engine is active.
