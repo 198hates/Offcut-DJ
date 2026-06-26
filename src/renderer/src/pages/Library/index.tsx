@@ -119,6 +119,39 @@ export function LibraryPage(): JSX.Element {
     })
   }, [])
 
+  // Per-column widths (px) — drag the header edge to resize, double-click to
+  // reset. Persisted; overrides the COLUMN_DEFS default width when present.
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem('offcut-col-widths') || '{}') } catch { return {} }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('offcut-col-widths', JSON.stringify(colWidths)) } catch { /* ignore */ }
+  }, [colWidths])
+  // Drag starts on the header edge; we listen on the window for the rest so the
+  // whole drag is tracked no matter where the cursor goes (more robust than
+  // per-element pointer capture).
+  const onResizeDown = useCallback((e: React.PointerEvent, id: string) => {
+    e.preventDefault(); e.stopPropagation()
+    const th = (e.currentTarget as HTMLElement).parentElement as HTMLElement
+    const startX = e.clientX
+    const startW = th.offsetWidth
+    document.body.style.cursor = 'col-resize'
+    const move = (ev: PointerEvent): void => {
+      const w = Math.max(40, Math.round(startW + (ev.clientX - startX)))
+      setColWidths((prev) => ({ ...prev, [id]: w }))
+    }
+    const up = (): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      document.body.style.cursor = ''
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }, [])
+  const resetColWidth = useCallback((id: string) => {
+    setColWidths((prev) => { const n = { ...prev }; delete n[id]; return n })
+  }, [])
+
   const visibleCols = COLUMN_DEFS.filter((c) => visibleColIds.has(c.id))
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -423,7 +456,7 @@ export function LibraryPage(): JSX.Element {
             <col style={{ width: 28 }} />   {/* checkbox */}
             <col style={{ width: 14 }} />   {/* blip */}
             <col style={{ width: 16 }} />   {/* status */}
-            {visibleCols.map((col) => <col key={col.id} style={{ width: col.width }} />)}
+            {visibleCols.map((col) => <col key={col.id} style={{ width: colWidths[col.id] ?? col.width }} />)}
           </colgroup>
 
           <thead className="sticky top-0 z-10 bg-chassis-soft">
@@ -446,7 +479,7 @@ export function LibraryPage(): JSX.Element {
                     key={col.id}
                     onClick={(e) => col.sortKey && handleSort(col.sortKey, e)}
                     title={!col.sortKey ? '' : sortSpec.length > 1 ? 'Click: primary sort · Shift+click: add/toggle secondary sort' : 'Click to sort · Shift+click to add secondary sort'}
-                    className={`text-left px-2 text-[12px] font-mono font-bold uppercase tracking-[0.06em] text-muted transition-colors select-none border-b border-border/30 truncate ${col.sortKey ? 'cursor-pointer hover:text-ink' : ''}`}
+                    className={`relative text-left px-2 text-[12px] font-mono font-bold uppercase tracking-[0.06em] text-muted transition-colors select-none border-b border-border/30 truncate ${col.sortKey ? 'cursor-pointer hover:text-ink' : ''}`}
                   >
                     {col.label}
                     {sortLevel && (
@@ -455,6 +488,17 @@ export function LibraryPage(): JSX.Element {
                         {sortLevel.dir === 'asc' ? '↑' : '↓'}
                       </span>
                     )}
+                    {/* Resize handle — drag to set width, double-click to reset.
+                        Wide hit area kept inside the cell (th is overflow-hidden);
+                        the right border is the visible column divider. */}
+                    <div
+                      className="absolute top-0 bottom-0 right-0 z-20 cursor-col-resize border-r border-border/40 hover:border-accent transition-colors"
+                      style={{ width: 12, touchAction: 'none' }}
+                      onPointerDown={(e) => onResizeDown(e, col.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => { e.stopPropagation(); resetColWidth(col.id) }}
+                      title="Drag to resize · double-click to reset"
+                    />
                   </th>
                 )
               })}
