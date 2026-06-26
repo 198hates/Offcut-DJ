@@ -291,7 +291,8 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
         />
       </div>
 
-      {/* ── Scrolling detail waveform ─────────────────────────────────── */}
+      {/* ── Scrolling detail waveform (hidden while the stem panel is open) ─ */}
+      {!stemsVisible && (
       <div className="px-2 py-1 flex flex-1 min-h-0" style={{ background: 'var(--deck-panel)' }}>
         <WaveformGL
           peaks={detailPeaks}
@@ -317,21 +318,26 @@ export function Deck({ useStore, label, keyMod = 'none' }: Props): JSX.Element {
           isLoading={isLoading}
         />
       </div>
+      )}
 
-      {/* ── Stem buses ───────────────────────────────────────────────── */}
+      {/* ── Stem buses — shares the flexible middle so the transport + pad
+          controls below always stay on screen (scrolls if cramped) ────────── */}
       {stemsVisible && (
-        <StemPanel
-          stems={stems}
-          loaded={stemsLoaded}
-          separating={stemsSeparating}
-          progress={stemsProgress}
-          available={stemsAvailable}
-          onMute={setStemMuted}
-          onSolo={setStemSoloed}
-          onGain={setStemGain}
-          onSeparate={separateStems}
-          onUnload={unloadStems}
-        />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <StemPanel
+            stems={stems}
+            loaded={stemsLoaded}
+            separating={stemsSeparating}
+            progress={stemsProgress}
+            available={stemsAvailable}
+            onMute={setStemMuted}
+            onSolo={setStemSoloed}
+            onGain={setStemGain}
+            onSeparate={separateStems}
+            onUnload={unloadStems}
+            onClose={toggleStemsVisible}
+          />
+        </div>
       )}
 
       {/* ── Beatgrid editor (full, draggable, zoomable — opens over the app) ── */}

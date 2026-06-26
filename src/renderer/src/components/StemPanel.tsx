@@ -87,6 +87,8 @@ interface Props {
   onGain:   (kind: StemKind, gainDb: number) => void
   onSeparate: () => void
   onUnload:   () => void
+  /** Hide the stem panel (exit stems view; keeps any separated audio loaded). */
+  onClose:    () => void
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -101,7 +103,8 @@ export function StemPanel({
   onSolo,
   onGain,
   onSeparate,
-  onUnload
+  onUnload,
+  onClose
 }: Props): JSX.Element {
   const anySoloed = STEM_ORDER.some((k) => stems[k].soloed)
 
@@ -125,6 +128,7 @@ export function StemPanel({
           )}
         </span>
 
+        <div className="flex items-center gap-1.5">
         {separating ? (
           <div className="flex items-center gap-2">
             <div className="w-24 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(110,101,83,0.25)' }}>
@@ -153,6 +157,13 @@ export function StemPanel({
             ▶ separate{available ? '' : ' (needs demucs)'}
           </button>
         )}
+        <button
+          onClick={onClose}
+          title="Exit stems view (keeps any separated audio loaded)"
+          className="text-[13px] leading-none px-1 rounded transition-colors"
+          style={{ color: 'rgba(110,101,83,0.85)' }}
+        >✕</button>
+        </div>
       </div>
 
       <div style={{ opacity: loaded ? 1 : 0.4, pointerEvents: loaded ? 'auto' : 'none', transition: 'opacity .2s' }}>
