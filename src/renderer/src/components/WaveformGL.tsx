@@ -57,11 +57,11 @@ vec4 cdj(float yFrac, bool past) {
     return vec4(col * 0.85, 1.0);
   } else {
     if      (t < 0.18) col = vec3(0.42, 0.35, 0.24);
-    else if (t < 0.36) col = vec3(0.925, 0.890, 0.800);
-    else if (t < 0.46) col = vec3(0.840, 0.500, 0.280);
+    else if (t < 0.34) col = vec3(0.941, 0.894, 0.769);
+    else if (t < 0.46) col = vec3(0.878, 0.635, 0.235);
     else if (t < 0.54) col = vec3(0.761, 0.408, 0.243);
-    else if (t < 0.64) col = vec3(0.840, 0.500, 0.280);
-    else if (t < 0.82) col = vec3(0.925, 0.890, 0.800);
+    else if (t < 0.66) col = vec3(0.878, 0.635, 0.235);
+    else if (t < 0.82) col = vec3(0.941, 0.894, 0.769);
     else               col = vec3(0.42, 0.35, 0.24);
     return vec4(col, 1.0);
   }

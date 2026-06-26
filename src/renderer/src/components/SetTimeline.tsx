@@ -30,7 +30,7 @@ export function SetTimeline({ tracks, onSeekToTrack }: Props): JSX.Element {
 
     ctx.clearRect(0, 0, W, H)
 
-    const accent  = isDark ? '#D86A4A' : '#B84A2B'
+    const accent  = '#E0A23C'  // amber energy arc (Field Unit) — same in both themes
     const grid    = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(20,17,14,0.07)'
     const lblClr  = isDark ? '#6A6457' : '#8A8474'
 

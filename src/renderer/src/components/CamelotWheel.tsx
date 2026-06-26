@@ -18,11 +18,12 @@ function compatibleKeys(num: number, band: 'A' | 'B'): Array<[number, 'A' | 'B']
   ]
 }
 
+// Field Unit — muted functional palette (one stable hue per Camelot position).
 const SEGMENT_COLORS: Record<number, string> = {
-  1: '#3CA8A1', 2: '#2E6FB8', 3: '#8B5BA8',
-  4: '#E76AA1', 5: '#E03020', 6: '#FF7A3F',
-  7: '#D86A4A', 8: '#F2C12E', 9: '#6FAE3E',
-  10: '#3CA8A1', 11: '#2E6FB8', 12: '#8B5BA8'
+  1: '#4E7090', 2: '#8A6EA8', 3: '#B86E72',
+  4: '#B07A4E', 5: '#C24E4E', 6: '#4E9A8E',
+  7: '#6E8059', 8: '#C9A02C', 9: '#A9C23E',
+  10: '#C2683E', 11: '#5E7E9E', 12: '#9A7EB0'
 }
 
 interface Props {

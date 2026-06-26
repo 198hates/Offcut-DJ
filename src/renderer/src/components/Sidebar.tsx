@@ -13,10 +13,11 @@ function fmtPlaylistDuration(secs: number): string {
   return h > 0 ? `${h}h${m}m` : `${m}m`
 }
 
+// Field Unit functional palette — crate chips + playlist energy sparklines.
 const BLIP_COLORS = [
   '#6E8059', '#4E7090', '#B07A4E', '#C9A02C',
-  '#B86E72', '#874850', '#8E8473', '#B84A2B',
-  '#3CA8A1', '#2E6FB8',
+  '#B86E72', '#4E9A8E', '#8A6EA8', '#C24E4E',
+  '#A9C23E', '#C2683E',
 ]
 
 export function Sidebar(): JSX.Element {

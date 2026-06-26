@@ -13,27 +13,27 @@
   --ink-soft-rgb:     74  67  56;   /* --ink-soft #4A4338 */
   --muted-rgb:        100 92  78;  /* --mute   #8A8073 */
   --border-rgb:       201 192 168;  /* --rule   #C9C0A8 */
-  --accent-rgb:       184 74  43;   /* --spot   #B84A2B terracotta */
+  --accent-rgb:       194 104 62;   /* spot    #C2683E terracotta (shared across themes) */
   --panel-deep:       #1F1B14;
-  --led-text:         #B84A2B;
-  --led-ghost:        rgba(184,74,43,0.13);
-  --led-glow:         rgba(184,74,43,0.4);
+  --led-text:         #C2683E;
+  --led-ghost:        rgba(194,104,62,0.14);
+  --led-glow:         rgba(194,104,62,0.4);
 }
 
 /* ── Dark theme (studio at 2am) ────────────────────────── */
 .dark, [data-theme="dark"] {
-  --chassis-rgb:      26  22  18;   /* --paper-2 #1A1612 */
-  --chassis-soft-rgb: 34  29  23;   /* --paper-3 #221D17 */
-  --paper-rgb:        20  17  12;   /* --paper   #14110C */
-  --ink-rgb:          235 229 211;  /* --ink     #EBE5D3 */
-  --ink-soft-rgb:     181 172 151;  /* --ink-soft #B5AC97 */
-  --muted-rgb:        163 152 130;  /* lifted — icons/labels were sub-legible at small sizes */
-  --border-rgb:       42  36  28;   /* --rule    #2A241C */
-  --accent-rgb:       216 106 74;   /* --spot    #D86A4A terracotta lifted */
-  --panel-deep:       #060503;
-  --led-text:         #D86A4A;
-  --led-ghost:        rgba(216,106,74,0.10);
-  --led-glow:         rgba(216,106,74,0.55);
+  --chassis-rgb:      11   9   7;   /* bg     #0B0907  (Field Unit — darker warm base) */
+  --chassis-soft-rgb: 20  17  12;   /* bar    #14110C  titlebar / filter bar / footer */
+  --paper-rgb:        16  13  10;   /* panel  #100D0A  panels / inputs / cards */
+  --ink-rgb:          232 224 206;  /* textHi #E8E0CE */
+  --ink-soft-rgb:     163 152 130;  /* textMid #A39882 */
+  --muted-rgb:        138 128 115;  /* textLo  #8A8073 */
+  --border-rgb:       42  36  28;   /* border #2A241C */
+  --accent-rgb:       194 104 62;   /* spot   #C2683E terracotta */
+  --panel-deep:       #080605;      /* mixBg  */
+  --led-text:         #C2683E;      /* top-right readout stays terracotta (deck LEDs go amber) */
+  --led-ghost:        rgba(194,104,62,0.12);
+  --led-glow:         rgba(194,104,62,0.45);
 }
 
 /*
@@ -49,8 +49,11 @@
   --deck-ink:   #EBE5D3;
   --deck-mute:  #A59A82;   /* lifted from #968C77 — inactive controls must read at a glance */
   --deck-rule:  #2A241C;
-  --deck-spot:  #D86A4A;
-  --deck-glow:  rgba(216, 106, 74, 0.55);
+  --deck-spot:  #C2683E;
+  --deck-glow:  rgba(194, 104, 62, 0.55);
+  /* Amber — deck LED readouts / "now playing" / set-timeline arc */
+  --amber:      #E0A23C;
+  --amber-glow: rgba(224, 162, 60, 0.5);
   /* Record red — hotter than the terracotta spot so "armed" is unmistakable */
   --rec-red:    #E5484D;
   --rec-glow:   rgba(229, 72, 77, 0.7);
@@ -66,6 +69,11 @@
   color: var(--deck-ink);
   border-top: 2px solid var(--deck-spot);
   position: relative;
+  /* LED readouts on the decks glow amber (the top-right library readout, outside
+     this scope, keeps the terracotta --led-text from the theme). */
+  --led-text:  #E0A23C;
+  --led-ghost: rgba(224, 162, 60, 0.12);
+  --led-glow:  rgba(224, 162, 60, 0.5);
 }
 
 /* Silk-screen tab that labels the dark register as intentional.
@@ -104,8 +112,8 @@
 .deck-btn-active {
   color: var(--deck-spot);
   border-color: var(--deck-spot);
-  background: rgba(216, 106, 74, 0.12);
-  box-shadow: 0 0 6px rgba(216, 106, 74, 0.25);
+  background: rgba(194, 104, 62, 0.12);
+  box-shadow: 0 0 6px rgba(194, 104, 62, 0.25);
 }
 
 /* ── REC module (mixer column, hardware-style arm switch) ───────── */
@@ -300,8 +308,8 @@
 .dark .theme-toggle-knob,
 [data-theme="dark"] .theme-toggle-knob {
   transform: translateX(36px);
-  background: linear-gradient(180deg, #D86A4A 0%, #8E3818 100%);
-  box-shadow: 0 0 10px rgba(216,106,74,0.55), 0 1px 2px rgba(0,0,0,0.6);
+  background: linear-gradient(180deg, #C2683E 0%, #8E3818 100%);
+  box-shadow: 0 0 10px rgba(194,104,62,0.55), 0 1px 2px rgba(0,0,0,0.6);
 }
 
 /* ── LED readout (hardware display) ───────────────────── */
@@ -347,4 +355,22 @@
   margin-top: 2px;
   display: block;
   text-align: right;
+}
+
+/* ── Shell overlay — bezel vignette + faint scanline (Field Unit OD·01) ──── */
+.shell-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  box-shadow: inset 0 0 0 1px rgba(224, 162, 60, 0.06),
+              inset 0 0 26px rgba(0, 0, 0, 0.4);
+}
+.shell-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg,
+    rgba(255, 255, 255, 0.014) 0 1px,
+    transparent 1px 3px);
 }

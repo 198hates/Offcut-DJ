@@ -129,6 +129,8 @@ export default function App(): JSX.Element {
   return (
     <TrackMenuProvider>
     <div className="flex flex-col h-full bg-chassis relative">
+      {/* Field-unit shell: bezel vignette + faint scanline over everything */}
+      <div className="shell-overlay" aria-hidden="true" />
       <Titlebar />
       {activePage === 'library' && <FnBus />}
 

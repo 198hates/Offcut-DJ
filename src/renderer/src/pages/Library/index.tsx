@@ -808,7 +808,7 @@ function MoodPip({ mood }: { mood: number | null }): JSX.Element {
   return (
     <div
       className="relative w-full rounded-full overflow-hidden"
-      style={{ height: 6, background: 'linear-gradient(to right, #2a1f3d 0%, #6e6553 50%, #f5c842 100%)' }}
+      style={{ height: 6, background: 'linear-gradient(90deg, #3A3024 0%, #C9A02C 100%)' }}
       title={`${label} (${mood > 0 ? '+' : ''}${mood.toFixed(2)})`}
     >
       <div
@@ -822,18 +822,23 @@ function MoodPip({ mood }: { mood: number | null }): JSX.Element {
 function EnergyBar({ energy }: { energy: number | null }): JSX.Element {
   return (
     <div className="flex gap-px items-end" style={{ height: 9 }}>
-      {Array.from({ length: 10 }, (_, i) => (
-        <div
-          key={i}
-          className="flex-1"
-          style={{
-            height: energy != null && i < energy ? `${55 + (i / 9) * 45}%` : '45%',
-            background: energy != null && i < energy
-              ? `rgba(216,106,74,${0.45 + (i / 9) * 0.55})`
-              : 'rgb(var(--border-rgb))'  /* H4 — use --rule so full width reads */
-          }}
-        />
-      ))}
+      {Array.from({ length: 10 }, (_, i) => {
+        // Lit segments shade dark→light terracotta (#8E4A2E → #E08A52, ~#C2683E mid).
+        const t = i / 9
+        const lit = `rgb(${Math.round(142 + 82 * t)}, ${Math.round(74 + 64 * t)}, ${Math.round(46 + 36 * t)})`
+        return (
+          <div
+            key={i}
+            className="flex-1"
+            style={{
+              height: energy != null && i < energy ? `${55 + (i / 9) * 45}%` : '45%',
+              background: energy != null && i < energy
+                ? lit
+                : 'rgb(var(--border-rgb))'  /* H4 — use --rule so full width reads */
+            }}
+          />
+        )
+      })}
     </div>
   )
 }
