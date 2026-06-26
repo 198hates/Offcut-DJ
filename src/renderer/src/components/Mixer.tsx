@@ -279,7 +279,7 @@ function ChannelStrip({
 
       {/* FILTER — ochre pointer + ring; centre 0 = off, ±1 = full LP/HP */}
       <div style={{ height: 1, background: 'var(--deck-rule)' }} />
-      <Knob label="FILTER" value={filter} min={-1} max={1} size={26}
+      <Knob label="FILT" value={filter} min={-1} max={1} size={26}
             pointer="#C9A02C" glow="rgba(201,160,44,0.5)" ring sensitivity={130}
             format={(v) => ({ text: Math.abs(v) < 0.05 ? '0' : `${v > 0 ? '+' : ''}${Math.round(v * 100)}` })}
             onChange={onFilter} />
