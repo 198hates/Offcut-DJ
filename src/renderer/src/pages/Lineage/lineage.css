@@ -1087,6 +1087,9 @@
 .cd-cy .card.dir.t-comp {
   background: var(--orchid);
 }
+.cd-cy .card.dir.t-version {
+  background: var(--amber);
+}
 .cd-cy .card.dir .dn {
   display: inline-block;
   max-width: 170px;
