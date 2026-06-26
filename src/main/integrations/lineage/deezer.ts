@@ -45,6 +45,28 @@ export class DeezerClient {
     return limiter.schedule(() => httpJson<T>(`${BASE}${path}`, { label: `Deezer ${path}` }))
   }
 
+  /**
+   * Raw Deezer track search for `${artist} ${title}` — returns every catalogue
+   * track matching the query (the original plus its remixes/edits/versions). The
+   * caller filters these down to the seed's composition. Keyless.
+   */
+  async searchTracks(
+    artist: string,
+    title: string,
+    limit = 25
+  ): Promise<{ artist: string; title: string }[]> {
+    const q = encodeURIComponent(`${artist} ${title}`.trim())
+    if (!q) return []
+    try {
+      const { data = [] } = await this.get<{ data?: DeezerSearchHit[] }>(`/search/track?q=${q}&limit=${limit}`)
+      return data
+        .map((d) => ({ artist: d.artist?.name || '', title: d.title || '' }))
+        .filter((t) => t.artist && t.title)
+    } catch {
+      return []
+    }
+  }
+
   /** Resolve the seed to a Deezer artist id (verified by a fuzzy name match). */
   private async artistId(artist: string, title: string): Promise<number | null> {
     const q = encodeURIComponent(`${artist} ${title}`)

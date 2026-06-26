@@ -270,42 +270,48 @@ export async function discover(
     //    (the original, edits, dubs and other artists' remixes of this track).
     if (routeEnabled('version')) {
       const base = compositionTitle(seed.title)
-      // Versions you already own — any track sharing the composition title (a
-      // different cut from the seed, whoever it's credited to: remixer edits,
-      // bootlegs, the original). The most reliable "remixes I have", and the one
-      // source that doesn't depend on Discogs coverage. dedupKey('', title) is the
-      // title-only composition key (artist dropped, remix suffix stripped).
+      // A candidate is a version of the seed when it shares the composition title
+      // (artist dropped, remix suffix stripped via dedupKey('', title)) but is a
+      // different cut from the seed itself.
       const seedTitleKey = dedupKey('', seed.title)
       const seedFull = fullKey(seed.artist, seed.title)
+      const isVersion = (artist: string, title: string): boolean =>
+        dedupKey('', title) === seedTitleKey && fullKey(artist, title) !== seedFull
+
+      // Owned versions — the most reliable "remixes I have", no API needed.
       const ownedVersions: DiscogsReleaseSummary[] = library
-        .filter((t) => dedupKey('', t.title) === seedTitleKey && fullKey(t.artist, t.title) !== seedFull)
+        .filter((t) => isVersion(t.artist, t.title))
         .map((t) => ({ title: `${t.artist} - ${t.title}` }))
-      try {
-        const { results = [] } = await discogs.searchRelease({ artist: seed.artist, track: base })
-        push({
-          id: `version:${seedKey}`,
-          type: 'version',
-          title: 'Remixes & versions',
-          pool: buildPool(
-            [...ownedVersions, ...results.map(searchToSummary)],
-            // Owned versions are the whole point here — rank them at full score.
-            { seed, store, base: 96, why: `A version or remix of “${base}”`, fromArtist: true, keep, rankOwnedEqually: true, keyOf: fullKey },
-            poolSize
-          )
-        })
-      } catch {
-        // Discogs failed/empty — still surface owned versions on their own.
-        push({
-          id: `version:${seedKey}`,
-          type: 'version',
-          title: 'Remixes & versions',
-          pool: buildPool(
-            ownedVersions,
-            { seed, store, base: 96, why: `A version or remix of “${base}” in your library`, fromArtist: true, keep, rankOwnedEqually: true, keyOf: fullKey },
-            poolSize
-          )
-        })
-      }
+
+      // Two catalogues in parallel: Discogs releases of the composition + Deezer's
+      // track search (filtered to the composition). Each independently best-effort.
+      const [discogsResults, deezerVersions] = await Promise.all([
+        (async (): Promise<DiscogsSearchResult[]> => {
+          try { return (await discogs.searchRelease({ artist: seed.artist, track: base })).results ?? [] }
+          catch { return [] }
+        })(),
+        (async (): Promise<{ artist: string; title: string }[]> => {
+          if (!deezer) return []
+          try { return (await deezer.searchTracks(seed.artist, base)).filter((t) => isVersion(t.artist, t.title)) }
+          catch { return [] }
+        })()
+      ])
+
+      push({
+        id: `version:${seedKey}`,
+        type: 'version',
+        title: 'Remixes & versions',
+        pool: buildPool(
+          [
+            ...ownedVersions,
+            ...deezerVersions.map((t) => ({ title: `${t.artist} - ${t.title}` })),
+            ...discogsResults.map(searchToSummary)
+          ],
+          // Owned versions are the whole point here — rank them at full score.
+          { seed, store, base: 96, why: `A version or remix of “${base}”`, fromArtist: true, keep, rankOwnedEqually: true, keyOf: fullKey },
+          poolSize
+        )
+      })
       advance('Finding remixes & versions…')
     }
 

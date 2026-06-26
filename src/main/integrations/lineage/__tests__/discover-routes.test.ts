@@ -149,6 +149,22 @@ describe('discover — versions & remixes route', () => {
     expect(dir.pool.some((c) => c.title === 'A Different Song')).toBe(false)
   })
 
+  it('includes Deezer versions of the composition, filtering out non-matches', async () => {
+    const store = new LineageStore(':memory:')
+    const deezerClient = {
+      searchTracks: async () => [
+        { artist: 'Seed Artist', title: 'Seed Track (Deezer Remix)' }, // a version
+        { artist: 'Nope', title: 'Totally Different Song' } // not the same composition
+      ],
+      relatedArtistGroups: async () => [] // satisfies the sonic route
+    } as unknown as DeezerClient
+    const res = await discover(versionDiscogs(), store, remixSeed(), {}, { deezer: deezerClient })
+    store.close()
+    const dir = res.directions.find((d) => d.type === 'version')!
+    expect(dir.pool.some((c) => c.title === 'Seed Track (Deezer Remix)')).toBe(true)
+    expect(dir.pool.some((c) => c.title === 'Totally Different Song')).toBe(false)
+  })
+
   it('is skipped when its route type is filtered out', async () => {
     const store = new LineageStore(':memory:')
     const res = await discover(versionDiscogs(), store, remixSeed(), { filters: { routes: ['deezer'] } })
