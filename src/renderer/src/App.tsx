@@ -40,6 +40,12 @@ export default function App(): JSX.Element {
   const selectedTrackIds = useLibraryStore((s) => s.selectedTrackIds)
   const isLoading = useLibraryStore((s) => s.isLoading)
   const [activePage, setActivePage] = useState<Section>('library')
+  // Keep-alive tabs: once a section has been visited it stays mounted (just
+  // hidden when inactive), so its view/layout state survives leaving + returning.
+  const [visited, setVisited] = useState<Set<Section>>(() => new Set<Section>([activePage]))
+  useEffect(() => {
+    setVisited((v) => (v.has(activePage) ? v : new Set(v).add(activePage)))
+  }, [activePage])
   const [detailTrackId, setDetailTrackId] = useState<string | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   // 'onboard' = first-run (welcome → tour → import); 'tour' = re-opened tour only.
@@ -139,20 +145,29 @@ export default function App(): JSX.Element {
         {activePage === 'library' && <ErrorBoundary name="sidebar" inline><Sidebar /></ErrorBoundary>}
         <main className="flex-1 overflow-hidden flex bg-chassis">
           <div className="flex-1 overflow-hidden">
-            {activePage === 'library' && <ErrorBoundary name="library"><LibraryPage /></ErrorBoundary>}
-            {activePage === 'sync'    && <ErrorBoundary name="sync"><SyncPage /></ErrorBoundary>}
-            {activePage === 'analyse' && <ErrorBoundary name="analyse"><AnalysePage /></ErrorBoundary>}
-            {activePage === 'health'  && <ErrorBoundary name="health"><HealthPage /></ErrorBoundary>}
-            {activePage === 'fixes'   && <ErrorBoundary name="fixes"><SmartFixesPage /></ErrorBoundary>}
-            {activePage === 'builder' && <ErrorBoundary name="builder"><SetBuilderPage /></ErrorBoundary>}
-            {activePage === 'search'  && <ErrorBoundary name="search"><SearchPage /></ErrorBoundary>}
-            {activePage === 'orders'  && <ErrorBoundary name="orders"><OrdersPage /></ErrorBoundary>}
-            {activePage === 'lineage'   && <ErrorBoundary name="lineage"><LineagePage /></ErrorBoundary>}
-            {activePage === 'assistant' && <ErrorBoundary name="assistant"><AssistantPage /></ErrorBoundary>}
-            {activePage === 'sethistory' && <ErrorBoundary name="sethistory"><SetHistoryPage /></ErrorBoundary>}
-            {activePage === 'phonesync' && <ErrorBoundary name="phonesync"><PhoneSyncPage /></ErrorBoundary>}
-      {activePage === 'usb'     && <ErrorBoundary name="usb"><UsbPage /></ErrorBoundary>}
-            {activePage === 'settings'&& <ErrorBoundary name="settings"><SettingsPage /></ErrorBoundary>}
+            {(([
+              ['library',    <ErrorBoundary name="library"><LibraryPage /></ErrorBoundary>],
+              ['sync',       <ErrorBoundary name="sync"><SyncPage /></ErrorBoundary>],
+              ['analyse',    <ErrorBoundary name="analyse"><AnalysePage /></ErrorBoundary>],
+              ['health',     <ErrorBoundary name="health"><HealthPage /></ErrorBoundary>],
+              ['fixes',      <ErrorBoundary name="fixes"><SmartFixesPage /></ErrorBoundary>],
+              ['builder',    <ErrorBoundary name="builder"><SetBuilderPage /></ErrorBoundary>],
+              ['search',     <ErrorBoundary name="search"><SearchPage /></ErrorBoundary>],
+              ['orders',     <ErrorBoundary name="orders"><OrdersPage /></ErrorBoundary>],
+              ['lineage',    <ErrorBoundary name="lineage"><LineagePage /></ErrorBoundary>],
+              ['assistant',  <ErrorBoundary name="assistant"><AssistantPage /></ErrorBoundary>],
+              ['sethistory', <ErrorBoundary name="sethistory"><SetHistoryPage /></ErrorBoundary>],
+              ['phonesync',  <ErrorBoundary name="phonesync"><PhoneSyncPage /></ErrorBoundary>],
+              ['usb',        <ErrorBoundary name="usb"><UsbPage /></ErrorBoundary>],
+              ['settings',   <ErrorBoundary name="settings"><SettingsPage /></ErrorBoundary>],
+            ] as [Section, JSX.Element][])
+              // Keep-alive: render a page once visited; hide (don't unmount) when inactive.
+              .filter(([id]) => visited.has(id))
+              .map(([id, node]) => (
+                <div key={id} className="h-full" style={{ display: activePage === id ? 'contents' : 'none' }}>
+                  {node}
+                </div>
+              )))}
           </div>
           {activePage === 'library' && detailTrackId && (
             <ErrorBoundary name="track-detail" inline>
