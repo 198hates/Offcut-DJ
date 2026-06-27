@@ -20,7 +20,11 @@ then open Offcut again.
 
 Notes
 -----
-• This build is for Apple Silicon Macs (M1 / M2 / M3 / M4).
+• Two macOS builds are provided — grab the one for your Mac:
+    – Apple Silicon (M1 / M2 / M3 / M4): the "-mac-arm64.dmg"
+    – Intel:                              the "-mac-x64.dmg"
+  Not sure which you have? Apple menu  → About This Mac — "Apple M…" means
+  Apple Silicon, "Intel" means Intel.
 • The .zip is only for the app's built-in auto-updater — to install, use the .dmg.
 • Code signing / notarisation is on the roadmap; until then the steps above are
   the normal way to open it.
