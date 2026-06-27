@@ -241,3 +241,34 @@ describe('discover — content-aware label branch', () => {
     expect(alpha.why).toContain('Testone Records')
   })
 })
+
+// ── Label context-awareness — skip non-imprint / compilation sources ──────────
+const majorSeed = (): Seed => ({ ...bareSeed(), labels: [{ id: 9, name: 'Universal Music' }] })
+const compSeed = (): Seed => ({ ...bareSeed(), artist: 'Various', labels: [{ id: 5, name: 'Testone Records' }] })
+
+describe('discover — label context-awareness', () => {
+  it('does NOT expand a genre-spanning major/distributor label', async () => {
+    const store = new LineageStore(':memory:')
+    const res = await discover(majorSeedDiscogs(), store, majorSeed(), {})
+    store.close()
+    expect(res.directions.find((d) => d.type === 'label')).toBeUndefined()
+  })
+
+  it('does NOT drive label leads from a Various-Artists compilation seed', async () => {
+    const store = new LineageStore(':memory:')
+    const res = await discover(labelDiscogs(), store, compSeed(), {})
+    store.close()
+    expect(res.directions.find((d) => d.type === 'label')).toBeUndefined()
+  })
+})
+
+// A discogs stub whose label is the major from majorSeed (id 9).
+function majorSeedDiscogs(): DiscogsClient {
+  return {
+    searchRelease: async () => ({ results: [] }),
+    getLabel: async () => ({ sublabels: [] }),
+    getLabelReleases: async () => ({
+      releases: [{ id: 1, artist: 'Maximo Park', title: 'Apply Some Pressure', year: 2005 }]
+    })
+  } as unknown as DiscogsClient
+}

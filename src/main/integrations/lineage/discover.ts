@@ -222,6 +222,21 @@ function artistEntities(
   return entities.sort((a, b) => b.score - a.score).slice(0, poolSize)
 }
 
+// A label is only a useful crate-digging source when it's a genre-coherent
+// IMPRINT. Major distributors, publishing/rights administrators and one-stop
+// distributors span every genre, so their roster is noise (an indie-rock act
+// surfacing for a tech-house seed because both sit under Universal). Skip them.
+const NON_IMPRINT_LABEL =
+  /\b(universal|sony|warner|emi|polydor|columbia|capitol|atlantic|mercury|decca|rca|virgin|island|interscope|republic|def\s?jam|parlophone|geffen|motown|bmg|umg|wmg|publishing|music\s+publishing|copyright\s+control|distribution|distributed|the\s+orchard|believe|ingrooves|fuga|awal|millennium\s+collection|greatest\s+hits)\b/i
+
+// A Various-Artists / compilation seed has no single artist, so its labels say
+// nothing about genre — they're just whoever compiled the comp. Don't drive
+// label-roster leads from one.
+function seedIsCompilation(seed: Seed): boolean {
+  const a = (seed.artist || '').trim().toLowerCase()
+  return !a || a === 'va' || /\bvarious\b/.test(a)
+}
+
 /**
  * Cross-direction dedup. Each route dedups *within* its own pool, but the same
  * track legitimately surfaces from several routes (e.g. on the same label AND
@@ -282,13 +297,18 @@ export async function discover(
   const persons = [...(seed.remixers || []), ...(seed.producers || [])].filter((p) => p.id)
   const playerList = (seed.players || []).slice(0, 4).filter((p) => p.id)
   const labelList = (seed.labels || []).filter((l) => l.id)
+  // Only genre-coherent imprints are worth digging — drop majors / publishers /
+  // distributors, and drop the lot entirely for a Various-Artists comp seed.
+  const diggableLabels = seedIsCompilation(seed)
+    ? []
+    : labelList.filter((l) => !NON_IMPRINT_LABEL.test(l.name || ''))
   const seedArtistId = (seed.artists || [])[0]?.id
   const total = Math.max(
     (routeEnabled('version') ? 1 : 0) +
       (routeEnabled('remix') ? persons.length : 0) +
       (routeEnabled('players') ? playerList.length : 0) +
-      (routeEnabled('label') ? labelList.length : 0) /* same-label */ +
-      (routeEnabled('label') ? labelList.length : 0) /* sister-label sweep */ +
+      (routeEnabled('label') ? diggableLabels.length : 0) /* same-label */ +
+      (routeEnabled('label') ? diggableLabels.length : 0) /* sister-label sweep */ +
       (lastfm && routeEnabled('listener') ? 1 : 0) +
       (deezer && routeEnabled('deezer') ? 1 : 0) +
       (identity && routeEnabled('sample') ? 1 : 0) +
@@ -414,8 +434,8 @@ export async function discover(
 
     // 3 + 4. Same label and sister imprints.
     if (routeEnabled('label')) {
-      // 3. Same label.
-      for (const label of seed.labels || []) {
+      // 3. Same label — imprints only (majors / publishers / comp seeds dropped).
+      for (const label of diggableLabels) {
         if (!label.id) continue
         try {
           const { releases = [] } = await discogs.getLabelReleases(label.id)
@@ -440,12 +460,12 @@ export async function discover(
       // NB: we deliberately do NOT expand the *parent* label: for an imprint signed
       // to a major, the parent is a genre-spanning distributor (the "Sugababes →
       // Nirvana" problem). Sub-labels are tight, same-family imprints.
-      for (const label of seed.labels || []) {
+      for (const label of diggableLabels) {
         if (!label.id) continue
         const info = await discogs.getLabel(label.id).catch(() => null)
         const family = (info?.sublabels || []).slice(0, 3)
         for (const sub of family) {
-          if (!sub.id) continue
+          if (!sub.id || NON_IMPRINT_LABEL.test(sub.name || '')) continue
           try {
             const { releases = [] } = await discogs.getLabelReleases(sub.id)
             push({
