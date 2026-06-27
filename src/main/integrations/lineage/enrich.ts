@@ -55,6 +55,57 @@ function toSeedCandidate(r: DiscogsSearchResult): SeedCandidate {
   }
 }
 
+// ── Seed-result ranking ──────────────────────────────────────────────────────
+// Discogs relevance happily ranks a Various-Artists compilation or a later
+// reissue above an artist's own original pressing. We re-rank its results so the
+// release whose ARTIST actually matches what the user typed wins — and so a comp
+// never seeds the dig unless the user literally asked for "Various".
+const normName = (s: string): string =>
+  (s || '')
+    .toLowerCase()
+    .replace(/\(\d+\)/g, ' ') // strip Discogs "(16)" disambiguation
+    .replace(/\bfeat\.?\b.*$/i, '') // strip "feat. …"
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+
+const yearOf = (r: DiscogsSearchResult): number =>
+  r.year != null && Number(r.year) ? Number(r.year) : Number.POSITIVE_INFINITY
+
+function scoreSeedResult(r: DiscogsSearchResult, typedArtist: string, typedTitle: string): number {
+  const { artist, title } = splitArtistTitle(r.title || '')
+  const a = normName(artist)
+  const t = normName(title)
+  const qa = normName(typedArtist)
+  const qt = normName(typedTitle)
+  let score = 0
+  if (qa) {
+    if (a === qa) score += 100
+    else if (a && (a.includes(qa) || qa.includes(a))) score += 55
+    // "Various" / VA when the user didn't ask for it ⇒ almost certainly the wrong seed.
+    if (/\bvarious\b/.test(a) && !/\bvarious\b/.test(qa)) score -= 90
+  }
+  if (qt) {
+    if (t === qt) score += 50
+    else if (t && (t.includes(qt) || qt.includes(t))) score += 20
+  }
+  // Prefer original singles/EPs over compilations & "best of" packages.
+  if (/compilation/.test((r.format || []).join(' ').toLowerCase())) score -= 25
+  return score
+}
+
+// Rank by match score, then earliest year (the original pressing), then the
+// order Discogs returned them.
+function rankSeedResults(
+  results: DiscogsSearchResult[],
+  typedArtist = '',
+  typedTitle = ''
+): DiscogsSearchResult[] {
+  return results
+    .map((r, i) => ({ r, i, s: scoreSeedResult(r, typedArtist, typedTitle) }))
+    .sort((x, y) => y.s - x.s || yearOf(x.r) - yearOf(y.r) || x.i - y.i)
+    .map((x) => x.r)
+}
+
 // Run the same exact→fuzzy search the picker uses, returning ranked matches.
 // Exact artist/track first; if that's empty, retry as one free-text query so a
 // typo or odd punctuation doesn't dead-end the dig.
@@ -77,7 +128,7 @@ export async function searchSeeds(
   input: { artist?: string; title?: string }
 ): Promise<SeedCandidate[]> {
   const results = await searchReleaseResults(discogs, input.artist, input.title)
-  return results.map(toSeedCandidate)
+  return rankSeedResults(results, input.artist, input.title).map(toSeedCandidate)
 }
 
 // input: { discogsReleaseId } OR { artist, title }
@@ -109,7 +160,8 @@ export async function enrich(discogs: DiscogsClient, input: EnrichInput): Promis
         players: []
       }
     }
-    releaseId = results[0].id
+    // Smart auto-pick: the best artist/title match, not Discogs' raw top hit.
+    releaseId = rankSeedResults(results, input.artist, input.title)[0].id
   }
 
   const r = await discogs.getRelease(releaseId)
