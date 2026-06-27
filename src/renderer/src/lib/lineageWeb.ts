@@ -740,7 +740,6 @@ export function createLineageWeb(
   let lineageEdges: EdgeCollection = cy.collection()
   let lineagePath: string[] = []
   let phase = 0
-  let flow = 0 // advances the travelling pulse along the live path
   function pathToRoot(node: NodeSingular): EdgeCollection {
     let edges: EdgeCollection = cy.collection()
     let cur: NodeSingular = node
@@ -881,16 +880,9 @@ export function createLineageWeb(
       pathPts.push({ x: bx - uy * off, y: by + ux * off })
     }
     if (pathPts.length < 2) return
-    // Flat, crisp sine — no glow pass.
-    strokeSmooth(pathPts, col('--orange'), 1.4, 0.9, 0)
-    // A brighter pulse travelling the line home to the origin.
-    const idx = Math.min(pathPts.length - 1, Math.floor((flow % 1) * (pathPts.length - 1)))
-    strokeSmooth(pathPts.slice(Math.max(0, idx - 10), idx + 1), '#ffe7cb', 1.6, 0.9, 0)
-    const head = pathPts[idx]
-    wctx.beginPath()
-    wctx.arc(head.x, head.y, 1.8, 0, Math.PI * 2)
-    wctx.fillStyle = '#ffe7cb'
-    wctx.fill()
+    // A subtle glow + a crisp core. No travelling pulse — it read as distracting.
+    strokeSmooth(pathPts, col('--orange'), 2.4, 0.26, 5) // soft glow
+    strokeSmooth(pathPts, '#ffe7cb', 1.2, 0.92, 1) // crisp core
   }
 
   // ── sync loop ──────────────────────────────────────────────────────────────
@@ -906,7 +898,6 @@ export function createLineageWeb(
     wctx.clearRect(0, 0, wave.width, wave.height)
     drawEdges()
     phase += 0.016
-    flow += 0.0065
     drawWave()
     raf = requestAnimationFrame(tick)
   }
