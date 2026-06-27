@@ -194,7 +194,7 @@ export default function App(): JSX.Element {
       <div className="shrink-0 flex items-center justify-between px-4 border-t border-border/20 bg-chassis-soft"
            style={{ height: 16 }}>
         <span className="font-mono text-[10px] tracking-[0.18em] uppercase text-muted/50">
-          offcut · od·01 / firmware 1.0.0 · build 0028
+          offcut · od·01 / firmware 1.0.4 · build 0028
         </span>
         <button
           onClick={() => setShowShortcuts(true)}
