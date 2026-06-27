@@ -159,36 +159,48 @@ export function LibraryMini({
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      {/* search + optional playlist scope */}
-      <div className="shrink-0 flex items-center gap-2 px-2 py-1.5 border-b border-border/30">
-        {enablePlaylistScope && scopablePlaylists.length > 0 && (
-          <select
-            value={scopeId ?? ''}
-            onChange={(e) => onScopeChange(e.target.value)}
-            title="Scope the list to a playlist"
-            className="shrink-0 max-w-[42%] bg-paper border border-border/40 rounded px-1.5 py-1 font-mono text-[11px] text-ink outline-none focus:border-accent transition-colors cursor-pointer"
-          >
-            <option value="">All tracks</option>
+    <div className="flex h-full min-h-0">
+      {enablePlaylistScope && scopablePlaylists.length > 0 && (
+        <div className="shrink-0 w-[156px] flex flex-col border-r border-border/30 bg-ink/[0.02]">
+          <div className="shrink-0 px-2 py-1.5 border-b border-border/30 font-mono text-[9px] uppercase tracking-[0.16em] text-muted/60">
+            Playlists
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <ScopeRow
+              label="All tracks"
+              count={tracks.length}
+              color={null}
+              active={!scopeId}
+              onClick={() => onScopeChange('')}
+            />
             {scopablePlaylists.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
+              <ScopeRow
+                key={p.id}
+                label={p.name}
+                count={p.trackIds.length}
+                color={p.color}
+                active={scopeId === p.id}
+                onClick={() => onScopeChange(p.id)}
+              />
             ))}
-          </select>
-        )}
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={scopePlaylist ? `filter ${scopePlaylist.name}…` : 'filter library…'}
-          spellCheck={false}
-          className="flex-1 min-w-0 bg-paper border border-border/40 rounded px-2 py-1 font-mono text-[12px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/50"
-        />
-        <span className="font-mono text-[10px] text-muted/60 tabular-nums shrink-0">
-          {rows.length}
-          {scopePlaylist ? ` · ${formatHoursMinutes(scopeTotalSecs)}` : ''}
-        </span>
-      </div>
+          </div>
+        </div>
+      )}
+      <div className="flex flex-col flex-1 min-w-0">
+        {/* search */}
+        <div className="shrink-0 flex items-center gap-2 px-2 py-1.5 border-b border-border/30">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={scopePlaylist ? `filter ${scopePlaylist.name}…` : 'filter library…'}
+            spellCheck={false}
+            className="flex-1 min-w-0 bg-paper border border-border/40 rounded px-2 py-1 font-mono text-[12px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/50"
+          />
+          <span className="font-mono text-[10px] text-muted/60 tabular-nums shrink-0">
+            {rows.length}
+            {scopePlaylist ? ` · ${formatHoursMinutes(scopeTotalSecs)}` : ''}
+          </span>
+        </div>
       {/* header */}
       <div
         className="shrink-0 grid items-center gap-1 border-b border-border/30 px-2 font-mono text-[10px] uppercase tracking-[0.08em] text-muted/70 select-none"
@@ -267,9 +279,42 @@ export function LibraryMini({
                 : 'No matches.'}
           </div>
         )}
+        </div>
+        <PreviewBar />
       </div>
-      <PreviewBar />
     </div>
+  )
+}
+
+// ── Playlist scope rail row ───────────────────────────────────────────────────
+function ScopeRow({
+  label,
+  count,
+  color,
+  active,
+  onClick
+}: {
+  label: string
+  count: number
+  color: string | null
+  active: boolean
+  onClick: () => void
+}): JSX.Element {
+  return (
+    <button
+      onClick={onClick}
+      title={`${label} · ${count} track${count === 1 ? '' : 's'}`}
+      className={`w-full flex items-center gap-1.5 px-2 py-1 text-left border-b border-border/10 transition-colors ${
+        active ? 'bg-accent/15 text-ink' : 'text-muted hover:bg-ink/[0.04] hover:text-ink-soft'
+      }`}
+    >
+      <span
+        className="shrink-0 w-1.5 h-1.5 rounded-full"
+        style={color ? { background: color } : { border: '1px solid rgba(150,140,119,0.4)' }}
+      />
+      <span className="flex-1 min-w-0 truncate text-[11px]">{label}</span>
+      <span className="shrink-0 font-mono text-[9px] tabular-nums text-muted/50">{count}</span>
+    </button>
   )
 }
 
