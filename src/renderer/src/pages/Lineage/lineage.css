@@ -1096,6 +1096,29 @@
 .cd-cy .card.dir.t-soundcloud {
   background: var(--coral);
 }
+/* Artist (entity) sub-branch — a paler, outlined tier sitting between a branch
+   (label) and its individual tracks: label → artists → tracks. */
+.cd-cy .card.dir.entity {
+  background: #efe7d6;
+  color: #2a2620;
+  font-weight: 600;
+  border: 1px solid rgba(0, 0, 0, 0.32);
+  box-shadow: 0 3px 9px rgba(0, 0, 0, 0.32);
+}
+.cd-cy .card.dir.entity .dcnt {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 8.5px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.16);
+  vertical-align: middle;
+}
+.cd-cy .card.dir.entity .mini {
+  background: rgba(0, 0, 0, 0.12);
+  border-color: rgba(0, 0, 0, 0.12);
+}
 .cd-cy .card.dir .dn {
   display: inline-block;
   max-width: 170px;

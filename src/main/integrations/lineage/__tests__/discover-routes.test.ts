@@ -207,3 +207,37 @@ describe('discover — SoundCloud route', () => {
     expect(ver.pool.some((c) => c.title === 'Unrelated Track')).toBe(false)
   })
 })
+
+// ── Content-aware label branch (label → artists → tracks) ─────────────────────
+const labelSeed = (): Seed => ({ ...bareSeed(), labels: [{ id: 5, name: 'Testone Records' }] })
+
+const labelDiscogs = (): DiscogsClient =>
+  ({
+    searchRelease: async () => ({ results: [] }),
+    getLabel: async () => ({ sublabels: [] }),
+    getLabelReleases: async () => ({
+      releases: [
+        { id: 1, artist: 'Alpha', title: 'Track A1', year: 2020 },
+        { id: 2, artist: 'Alpha', title: 'Track A2', year: 2021 },
+        { id: 3, artist: 'Beta', title: 'Track B1', year: 2019 }
+      ]
+    })
+  }) as unknown as DiscogsClient
+
+describe('discover — content-aware label branch', () => {
+  it('expands a label into artist entities, each carrying its tracks', async () => {
+    const store = new LineageStore(':memory:')
+    const res = await discover(labelDiscogs(), store, labelSeed(), {})
+    store.close()
+    const dir = res.directions.find((d) => d.type === 'label')!
+    expect(dir).toBeDefined()
+    // The branch pools ARTISTS (navigational entities), not tracks.
+    expect(dir.pool.length).toBe(2)
+    expect(dir.pool.every((c) => c.entity === 'artist' && c.title === '')).toBe(true)
+    const alpha = dir.pool.find((c) => c.artist === 'Alpha')!
+    const beta = dir.pool.find((c) => c.artist === 'Beta')!
+    expect(alpha.children!.map((c) => c.title).sort()).toEqual(['Track A1', 'Track A2'])
+    expect(beta.children!.map((c) => c.title)).toEqual(['Track B1'])
+    expect(alpha.why).toContain('Testone Records')
+  })
+})

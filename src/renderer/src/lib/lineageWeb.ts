@@ -242,7 +242,8 @@ export function createLineageWeb(
     }
     if (k === 'dir') {
       const d = dirs[node.id()]
-      return `<span class="dn">${esc(d.title)}</span><button class="mini" data-act="${
+      const cnt = node.data('entity') ? `<span class="dcnt">${d.pool.length}</span>` : ''
+      return `<span class="dn">${esc(d.title)}</span>${cnt}<button class="mini" data-act="${
         d.expanded ? 'shuffle' : 'reveal'
       }">${d.expanded ? '⤮' : '▸'}</button>`
     }
@@ -326,7 +327,8 @@ export function createLineageWeb(
   function makeCard(node: NodeSingular): void {
     const k = node.data('kind') as string
     const el = document.createElement('div')
-    el.className = 'card ' + k + (k === 'dir' ? ' t-' + node.data('type') : '')
+    el.className =
+      'card ' + k + (k === 'dir' ? ' t-' + node.data('type') + (node.data('entity') ? ' entity' : '') : '')
     el.dataset.id = node.id()
     el.style.pointerEvents = 'auto'
     el.innerHTML = cardHtml(node)
@@ -338,7 +340,11 @@ export function createLineageWeb(
   function refreshCard(node: NodeSingular): void {
     const el = cards.get(node.id())
     if (!el) return
-    el.className = 'card ' + node.data('kind') + (node.data('kind') === 'dir' ? ' t-' + node.data('type') : '') + ' in'
+    el.className =
+      'card ' +
+      node.data('kind') +
+      (node.data('kind') === 'dir' ? ' t-' + node.data('type') + (node.data('entity') ? ' entity' : '') : '') +
+      ' in'
     el.innerHTML = cardHtml(node)
     wire(el, node)
   }
@@ -514,7 +520,15 @@ export function createLineageWeb(
   function clearTracks(d: DirModel): void {
     d.trackNodes.forEach((id) => {
       const n = cy.$id(id)
-      if (n.length && !n.hasClass('seed')) cy.remove(n)
+      if (!n.length || n.hasClass('seed')) return
+      // A child may itself be an entity sub-branch (an artist) with its own tracks —
+      // tear those down too and forget its DirModel.
+      const sub = dirs[id]
+      if (sub) {
+        clearTracks(sub)
+        delete dirs[id]
+      }
+      cy.remove(n)
     })
     d.trackNodes = []
   }
@@ -523,6 +537,26 @@ export function createLineageWeb(
     const seed = seeds[d.seedId]
     clearTracks(d)
     const nodes = window5(d).map((t) => {
+      // An entity candidate (e.g. an artist on a label) becomes its own collapsible
+      // sub-branch — registered in `dirs` so reveal / shuffle / window all recurse.
+      if (t.entity) {
+        const eid = uid('dir')
+        dirs[eid] = {
+          id: eid,
+          seedId: d.seedId,
+          type: d.type,
+          title: t.artist || t.title || '—',
+          pool: t.children ?? [],
+          offset: 0,
+          expanded: false,
+          trackNodes: []
+        }
+        const en = cy.add({ group: 'nodes', data: { id: eid, type: d.type, kind: 'dir', entity: true } })
+        cy.add({ group: 'edges', data: { id: uid('e'), source: dirNode.id(), target: eid, type: d.type } })
+        makeCard(en)
+        d.trackNodes.push(eid)
+        return en
+      }
       const id = uid('trk')
       const hyd = hydrate(t.artist, t.title)
       const key = hyd?.key ?? null

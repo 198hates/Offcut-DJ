@@ -818,6 +818,14 @@ export interface Candidate {
   root_seed_key?: string | null
   /** True when this track is already in the user's library (surfaced, not hidden). */
   owned?: boolean
+  /**
+   * Content-aware branches: when set, this candidate is an *entity* node (not a
+   * track) — e.g. an artist on a label — that expands into its own `children`
+   * (the tracks). The viewer renders it as a collapsible sub-branch.
+   */
+  entity?: 'artist'
+  /** The entity's tracks, revealed when its sub-branch is expanded. */
+  children?: Candidate[]
 }
 
 /**

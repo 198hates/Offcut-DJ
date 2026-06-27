@@ -180,6 +180,48 @@ function buildPool(
   return out.sort((a, b) => b.score - a.score).slice(0, poolSize)
 }
 
+// Fold a label's release pool into ARTIST entities — one collapsible sub-branch
+// per artist, ranked by catalogue depth on the label, each carrying that artist's
+// tracks as `children`. This makes the label branch content-aware: a label reveals
+// the artists on it, and each artist reveals their individual tracks.
+function artistEntities(
+  releases: DiscogsReleaseSummary[],
+  ctx: PoolContext,
+  poolSize: number,
+  labelName: string
+): Candidate[] {
+  // A generous, ranked + deduped + owned-tagged track pool first, then group it.
+  const tracks = buildPool(releases, ctx, poolSize * 3)
+  const byArtist = new Map<string, Candidate[]>()
+  for (const c of tracks) {
+    const norm = c.artist.toLowerCase().trim()
+    if (!norm) continue
+    const arr = byArtist.get(norm)
+    if (arr) arr.push(c)
+    else byArtist.set(norm, [c])
+  }
+  const entities: Candidate[] = []
+  for (const [norm, children] of byArtist) {
+    const n = children.length
+    // Blend the artist's strongest track with their depth on the label so prolific
+    // label artists float to the top of the branch.
+    const score = Math.min(100, children[0].score + Math.min(n - 1, 6) * 2)
+    entities.push({
+      key: `__artist__:${labelName.toLowerCase()}:${norm}`,
+      artist: children[0].artist,
+      title: '',
+      label: children[0].label,
+      year: null,
+      discogs_id: null,
+      why: `${n} release${n === 1 ? '' : 's'} on ${labelName}`,
+      score,
+      entity: 'artist',
+      children
+    })
+  }
+  return entities.sort((a, b) => b.score - a.score).slice(0, poolSize)
+}
+
 /**
  * Cross-direction dedup. Each route dedups *within* its own pool, but the same
  * track legitimately surfaces from several routes (e.g. on the same label AND
@@ -381,10 +423,11 @@ export async function discover(
             id: `label:${label.id}`,
             type: 'label',
             title: label.name,
-            pool: buildPool(
+            pool: artistEntities(
               releases,
               { seed, store, base: 70, why: `Same label — ${label.name}`, fromArtist: false, keep, rankOwnedEqually },
-              poolSize
+              poolSize,
+              label.name
             )
           })
         } catch {
@@ -409,10 +452,11 @@ export async function discover(
               id: `sublabel:${sub.id}`,
               type: 'label',
               title: sub.name,
-              pool: buildPool(
+              pool: artistEntities(
                 releases,
                 { seed, store, base: 58, why: `Sister label — ${sub.name}`, fromArtist: false, keep, rankOwnedEqually },
-                poolSize
+                poolSize,
+                sub.name
               )
             })
           } catch {
@@ -616,7 +660,12 @@ export async function discover(
 
   for (const d of top) {
     for (const c of d.pool) {
-      store.upsertCandidate({ ...c, direction: d.id, seed_key: seedKey, root_seed_key: rootSeedKey })
+      // Entity nodes (e.g. an artist on a label) are navigational, not crate
+      // items — persist their tracks (children) so those stay reviewable/saveable.
+      const persistable = c.entity && c.children ? c.children : [c]
+      for (const pc of persistable) {
+        store.upsertCandidate({ ...pc, direction: d.id, seed_key: seedKey, root_seed_key: rootSeedKey })
+      }
     }
   }
 
