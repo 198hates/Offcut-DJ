@@ -512,6 +512,8 @@ export interface AppSettings {
   tracklistsApiBase: string
   /** Opt in to the fragile public 1001TL fallback when no partner API is set. */
   enableTracklistsScrape: boolean
+  /** Opt in to SoundCloud discovery (keyless via the web player's client_id). */
+  enableSoundcloud: boolean
   /** Python executable used to run Demucs for stem separation. */
   pythonPath: string
   theme: 'dark' | 'light' | 'system'
@@ -832,6 +834,7 @@ export type RouteType =
   | 'sample'
   | 'comp'
   | 'set'
+  | 'soundcloud'
   | 'ai'
 
 /** One branch off a seed: a typed, titled, ranked pool the UI windows to 5. */

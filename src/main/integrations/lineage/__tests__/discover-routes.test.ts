@@ -3,6 +3,7 @@ import { discover } from '../discover'
 import { LineageStore } from '../store'
 import type { DiscogsClient } from '../discogs'
 import type { DeezerClient } from '../deezer'
+import type { SoundCloudClient } from '../soundcloud'
 import type { Seed } from '../types'
 
 // A seed with no Discogs credits, so the Discogs chain is a no-op and we isolate
@@ -170,5 +171,39 @@ describe('discover — versions & remixes route', () => {
     const res = await discover(versionDiscogs(), store, remixSeed(), { filters: { routes: ['deezer'] } })
     store.close()
     expect(res.directions.find((d) => d.type === 'version')).toBeUndefined()
+  })
+})
+
+// ── SoundCloud route (related tracks + versions-route source) ──────────────────
+const fakeSoundcloud = (): SoundCloudClient =>
+  ({
+    relatedTracks: async () => [
+      { artist: 'SC Artist', title: 'Underground Edit' },
+      { artist: 'SC Artist 2', title: 'Bootleg Flip' }
+    ],
+    searchTracks: async () => [
+      { artist: 'Seed Artist', title: 'Seed Track (SC Edit)' }, // a version of the seed
+      { artist: 'Random', title: 'Unrelated Track' }
+    ]
+  }) as unknown as SoundCloudClient
+
+describe('discover — SoundCloud route', () => {
+  it('adds a SoundCloud branch from related tracks', async () => {
+    const store = new LineageStore(':memory:')
+    const res = await discover(versionDiscogs(), store, remixSeed(), {}, { soundcloud: fakeSoundcloud() })
+    store.close()
+    const dir = res.directions.find((d) => d.type === 'soundcloud')
+    expect(dir).toBeDefined()
+    expect(dir!.title).toBe('SOUNDCLOUD')
+    expect(dir!.pool.map((c) => c.title)).toContain('Underground Edit')
+  })
+
+  it('folds SoundCloud versions of the composition into the version branch', async () => {
+    const store = new LineageStore(':memory:')
+    const res = await discover(versionDiscogs(), store, remixSeed(), {}, { soundcloud: fakeSoundcloud() })
+    store.close()
+    const ver = res.directions.find((d) => d.type === 'version')!
+    expect(ver.pool.some((c) => c.title === 'Seed Track (SC Edit)')).toBe(true)
+    expect(ver.pool.some((c) => c.title === 'Unrelated Track')).toBe(false)
   })
 })

@@ -11,6 +11,7 @@ import { Identity, deezerByIsrc } from './identity'
 import { LastfmClient } from './lastfm'
 import { DeezerClient } from './deezer'
 import { TracklistsClient } from './tracklists'
+import { SoundCloudClient } from './soundcloud'
 import { readRekordbox, writeRekordboxPlaylist } from './dj-library/rekordbox'
 import type { RekordboxFind } from './dj-library/rekordbox'
 import { readSeratoCrate } from './dj-library/serato'
@@ -106,6 +107,8 @@ export function createLineageEngine(opts: LineageEngineConfig): LineageEngine {
       : opts.enableTracklistsScrape
         ? new TracklistsClient({ scrape: true, userAgent })
         : null
+  // SoundCloud — keyless via the web player's client_id; opt-in (ToS-gray).
+  const soundcloud = opts.enableSoundcloud ? new SoundCloudClient() : null
 
   return {
     authenticated: discogs.authenticated,
@@ -121,7 +124,7 @@ export function createLineageEngine(opts: LineageEngineConfig): LineageEngine {
     enrich: (input) => enrich(discogs, input),
     searchSeeds: (input) => searchSeeds(discogs, input),
     discover: (seed, o, onProgress) =>
-      discover(discogs, store, seed, o, { lastfm, identity, tracklists, deezer, library }, onProgress),
+      discover(discogs, store, seed, o, { lastfm, identity, tracklists, deezer, soundcloud, library }, onProgress),
 
     // --- identity backbone ---
     identify: (input) => identity.identify(input),

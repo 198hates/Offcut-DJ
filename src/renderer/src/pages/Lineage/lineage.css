@@ -22,6 +22,7 @@
   --peach:  #b07a4e; /* sounds-like (Deezer) — clay */
   --silver: #9c9176; /* shared players — stone */
   --orchid: #b86e72; /* same compilation — rose */
+  --coral:  #d2814e; /* SoundCloud — warm coral (nods to its orange brand) */
   --violet: #8a6ea8; /* AI-suggested branch — muted purple */
 
   position: relative;
@@ -1091,6 +1092,9 @@
 }
 .cd-cy .card.dir.t-version {
   background: var(--amber);
+}
+.cd-cy .card.dir.t-soundcloud {
+  background: var(--coral);
 }
 .cd-cy .card.dir .dn {
   display: inline-block;

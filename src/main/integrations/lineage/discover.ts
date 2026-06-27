@@ -13,6 +13,7 @@ import type { Identity } from './identity'
 import type { LastfmClient } from './lastfm'
 import type { DeezerClient } from './deezer'
 import type { TracklistsClient } from './tracklists'
+import type { SoundCloudClient } from './soundcloud'
 import type {
   Candidate,
   Direction,
@@ -32,6 +33,8 @@ export interface DiscoverClients {
   tracklists?: TracklistsClient | null
   /** Keyless Deezer related-artists route — present on every dig. */
   deezer?: DeezerClient | null
+  /** SoundCloud related-tracks route (opt-in) — edits, bootlegs, underground. */
+  soundcloud?: SoundCloudClient | null
   /** The user's library ({artist,title}) — surfaces owned versions/remixes of the seed. */
   library?: LibraryTrackRef[]
 }
@@ -213,7 +216,7 @@ export async function discover(
   clients: DiscoverClients = {},
   onProgress?: (p: DiscoverProgress) => void
 ): Promise<DiscoverResult> {
-  const { lastfm = null, identity = null, tracklists = null, deezer = null, library = [] } = clients
+  const { lastfm = null, identity = null, tracklists = null, deezer = null, soundcloud = null, library = [] } = clients
   const poolSize = opts.poolSize ?? 24
   // Higher than before: a dig now splits the sonic route into one branch per
   // related artist, so the cap has to leave room for those plus the credit /
@@ -248,7 +251,8 @@ export async function discover(
       (deezer && routeEnabled('deezer') ? 1 : 0) +
       (identity && routeEnabled('sample') ? 1 : 0) +
       (seedArtistId && routeEnabled('comp') ? 1 : 0) +
-      (tracklists && routeEnabled('set') ? 1 : 0),
+      (tracklists && routeEnabled('set') ? 1 : 0) +
+      (soundcloud && routeEnabled('soundcloud') ? 1 : 0),
     2
   )
   let done = 0
@@ -285,16 +289,20 @@ export async function discover(
 
       // Two catalogues in parallel: Discogs releases of the composition + Deezer's
       // track search (filtered to the composition). Each independently best-effort.
-      const [discogsResults, deezerVersions] = await Promise.all([
+      const versionSearch = async (
+        fn: (() => Promise<{ artist: string; title: string }[]>) | null
+      ): Promise<{ artist: string; title: string }[]> => {
+        if (!fn) return []
+        try { return (await fn()).filter((t) => isVersion(t.artist, t.title)) }
+        catch { return [] }
+      }
+      const [discogsResults, deezerVersions, scVersions] = await Promise.all([
         (async (): Promise<DiscogsSearchResult[]> => {
           try { return (await discogs.searchRelease({ artist: seed.artist, track: base })).results ?? [] }
           catch { return [] }
         })(),
-        (async (): Promise<{ artist: string; title: string }[]> => {
-          if (!deezer) return []
-          try { return (await deezer.searchTracks(seed.artist, base)).filter((t) => isVersion(t.artist, t.title)) }
-          catch { return [] }
-        })()
+        versionSearch(deezer ? () => deezer.searchTracks(seed.artist, base) : null),
+        versionSearch(soundcloud ? () => soundcloud.searchTracks(seed.artist, base) : null)
       ])
 
       push({
@@ -305,6 +313,7 @@ export async function discover(
           [
             ...ownedVersions,
             ...deezerVersions.map((t) => ({ title: `${t.artist} - ${t.title}` })),
+            ...scVersions.map((t) => ({ title: `${t.artist} - ${t.title}` })),
             ...discogsResults.map(searchToSummary)
           ],
           // Owned versions are the whole point here — rank them at full score.
@@ -568,7 +577,33 @@ export async function discover(
     }
   })()
 
-  await Promise.all([discogsWork, listenerWork, deezerWork, sampleWork, setWork])
+  // ── 9. SoundCloud related tracks (opt-in) — own host, concurrent. The richest
+  //    source for unofficial edits / bootlegs / underground nothing else carries.
+  const soundcloudWork = (async (): Promise<void> => {
+    if (!(soundcloud && routeEnabled('soundcloud'))) return
+    try {
+      const rel = await soundcloud.relatedTracks(seed.artist, seed.title, poolSize)
+      const seen = new Set([seedKey])
+      const pool: Candidate[] = []
+      for (const t of rel) {
+        const key = dedupKey(t.artist, t.title)
+        if (seen.has(key) || !keep({ artist: t.artist, title: t.title, year: null, label: null })) continue
+        seen.add(key)
+        pool.push(applyOwned({
+          key, artist: t.artist, title: t.title, label: null, year: null,
+          discogs_id: null, why: 'Related on SoundCloud — edits, bootlegs, underground',
+          score: 78
+        }, store, rankOwnedEqually))
+      }
+      push({ id: 'soundcloud', type: 'soundcloud', title: 'SOUNDCLOUD', pool })
+    } catch {
+      /* soundcloud route is best-effort */
+    } finally {
+      advance('Asking SoundCloud…')
+    }
+  })()
+
+  await Promise.all([discogsWork, listenerWork, deezerWork, sampleWork, setWork, soundcloudWork])
 
   // Drop cross-branch duplicates (a track keeps a slot only in its strongest
   // branch), then surface the strongest branches first and cap the count.

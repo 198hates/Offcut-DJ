@@ -19,6 +19,7 @@ const DEFAULTS: AppSettings = {
   tracklistsApiKey: '',
   tracklistsApiBase: '',
   enableTracklistsScrape: false,
+  enableSoundcloud: false,
   pythonPath: 'python3',
   theme: 'dark',
   defaultExportDir: '',

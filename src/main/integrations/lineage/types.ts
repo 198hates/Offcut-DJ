@@ -54,4 +54,6 @@ export interface LineageEngineConfig {
   tracklistsApiBase?: string
   /** Opt in to the fragile public 1001TL fallback when no partner API is set. */
   enableTracklistsScrape?: boolean
+  /** Opt in to SoundCloud discovery (keyless via the web player's client_id). */
+  enableSoundcloud?: boolean
 }

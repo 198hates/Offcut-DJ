@@ -318,6 +318,25 @@ export function SettingsPage(): JSX.Element {
             Allow public fallback (fragile, best-effort — returns nothing rather than failing)
           </label>
         </div>
+        <div className="space-y-1">
+          <label className="font-mono text-[12px] uppercase tracking-[0.12em] text-muted block">
+            SoundCloud discovery
+          </label>
+          <p className="font-mono text-[12px] text-muted/70">
+            Adds a “SoundCloud” branch (related tracks) and folds SoundCloud results into the remixes &amp;
+            versions branch — the best source for unofficial edits, bootlegs and underground tracks. Keyless,
+            but unofficial (uses the web player), so it’s opt-in.
+          </p>
+          <label className="flex items-center gap-2 pt-1.5 font-mono text-[12px] text-muted cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={settings.enableSoundcloud}
+              onChange={(e) => patch({ enableSoundcloud: e.target.checked })}
+              className="accent-accent"
+            />
+            Enable SoundCloud discovery (best-effort — returns nothing rather than failing)
+          </label>
+        </div>
         <div className="flex items-start gap-2 font-mono text-[12px] text-muted bg-ink/[0.03] border border-border/30 rounded p-3">
           <span className="shrink-0 text-accent">ℹ</span>
           <span>

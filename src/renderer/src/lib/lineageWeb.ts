@@ -60,6 +60,7 @@ const ROUTE_SOURCE: Record<RouteType, string> = {
   deezer: 'Deezer',
   sample: 'MusicBrainz',
   set: '1001Tracklists',
+  soundcloud: 'SoundCloud',
   ai: 'AI'
 }
 
@@ -178,6 +179,7 @@ export function createLineageWeb(
     listener: col('--teal'),
     deezer: col('--peach'),
     comp: col('--orchid'),
+    soundcloud: col('--coral'),
     ai: col('--violet')
   }
 

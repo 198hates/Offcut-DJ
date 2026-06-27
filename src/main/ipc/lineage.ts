@@ -45,6 +45,7 @@ function getEngine(): LineageEngine {
   const tracklistsApiKey = settings.tracklistsApiKey?.trim() || undefined
   const tracklistsApiBase = settings.tracklistsApiBase?.trim() || undefined
   const enableTracklistsScrape = !!settings.enableTracklistsScrape
+  const enableSoundcloud = !!settings.enableSoundcloud
 
   // Rebuild whenever any engine-affecting key changes.
   const key = JSON.stringify([
@@ -53,7 +54,8 @@ function getEngine(): LineageEngine {
     lastfmKey,
     tracklistsApiKey,
     tracklistsApiBase,
-    enableTracklistsScrape
+    enableTracklistsScrape,
+    enableSoundcloud
   ])
   if (_engine && _builtWithKey === key) return _engine
 
@@ -68,6 +70,7 @@ function getEngine(): LineageEngine {
     tracklistsApiKey,
     tracklistsApiBase,
     enableTracklistsScrape,
+    enableSoundcloud,
     userAgent: USER_AGENT,
     dbPath: join(app.getPath('userData'), 'lineage.db'),
     getLibraryTracks
