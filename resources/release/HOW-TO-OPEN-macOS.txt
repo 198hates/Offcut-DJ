@@ -1,0 +1,26 @@
+Offcut for macOS — first launch
+================================
+
+Offcut isn't signed with an Apple Developer certificate yet, so the first time
+you open it macOS Gatekeeper will warn you. This is expected. Here's how:
+
+  1. Open the .dmg and drag Offcut into your Applications folder.
+  2. In Applications, RIGHT-CLICK (or Control-click) Offcut and choose "Open".
+  3. macOS warns it's from an unidentified developer — click "Open".
+
+You only need to do this once. After that, launch it normally from Applications
+or the Dock.
+
+If macOS instead says Offcut "is damaged and can't be opened" (this happens when
+the browser quarantines the download), open the Terminal app and run:
+
+    xattr -dr com.apple.quarantine /Applications/Offcut.app
+
+then open Offcut again.
+
+Notes
+-----
+• This build is for Apple Silicon Macs (M1 / M2 / M3 / M4).
+• The .zip is only for the app's built-in auto-updater — to install, use the .dmg.
+• Code signing / notarisation is on the roadmap; until then the steps above are
+  the normal way to open it.

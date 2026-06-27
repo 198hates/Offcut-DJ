@@ -1,0 +1,18 @@
+Offcut for Windows — first launch
+==================================
+
+Offcut isn't code-signed yet, so the first time you run the installer Windows
+SmartScreen will warn you. This is expected. Here's how:
+
+  1. Run the installer (Offcut-...-win-x64-setup.exe).
+  2. If you see "Windows protected your PC", click "More info".
+  3. Click "Run anyway".
+  4. Follow the installer — you can choose the install folder.
+
+After installing, launch Offcut from the Start menu.
+
+Notes
+-----
+• This build is for 64-bit (x64) Windows.
+• Code signing is on the roadmap; until then the steps above are the normal way
+  to run the installer.
