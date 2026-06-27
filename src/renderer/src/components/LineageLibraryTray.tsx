@@ -61,7 +61,7 @@ export function LineageLibraryTray(): JSX.Element {
         <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-muted/60 ml-1">— {hint}</span>
       </div>
       <div className="flex-1 min-h-0">
-        {tab === 'library' ? <LibraryMini /> : <SavedFindsList finds={saved} />}
+        {tab === 'library' ? <LibraryMini enablePlaylistScope /> : <SavedFindsList finds={saved} />}
       </div>
     </div>
   )

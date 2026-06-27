@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { useTrackPreview } from '../store/trackPreviewStore'
 import { setTrackDragData } from '../lib/trackDrag'
+import { formatHoursMinutes } from '../lib/format'
 import { useVirtualList } from '../hooks/useVirtualList'
 import { useTrackMenuContext } from '../hooks/useTrackMenu'
 import type { Track } from '@shared/types'
@@ -30,29 +31,61 @@ const COLS: { key: SortKey; label: string; num?: boolean }[] = [
 ]
 const GRID = 'minmax(0,1fr) 84px 62px 42px 34px'
 
-export function LibraryMini({ onActivate }: { onActivate?: (t: Track) => void }): JSX.Element {
+export function LibraryMini({
+  onActivate,
+  enablePlaylistScope = false
+}: {
+  onActivate?: (t: Track) => void
+  /** Show a playlist picker that scopes the list to one playlist (Lineage tray). */
+  enablePlaylistScope?: boolean
+}): JSX.Element {
   const tracks = useLibraryStore((s) => s.tracks)
+  const playlists = useLibraryStore((s) => s.playlists)
   const setDragging = useLibraryStore((s) => s.setDragging)
   const clearDragging = useLibraryStore((s) => s.clearDragging)
   const previewId = useTrackPreview((s) => s.previewId)
   const togglePreview = useTrackPreview((s) => s.toggle)
 
   const [q, setQ] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('title')
+  // A null sortKey means "natural order" — the playlist's own curated order when a
+  // scope is set, import order otherwise. Clicking a column switches to an explicit sort.
+  const [sortKey, setSortKey] = useState<SortKey | null>('title')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [scopeId, setScopeId] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [lastClicked, setLastClicked] = useState<string | null>(null)
   const openTrackMenu = useTrackMenuContext()
 
+  // Playlists you can scope to. Folders hold their tracks in child chapters, not
+  // directly, so they're excluded; smart/auto-group playlists arrive pre-resolved.
+  const scopablePlaylists = useMemo(
+    () => (enablePlaylistScope ? playlists.filter((p) => !p.isFolder) : []),
+    [enablePlaylistScope, playlists]
+  )
+  const scopePlaylist = scopeId ? playlists.find((p) => p.id === scopeId) ?? null : null
+
+  const byId = useMemo(() => {
+    const m = new Map<string, Track>()
+    for (const t of tracks) m.set(t.id, t)
+    return m
+  }, [tracks])
+
   const rows = useMemo(() => {
+    // A playlist scope keeps the playlist's curated order; tracks no longer in the
+    // library are skipped.
+    const base: Track[] = scopePlaylist
+      ? scopePlaylist.trackIds.map((id) => byId.get(id)).filter((t): t is Track => !!t)
+      : tracks.slice()
     const term = q.toLowerCase().trim()
     const list = term
-      ? tracks.filter((t) =>
+      ? base.filter((t) =>
           `${t.artist} ${t.title} ${t.album ?? ''} ${t.genre ?? ''}`.toLowerCase().includes(term)
         )
-      : tracks.slice()
+      : base
+    if (sortKey == null) return list // natural order (playlist order when scoped)
     const dir = sortDir === 'asc' ? 1 : -1
-    list.sort((a, b) => {
+    const sorted = list.slice()
+    sorted.sort((a, b) => {
       const av = a[sortKey]
       const bv = b[sortKey]
       if (av == null && bv == null) return 0
@@ -61,8 +94,26 @@ export function LibraryMini({ onActivate }: { onActivate?: (t: Track) => void })
       if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
       return String(av).localeCompare(String(bv)) * dir
     })
-    return list
-  }, [tracks, q, sortKey, sortDir])
+    return sorted
+  }, [tracks, byId, scopePlaylist, q, sortKey, sortDir])
+
+  const scopeTotalSecs = useMemo(
+    () => (scopePlaylist ? rows.reduce((sum, t) => sum + (t.durationSeconds ?? 0), 0) : 0),
+    [scopePlaylist, rows]
+  )
+
+  const onScopeChange = (id: string): void => {
+    if (id) {
+      setScopeId(id)
+      setSortKey(null) // present the playlist in its own order
+    } else {
+      setScopeId(null)
+      setSortKey('title')
+      setSortDir('asc')
+    }
+    setSelected(new Set())
+    setLastClicked(null)
+  }
 
   const { containerRef, start, end, topPad, bottomPad, onScroll } = useVirtualList(rows.length, ROW_H, OVERSCAN)
   const visible = rows.slice(start, end)
@@ -109,16 +160,34 @@ export function LibraryMini({ onActivate }: { onActivate?: (t: Track) => void })
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* search */}
+      {/* search + optional playlist scope */}
       <div className="shrink-0 flex items-center gap-2 px-2 py-1.5 border-b border-border/30">
+        {enablePlaylistScope && scopablePlaylists.length > 0 && (
+          <select
+            value={scopeId ?? ''}
+            onChange={(e) => onScopeChange(e.target.value)}
+            title="Scope the list to a playlist"
+            className="shrink-0 max-w-[42%] bg-paper border border-border/40 rounded px-1.5 py-1 font-mono text-[11px] text-ink outline-none focus:border-accent transition-colors cursor-pointer"
+          >
+            <option value="">All tracks</option>
+            {scopablePlaylists.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="filter library…"
+          placeholder={scopePlaylist ? `filter ${scopePlaylist.name}…` : 'filter library…'}
           spellCheck={false}
           className="flex-1 min-w-0 bg-paper border border-border/40 rounded px-2 py-1 font-mono text-[12px] text-ink outline-none focus:border-accent transition-colors placeholder-muted/50"
         />
-        <span className="font-mono text-[10px] text-muted/60 tabular-nums shrink-0">{rows.length}</span>
+        <span className="font-mono text-[10px] text-muted/60 tabular-nums shrink-0">
+          {rows.length}
+          {scopePlaylist ? ` · ${formatHoursMinutes(scopeTotalSecs)}` : ''}
+        </span>
       </div>
       {/* header */}
       <div
@@ -191,7 +260,11 @@ export function LibraryMini({ onActivate }: { onActivate?: (t: Track) => void })
         <div style={{ height: bottomPad }} />
         {rows.length === 0 && (
           <div className="p-4 text-center font-mono text-[12px] text-muted/60">
-            {tracks.length === 0 ? 'Library is empty — import tracks first.' : 'No matches.'}
+            {tracks.length === 0
+              ? 'Library is empty — import tracks first.'
+              : scopePlaylist && !q.trim()
+                ? 'This playlist has no tracks.'
+                : 'No matches.'}
           </div>
         )}
       </div>
