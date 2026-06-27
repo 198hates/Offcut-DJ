@@ -126,6 +126,8 @@ export function LineagePage(): JSX.Element {
   const controllerRef = useRef<LineageWebController | null>(null)
   const selectedRef = useRef<SelNode | null>(null)
   const seedMetaRef = useRef<{ bpm: number | null; key: string | null } | null>(null)
+  // Bumped on every top-level dig so a previous dig's in-flight label pass bails.
+  const digTokenRef = useRef(0)
 
   // Build the wire DiscoverFilters from UI state; mirror into a ref so sub-seed
   // digs (fired from the graph controller, which is created once) read current
@@ -275,7 +277,10 @@ export function LineagePage(): JSX.Element {
       ctrl.destroy()
       controllerRef.current = null
     }
-  }, [result, digSub, handleSelect])
+    // Keyed on the seed identity, not the whole result, so streaming late branches
+    // into `result` doesn't tear down and rebuild the graph.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result?.seed.key, digSub, handleSelect])
 
   // ── Top-level dig ────────────────────────────────────────────────────────────
   // Core: enrich whatever seed input we were given (typed artist/title, or a
@@ -288,6 +293,7 @@ export function LineagePage(): JSX.Element {
       meta?: { bpm: number | null; key: string | null }
     ) => {
       seedMetaRef.current = meta ?? null
+      digTokenRef.current += 1
       setSeedOptions(null)
       setError(null)
       setSelected(null)
@@ -305,17 +311,40 @@ export function LineagePage(): JSX.Element {
           setPhase('error')
           return
         }
-        setStatusMsg('discovering — following credits, labels, listeners & sets…')
-        const res = await window.api.lineage.discover(s, { filters: filtersRef.current })
-        if (!res.directions.length) {
-          setError('No connections surfaced for that seed — try a different track.')
-          setPhase('error')
-          return
-        }
+        setStatusMsg('discovering — following credits, listeners & sets…')
+        // Fast pass: everything but the slow genre-enriched label route, which
+        // streams in afterwards (see the stage effect) so the graph shows now.
+        const res = await window.api.lineage.discover(s, { filters: filtersRef.current, labelMode: 'skip' })
         setResult(res)
         setPhase('ready')
         const n = res.directions.length
         show(`Opened ${n} direction${n === 1 ? '' : 's'} from "${displayTitle || s.title}"`, 'success')
+
+        // Second pass: the slow, genre-enriched label route streams in once its
+        // artists are matched to the seed — detached so the graph never waits on
+        // the per-artist Discogs lookups. A newer dig invalidates this one.
+        const token = digTokenRef.current
+        void (async () => {
+          try {
+            setStatusMsg('matching label rosters to the seed…')
+            const res2 = await window.api.lineage.discover(s, {
+              filters: filtersRef.current,
+              labelMode: 'only',
+              rootSeedKey: res.seed.rootSeedKey
+            })
+            if (digTokenRef.current !== token || !res2.directions.length) return
+            controllerRef.current?.addRootBranches(res2.directions)
+            setResult((prev) =>
+              prev && prev.seed.key === res.seed.key
+                ? { ...prev, directions: [...prev.directions, ...res2.directions] }
+                : prev
+            )
+          } catch {
+            /* label pass is best-effort */
+          } finally {
+            if (digTokenRef.current === token) setStatusMsg('')
+          }
+        })()
       } catch (e) {
         setError(humanizeError(e))
         setPhase('error')

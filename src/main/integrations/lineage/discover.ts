@@ -184,12 +184,14 @@ function buildPool(
 // per artist, ranked by catalogue depth on the label, each carrying that artist's
 // tracks as `children`. This makes the label branch content-aware: a label reveals
 // the artists on it, and each artist reveals their individual tracks.
-function artistEntities(
+async function artistEntities(
   releases: DiscogsReleaseSummary[],
   ctx: PoolContext,
   poolSize: number,
-  labelName: string
-): Candidate[] {
+  labelName: string,
+  discogs: DiscogsClient,
+  enrichGenre: boolean
+): Promise<Candidate[]> {
   // A generous, ranked + deduped + owned-tagged track pool first, then group it.
   const tracks = buildPool(releases, ctx, poolSize * 3)
   const byArtist = new Map<string, Candidate[]>()
@@ -219,7 +221,45 @@ function artistEntities(
       children
     })
   }
-  return entities.sort((a, b) => b.score - a.score).slice(0, poolSize)
+  const ranked = entities.sort((a, b) => b.score - a.score)
+
+  // ── Genre context-awareness ────────────────────────────────────────────────
+  // Even a real imprint drifts across styles. When the seed carries style/genre
+  // tags, fetch each top artist's representative release, read its styles, and
+  // keep/rank by overlap with the seed — so only genre-relevant label-mates
+  // surface (no indie-rock act for a tech-house seed). The getRelease calls are
+  // the slow part, which is why this branch is streamed in after the fast ones.
+  const seedTags = new Set(
+    [...(ctx.seed.styles || []), ...(ctx.seed.genres || [])].map((s) => s.toLowerCase()).filter(Boolean)
+  )
+  // Genre-matching is the slow part (a getRelease per artist), so it's only done
+  // for the streamed label pass — sub-digs use the cheap depth ranking.
+  if (!enrichGenre || !seedTags.size) return ranked.slice(0, poolSize)
+
+  const cap = Math.min(ranked.length, Math.max(poolSize, 14))
+  const scored = await Promise.all(
+    ranked.slice(0, cap).map(async (e) => {
+      let overlap = 0
+      const repId = e.children?.[0]?.discogs_id
+      if (repId) {
+        try {
+          const rel = await discogs.getRelease(repId)
+          const tags = [...(rel.styles || []), ...(rel.genres || [])].map((s) => s.toLowerCase())
+          overlap = tags.filter((t) => seedTags.has(t)).length
+        } catch {
+          /* enrichment is best-effort */
+        }
+      }
+      return { e, overlap }
+    })
+  )
+  // Keep only genre-matching artists; if enrichment turned up nothing (e.g. the
+  // releases carry no style tags), fall back to the depth ranking rather than empty.
+  const matched = scored.filter((s) => s.overlap > 0)
+  return (matched.length ? matched : scored)
+    .sort((a, b) => b.overlap - a.overlap || b.e.score - a.e.score)
+    .map((s) => s.e)
+    .slice(0, poolSize)
 }
 
 // A label is only a useful crate-digging source when it's a genre-coherent
@@ -283,9 +323,15 @@ export async function discover(
   const keep = makeKeep(filters)
   // Owned tracks are surfaced + tagged; rank them at full score only when asked.
   const rankOwnedEqually = !!filters.includeOwned
-  // A route runs only when its type is enabled (empty/undefined routes = all).
-  const routeEnabled = (type: RouteType): boolean =>
-    !filters.routes?.length || filters.routes.includes(type)
+  // A route runs only when its type is enabled (empty/undefined routes = all),
+  // and when labelMode lets it: 'skip' drops the slow label route from the fast
+  // pass; 'only' runs nothing BUT the label route (the streamed second pass).
+  const labelMode = opts.labelMode ?? 'include'
+  const routeEnabled = (type: RouteType): boolean => {
+    if (labelMode === 'only' && type !== 'label') return false
+    if (labelMode === 'skip' && type === 'label') return false
+    return !filters.routes?.length || filters.routes.includes(type)
+  }
   const seedKey = dedupKey(seed.artist, seed.title)
   const rootSeedKey = opts.rootSeedKey || seedKey
   const directions: Direction[] = []
@@ -439,17 +485,15 @@ export async function discover(
         if (!label.id) continue
         try {
           const { releases = [] } = await discogs.getLabelReleases(label.id)
-          push({
-            id: `label:${label.id}`,
-            type: 'label',
-            title: label.name,
-            pool: artistEntities(
-              releases,
-              { seed, store, base: 70, why: `Same label — ${label.name}`, fromArtist: false, keep, rankOwnedEqually },
-              poolSize,
-              label.name
-            )
-          })
+          const pool = await artistEntities(
+            releases,
+            { seed, store, base: 70, why: `Same label — ${label.name}`, fromArtist: false, keep, rankOwnedEqually },
+            poolSize,
+            label.name,
+            discogs,
+            labelMode === 'only'
+          )
+          push({ id: `label:${label.id}`, type: 'label', title: label.name, pool })
         } catch {
           /* best-effort per label */
         }
@@ -468,17 +512,15 @@ export async function discover(
           if (!sub.id || NON_IMPRINT_LABEL.test(sub.name || '')) continue
           try {
             const { releases = [] } = await discogs.getLabelReleases(sub.id)
-            push({
-              id: `sublabel:${sub.id}`,
-              type: 'label',
-              title: sub.name,
-              pool: artistEntities(
-                releases,
-                { seed, store, base: 58, why: `Sister label — ${sub.name}`, fromArtist: false, keep, rankOwnedEqually },
-                poolSize,
-                sub.name
-              )
-            })
+            const pool = await artistEntities(
+              releases,
+              { seed, store, base: 58, why: `Sister label — ${sub.name}`, fromArtist: false, keep, rankOwnedEqually },
+              poolSize,
+              sub.name,
+              discogs,
+              labelMode === 'only'
+            )
+            push({ id: `sublabel:${sub.id}`, type: 'label', title: sub.name, pool })
           } catch {
             /* best-effort per sub-label */
           }

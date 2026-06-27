@@ -93,6 +93,9 @@ export interface LineageWebController {
     label: string,
     picks: { artist: string; title: string; why?: string }[]
   ) => void
+  /** Graft fully-formed branches onto the origin seed — used to stream in the
+   *  slow, genre-enriched label route after the fast branches are already shown. */
+  addRootBranches: (directions: Direction[]) => void
   destroy: () => void
 }
 
@@ -986,6 +989,11 @@ export function createLineageWeb(
         showTracks(dirNode)
         select(dirNode)
       }
+    },
+    addRootBranches: (directions) => {
+      const seedNode = originId ? cy.$id(originId) : null
+      if (!seedNode || !seedNode.length || !directions.length) return
+      addDirections(seedNode, directions)
     },
     destroy: () => {
       cancelAnimationFrame(raf)

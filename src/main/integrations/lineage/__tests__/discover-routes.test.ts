@@ -272,3 +272,46 @@ function majorSeedDiscogs(): DiscogsClient {
     })
   } as unknown as DiscogsClient
 }
+
+// ── Genre-enriched label pass (labelMode: 'only') ─────────────────────────────
+const genreSeed = (): Seed => ({
+  ...bareSeed(),
+  styles: ['Tech House'],
+  labels: [{ id: 5, name: 'Testone Records' }]
+})
+const genreDiscogs = (): DiscogsClient =>
+  ({
+    searchRelease: async () => ({ results: [] }),
+    getLabel: async () => ({ sublabels: [] }),
+    getLabelReleases: async () => ({
+      releases: [
+        { id: 1, artist: 'Alpha', title: 'Tech Trk', year: 2020 },
+        { id: 3, artist: 'Beta', title: 'Rock Trk', year: 2019 }
+      ]
+    }),
+    getRelease: async (id: number) => ({
+      id,
+      title: 't',
+      year: 2020,
+      styles: id === 1 ? ['Tech House'] : ['Indie Rock'],
+      genres: []
+    })
+  }) as unknown as DiscogsClient
+
+describe('discover — genre-enriched label pass', () => {
+  it("keeps only artists whose release shares the seed's style", async () => {
+    const store = new LineageStore(':memory:')
+    const res = await discover(genreDiscogs(), store, genreSeed(), { labelMode: 'only' })
+    store.close()
+    const dir = res.directions.find((d) => d.type === 'label')!
+    expect(dir).toBeDefined()
+    expect(dir.pool.map((c) => c.artist)).toEqual(['Alpha']) // Beta (Indie Rock) dropped
+  })
+
+  it("'skip' mode omits the label route entirely (the fast pass)", async () => {
+    const store = new LineageStore(':memory:')
+    const res = await discover(genreDiscogs(), store, genreSeed(), { labelMode: 'skip' })
+    store.close()
+    expect(res.directions.find((d) => d.type === 'label')).toBeUndefined()
+  })
+})

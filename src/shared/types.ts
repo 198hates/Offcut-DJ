@@ -877,6 +877,14 @@ export interface DiscoverOptions {
   rootSeedKey?: string
   /** Route / year / label / owned filters. */
   filters?: DiscoverFilters
+  /**
+   * Label-route phasing for progressive digs:
+   *  - 'include' (default) — run the label route inline with everything else.
+   *  - 'skip'   — omit it (the fast first pass, so the graph appears immediately).
+   *  - 'only'   — run ONLY the (genre-enriched) label route — the slow second
+   *               pass streamed in once its artists are matched to the seed.
+   */
+  labelMode?: 'include' | 'skip' | 'only'
 }
 
 /** The seed echoed back by discover(), carrying its place in the dig chain. */
