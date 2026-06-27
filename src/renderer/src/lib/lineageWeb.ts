@@ -881,22 +881,16 @@ export function createLineageWeb(
       pathPts.push({ x: bx - uy * off, y: by + ux * off })
     }
     if (pathPts.length < 2) return
-    const o = col('--orange')
-    const a = col('--amber')
-    strokeSmooth(pathPts, o, 3.5, 0.09, 8) // soft halo
-    strokeSmooth(pathPts, a, 1.8, 0.4, 4) // glow
-    strokeSmooth(pathPts, '#ffe7cb', 1.1, 0.92, 2) // crisp core
-    // A subtle pulse travelling the line home to the origin.
+    // Flat, crisp sine — no glow pass.
+    strokeSmooth(pathPts, col('--orange'), 1.4, 0.9, 0)
+    // A brighter pulse travelling the line home to the origin.
     const idx = Math.min(pathPts.length - 1, Math.floor((flow % 1) * (pathPts.length - 1)))
-    strokeSmooth(pathPts.slice(Math.max(0, idx - 10), idx + 1), '#fff2de', 1.6, 0.5, 6)
+    strokeSmooth(pathPts.slice(Math.max(0, idx - 10), idx + 1), '#ffe7cb', 1.6, 0.9, 0)
     const head = pathPts[idx]
     wctx.beginPath()
-    wctx.arc(head.x, head.y, 2, 0, Math.PI * 2)
-    wctx.fillStyle = '#fff'
-    wctx.shadowColor = a
-    wctx.shadowBlur = 8
+    wctx.arc(head.x, head.y, 1.8, 0, Math.PI * 2)
+    wctx.fillStyle = '#ffe7cb'
     wctx.fill()
-    wctx.shadowBlur = 0
   }
 
   // ── sync loop ──────────────────────────────────────────────────────────────
