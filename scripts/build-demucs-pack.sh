@@ -20,17 +20,20 @@ cd "$(dirname "$0")/.."
 
 OUT=build/demucs-pack
 case "$(uname -s)-$(uname -m)" in
-  Darwin-arm64)  KEY=mac-arm64 ;;
-  Darwin-x86_64) KEY=mac-x64 ;;
-  *)             KEY="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)" ;;  # Windows: run via Git Bash, set KEY=win-x64
+  Darwin-arm64)                              KEY=mac-arm64 ;;
+  Darwin-x86_64)                             KEY=mac-x64 ;;
+  MINGW*-x86_64|MSYS*-x86_64|CYGWIN*-x86_64) KEY=win-x64 ;;
+  *)                                         KEY="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)" ;;
 esac
-echo "==> building offcut-demucs pack for: $KEY"
+KEY="${PACK_KEY:-$KEY}"   # explicit override wins (e.g. CI sets PACK_KEY=win-x64)
+PY="${PYTHON:-python3}"   # CI / an x64-Rosetta venv can point at a specific interpreter
+echo "==> building offcut-demucs pack for: $KEY (python: $PY)"
 
 rm -rf "$OUT"; mkdir -p "$OUT/torch-home"
 
 # 1. Pre-fetch htdemucs weights into a torch-home we bundle → fully offline at runtime.
 echo "==> pre-fetching htdemucs weights…"
-TORCH_HOME="$PWD/$OUT/torch-home" python3 -c "from demucs.pretrained import get_model; get_model('htdemucs')"
+TORCH_HOME="$PWD/$OUT/torch-home" "$PY" -c "from demucs.pretrained import get_model; get_model('htdemucs')"
 
 # 2. Standalone entrypoint. freeze_support() makes multiprocessing-spawned
 #    children re-exec as workers instead of re-running the demucs CLI (which
@@ -47,7 +50,7 @@ PY
 #    2.x's deprecated `numpy.core` compat shim that the model pickle needs
 #    (it's loaded lazily during unpickle, so PyInstaller misses it otherwise).
 echo "==> freezing with PyInstaller (several minutes)…"
-python3 -m PyInstaller --noconfirm --onedir --name offcut-demucs \
+"$PY" -m PyInstaller --noconfirm --onedir --name offcut-demucs \
   --collect-all demucs --collect-all torch --collect-all torchaudio \
   --collect-all julius --collect-all dora --collect-all openunmix \
   --collect-all lameenc --collect-all einops --collect-all numpy \

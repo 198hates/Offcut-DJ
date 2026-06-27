@@ -1,0 +1,49 @@
+name: Build stem packs
+
+# Manually build the per-platform Demucs stem packs and upload them to the
+# `stems-pack-v1` release (the app downloads the right one on demand). PyInstaller
+# can't cross-compile, so each pack is frozen on its native OS.
+#
+# Intel macOS isn't here: GitHub has no hosted Intel runner (see release.yml).
+# Build that one locally with `scripts/build-demucs-pack.sh` under an x64 Python.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pack:
+    name: ${{ matrix.key }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            key: win-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Demucs + PyInstaller (CPU torch)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install demucs torch torchaudio pyinstaller
+
+      - name: Build the pack
+        shell: bash
+        env:
+          PACK_KEY: ${{ matrix.key }}
+          PYTHON: python
+        run: bash scripts/build-demucs-pack.sh
+
+      - name: Upload to the stems-pack-v1 release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload stems-pack-v1 "build/demucs-pack/offcut-demucs-${{ matrix.key }}.tar.gz" --repo "${{ github.repository }}" --clobber
