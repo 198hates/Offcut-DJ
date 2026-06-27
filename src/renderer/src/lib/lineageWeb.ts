@@ -859,9 +859,9 @@ export function createLineageWeb(
       L += len
     }
     if (L < 2) return
-    const A = 6 // gentle amplitude
-    const lambda = 46 // long wavelength — calm wave
-    const stepd = 2 // fine sampling — smooth, not jagged
+    const A = 5 // gentle amplitude
+    const lambda = 26 // tighter wavelength — a crisper sine
+    const stepd = 1.5 // fine sampling — smooth even when tight
     const pathPts: { x: number; y: number }[] = []
     for (let d = 0; d <= L; d += stepd) {
       let s = seg[seg.length - 1]
@@ -883,18 +883,18 @@ export function createLineageWeb(
     if (pathPts.length < 2) return
     const o = col('--orange')
     const a = col('--amber')
-    strokeSmooth(pathPts, o, 8, 0.14, 24) // outer bloom
-    strokeSmooth(pathPts, a, 3.2, 0.45, 12) // mid glow
-    strokeSmooth(pathPts, '#ffe7cb', 1.5, 0.95, 7) // hot core
-    // A bright pulse travelling the line home to the origin.
+    strokeSmooth(pathPts, o, 3.5, 0.09, 8) // soft halo
+    strokeSmooth(pathPts, a, 1.8, 0.4, 4) // glow
+    strokeSmooth(pathPts, '#ffe7cb', 1.1, 0.92, 2) // crisp core
+    // A subtle pulse travelling the line home to the origin.
     const idx = Math.min(pathPts.length - 1, Math.floor((flow % 1) * (pathPts.length - 1)))
-    strokeSmooth(pathPts.slice(Math.max(0, idx - 16), idx + 1), '#fff2de', 2.4, 0.85, 14)
+    strokeSmooth(pathPts.slice(Math.max(0, idx - 10), idx + 1), '#fff2de', 1.6, 0.5, 6)
     const head = pathPts[idx]
     wctx.beginPath()
-    wctx.arc(head.x, head.y, 3.1, 0, Math.PI * 2)
+    wctx.arc(head.x, head.y, 2, 0, Math.PI * 2)
     wctx.fillStyle = '#fff'
     wctx.shadowColor = a
-    wctx.shadowBlur = 16
+    wctx.shadowBlur = 8
     wctx.fill()
     wctx.shadowBlur = 0
   }
@@ -911,7 +911,7 @@ export function createLineageWeb(
     }
     wctx.clearRect(0, 0, wave.width, wave.height)
     drawEdges()
-    phase += 0.022
+    phase += 0.016
     flow += 0.0065
     drawWave()
     raf = requestAnimationFrame(tick)
