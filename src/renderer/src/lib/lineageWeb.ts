@@ -151,6 +151,13 @@ export function createLineageWeb(
 ): LineageWebController {
   const { hydrate, onSelect } = opts
   const col = (k: string): string => getComputedStyle(host).getPropertyValue(k).trim() || '#888'
+  // #rrggbb (or #rgb) → rgba() so canvas strokes can fade with distance.
+  const hexA = (hex: string, a: number): string => {
+    const h = hex.replace('#', '')
+    const f = h.length === 3 ? h.replace(/./g, '$&$&') : h
+    const n = parseInt(f.slice(0, 6) || '888888', 16)
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
+  }
 
   // ── layered DOM: cy mount · wave canvas · card overlay ───────────────────
   host.innerHTML = ''
@@ -194,15 +201,12 @@ export function createLineageWeb(
     style: [
       // Invisible nodes; their width/height is the card footprint so fcose keeps
       // the HTML cards from overlapping (the cards are positioned over the nodes).
-      { selector: 'node', style: { opacity: 0, events: 'no', shape: 'rectangle', width: 156, height: 96 } },
-      { selector: 'node[kind="dir"]', style: { width: 172, height: 54 } },
-      { selector: 'edge', style: { width: 1.4, 'line-color': '#3a2f22', 'curve-style': 'bezier', opacity: 0.8 } },
-      ...(Object.keys(TCOL) as RouteType[]).map((t) => ({
-        selector: `edge[type="${t}"]`,
-        style: { 'line-color': TCOL[t], opacity: 0.5 }
-      })),
-      { selector: 'edge.tk', style: { 'line-color': '#473a2a', opacity: 0.38, width: 1.1 } },
-      { selector: 'edge.lineage', style: { opacity: 0 } }
+      { selector: 'node', style: { opacity: 0, events: 'no', shape: 'rectangle', width: 162, height: 118 } },
+      { selector: 'node[kind="dir"]', style: { width: 192, height: 64 } },
+      // Edges are hand-drawn on the wave canvas (glowing gradients that run under
+      // the cards). Cytoscape's own edges stay invisible but keep the graph
+      // topology and drive the force layout.
+      { selector: 'edge', style: { opacity: 0, width: 1, events: 'no' } }
     ],
     layout: { name: 'preset' }
   })
@@ -434,13 +438,14 @@ export function createLineageWeb(
       fit: true,
       padding: 80,
       nodeDimensionsIncludeLabels: false,
-      nodeRepulsion: 10500,
+      nodeRepulsion: 17000,
+      nodeSeparation: 130,
       // route edges (seed→direction) sit wider than track edges (direction→track)
-      idealEdgeLength: (e: EdgeSingular) => (e.hasClass('tk') ? 150 : 260),
-      edgeElasticity: 0.4,
-      gravity: 0.32,
+      idealEdgeLength: (e: EdgeSingular) => (e.hasClass('tk') ? 165 : 290),
+      edgeElasticity: 0.34,
+      gravity: 0.28,
       gravityRange: 3.6,
-      numIter: 1800,
+      numIter: 2200,
       // keep the origin anchored at the centre so the web grows around it
       fixedNodeConstraint: originId ? [{ nodeId: originId, position: { x: CX, y: CY } }] : []
     }
@@ -488,6 +493,31 @@ export function createLineageWeb(
     return n
   }
 
+  // Place fresh children in a ring around their parent so the force layout fans
+  // them out radially instead of expanding a coincident cluster into a line. The
+  // origin gets a full circle; deeper nodes fan outward, away from their parent's
+  // own incoming edge.
+  function seedRing(parent: NodeSingular, nodes: NodeSingular[]): void {
+    const p = parent.position()
+    const n = nodes.length
+    if (!n) return
+    const inc = parent.incomers('node').first() as NodeSingular
+    if (inc && inc.length) {
+      const ip = inc.position()
+      const base = Math.atan2(p.y - ip.y, p.x - ip.x) // points away from grandparent
+      const spread = Math.min(Math.PI * 1.5, 0.6 + n * 0.5)
+      nodes.forEach((node, i) => {
+        const a = n === 1 ? base : base - spread / 2 + (spread * i) / (n - 1)
+        node.position({ x: p.x + Math.cos(a) * 74, y: p.y + Math.sin(a) * 74 })
+      })
+    } else {
+      nodes.forEach((node, i) => {
+        const a = (i / n) * Math.PI * 2 - Math.PI / 2
+        node.position({ x: p.x + Math.cos(a) * 82, y: p.y + Math.sin(a) * 82 })
+      })
+    }
+  }
+
   function addDirections(seedNode: NodeSingular, directions: Direction[]): NodeSingular[] {
     const nodes = directions.map((d) => {
       const id = uid('dir')
@@ -506,9 +536,9 @@ export function createLineageWeb(
       makeCard(n)
       return n
     })
-    // start new nodes at the parent so the force layout fans them out smoothly
-    const sp = seedNode.position()
-    nodes.forEach((n) => n.position({ x: sp.x, y: sp.y }))
+    // Seed new nodes in a ring around the parent (not all on the same point) so
+    // the force layout fans them out radially instead of collapsing to a line.
+    seedRing(seedNode, nodes)
     if (nodes.length) runLayout()
     return nodes
   }
@@ -592,8 +622,7 @@ export function createLineageWeb(
       d.trackNodes.push(id)
       return n
     })
-    const dp = dirNode.position()
-    nodes.forEach((n) => n.position({ x: dp.x, y: dp.y }))
+    seedRing(dirNode, nodes)
     if (nodes.length) runLayout()
     d.expanded = true
   }
@@ -711,6 +740,7 @@ export function createLineageWeb(
   let lineageEdges: EdgeCollection = cy.collection()
   let lineagePath: string[] = []
   let phase = 0
+  let flow = 0 // advances the travelling pulse along the live path
   function pathToRoot(node: NodeSingular): EdgeCollection {
     let edges: EdgeCollection = cy.collection()
     let cur: NodeSingular = node
@@ -753,8 +783,66 @@ export function createLineageWeb(
     wave.style.height = r.height + 'px'
     wctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   }
+  // Smooth a point list into a quadratic path and stroke it with a glow.
+  function strokeSmooth(
+    pts: { x: number; y: number }[],
+    color: string,
+    width: number,
+    alpha: number,
+    blur: number
+  ): void {
+    if (pts.length < 2) return
+    wctx.beginPath()
+    wctx.moveTo(pts[0].x, pts[0].y)
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i].x + pts[i + 1].x) / 2
+      const my = (pts[i].y + pts[i + 1].y) / 2
+      wctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my)
+    }
+    const last = pts[pts.length - 1]
+    wctx.lineTo(last.x, last.y)
+    wctx.strokeStyle = color
+    wctx.lineWidth = width
+    wctx.lineCap = 'round'
+    wctx.lineJoin = 'round'
+    wctx.shadowColor = color
+    wctx.shadowBlur = blur
+    wctx.globalAlpha = alpha
+    wctx.stroke()
+    wctx.shadowBlur = 0
+    wctx.globalAlpha = 1
+  }
+
+  // Every structural edge, hand-drawn as a glowing gradient that fades from the
+  // parent into the branch's route colour. Drawn under the cards so each line
+  // emerges cleanly at the card edge instead of stopping short at the node box.
+  function drawEdges(): void {
+    cy.edges().forEach((e) => {
+      if (e.hasClass('lineage')) return // the live path is the bright wave instead
+      const s = e.source().renderedPosition()
+      const t = e.target().renderedPosition()
+      if (!isFinite(s.x) || !isFinite(t.x)) return
+      const tk = e.hasClass('tk')
+      const type = (e.data('type') || e.source().data('type')) as RouteType | undefined
+      const color = type ? TCOL[type] || col('--orange') : col('--silver')
+      const grad = wctx.createLinearGradient(s.x, s.y, t.x, t.y)
+      grad.addColorStop(0, hexA(color, tk ? 0.04 : 0.1))
+      grad.addColorStop(0.55, hexA(color, tk ? 0.2 : 0.38))
+      grad.addColorStop(1, hexA(color, tk ? 0.55 : 0.92))
+      wctx.beginPath()
+      wctx.moveTo(s.x, s.y)
+      wctx.lineTo(t.x, t.y)
+      wctx.strokeStyle = grad
+      wctx.lineWidth = tk ? 1.3 : 2
+      wctx.lineCap = 'round'
+      wctx.shadowColor = color
+      wctx.shadowBlur = tk ? 3 : 7
+      wctx.stroke()
+    })
+    wctx.shadowBlur = 0
+  }
+
   function drawWave(): void {
-    wctx.clearRect(0, 0, wave.width, wave.height)
     if (lineagePath.length < 2) return
     const pts = lineagePath
       .map((id) => cy.$id(id))
@@ -771,10 +859,9 @@ export function createLineageWeb(
       L += len
     }
     if (L < 2) return
-    const A = 6 // gentler amplitude
-    const lambda = 46 // longer wavelength — calmer wave
-    const stepd = 2 // finer sampling — smooth, not jagged
-    // Collect points first, then render as a smoothed (quadratic) path.
+    const A = 6 // gentle amplitude
+    const lambda = 46 // long wavelength — calm wave
+    const stepd = 2 // fine sampling — smooth, not jagged
     const pathPts: { x: number; y: number }[] = []
     for (let d = 0; d <= L; d += stepd) {
       let s = seg[seg.length - 1]
@@ -794,26 +881,22 @@ export function createLineageWeb(
       pathPts.push({ x: bx - uy * off, y: by + ux * off })
     }
     if (pathPts.length < 2) return
-    wctx.beginPath()
-    wctx.moveTo(pathPts[0].x, pathPts[0].y)
-    for (let i = 1; i < pathPts.length - 1; i++) {
-      const mx = (pathPts[i].x + pathPts[i + 1].x) / 2
-      const my = (pathPts[i].y + pathPts[i + 1].y) / 2
-      wctx.quadraticCurveTo(pathPts[i].x, pathPts[i].y, mx, my)
-    }
-    const last = pathPts[pathPts.length - 1]
-    wctx.lineTo(last.x, last.y)
     const o = col('--orange')
-    wctx.strokeStyle = o
-    wctx.lineWidth = 1.6
-    wctx.lineCap = 'round'
-    wctx.lineJoin = 'round'
-    wctx.shadowColor = o
-    wctx.shadowBlur = 5
-    wctx.globalAlpha = 0.9
-    wctx.stroke()
+    const a = col('--amber')
+    strokeSmooth(pathPts, o, 8, 0.14, 24) // outer bloom
+    strokeSmooth(pathPts, a, 3.2, 0.45, 12) // mid glow
+    strokeSmooth(pathPts, '#ffe7cb', 1.5, 0.95, 7) // hot core
+    // A bright pulse travelling the line home to the origin.
+    const idx = Math.min(pathPts.length - 1, Math.floor((flow % 1) * (pathPts.length - 1)))
+    strokeSmooth(pathPts.slice(Math.max(0, idx - 16), idx + 1), '#fff2de', 2.4, 0.85, 14)
+    const head = pathPts[idx]
+    wctx.beginPath()
+    wctx.arc(head.x, head.y, 3.1, 0, Math.PI * 2)
+    wctx.fillStyle = '#fff'
+    wctx.shadowColor = a
+    wctx.shadowBlur = 16
+    wctx.fill()
     wctx.shadowBlur = 0
-    wctx.globalAlpha = 1
   }
 
   // ── sync loop ──────────────────────────────────────────────────────────────
@@ -826,7 +909,10 @@ export function createLineageWeb(
       const p = n.renderedPosition()
       el.style.transform = `translate(${p.x}px,${p.y}px) translate(-50%,-50%) scale(${z})`
     }
+    wctx.clearRect(0, 0, wave.width, wave.height)
+    drawEdges()
     phase += 0.022
+    flow += 0.0065
     drawWave()
     raf = requestAnimationFrame(tick)
   }

@@ -31,6 +31,7 @@
   color: var(--text);
   overflow: hidden;
   background:
+    radial-gradient(58% 54% at 46% 50%, #241b12 0%, transparent 72%),
     radial-gradient(125% 95% at 10% -12%, #1c1611 0%, transparent 52%),
     radial-gradient(125% 95% at 100% 112%, #1f1509 0%, transparent 48%),
     var(--ink);
@@ -921,6 +922,9 @@
   outline: 1.5px solid var(--text);
   outline-offset: 2px;
   border-radius: 9px;
+  /* filter isn't overridden by the per-card box-shadows, so the glow lands on
+     dir / track / seed cards alike. */
+  filter: drop-shadow(0 0 9px rgba(235, 229, 211, 0.4));
 }
 /* dig loading state — pulsing ring + spinner so it's clear the node is enriching */
 .cd-cy .card.digging {
@@ -1024,11 +1028,21 @@
 
 .cd-cy .card.track {
   width: 132px;
-  background: var(--panel);
-  border: 1px solid #2b4435;
-  border-radius: 8px;
+  background: linear-gradient(165deg, #1d1812 0%, #14110c 100%);
+  border: 1px solid #34291c;
+  border-radius: 9px;
   padding: 9px 10px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 9px 24px rgba(0, 0, 0, 0.52);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.cd-cy .card.track:hover {
+  border-color: rgba(194, 104, 62, 0.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 12px 28px rgba(0, 0, 0, 0.55),
+    0 0 22px -6px var(--orange);
 }
 .cd-cy .card.track .meta {
   display: flex;
@@ -1060,7 +1074,11 @@
   font-weight: 700;
   font-size: 10.5px;
   color: #0d0d0f;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -3px 7px rgba(0, 0, 0, 0.18),
+    0 8px 20px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.14);
   white-space: nowrap;
 }
 .cd-cy .card.dir.t-remix {
@@ -1149,11 +1167,14 @@
 
 .cd-cy .card.seed {
   width: 110px;
-  background: #1a1207;
+  background: radial-gradient(120% 120% at 50% 0%, #241606 0%, #160f07 100%);
   border: 1.5px solid var(--orange);
   border-radius: 9px;
   padding: 9px;
-  box-shadow: 0 0 0 4px rgba(239, 122, 60, 0.12), 0 6px 20px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 0 0 4px rgba(194, 104, 62, 0.14),
+    0 0 34px -2px rgba(194, 104, 62, 0.5),
+    0 10px 28px rgba(0, 0, 0, 0.55);
 }
 .cd-cy .card.seed .cap {
   font-size: 8.5px;
