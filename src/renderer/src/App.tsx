@@ -20,6 +20,7 @@ import { SetHistoryPage } from './pages/SetHistory'
 import { Sidebar } from './components/Sidebar'
 import { NavRail } from './components/NavRail'
 import type { Section } from './components/NavRail'
+import { PageHelp } from './components/PageHelp'
 import { Titlebar } from './components/Titlebar'
 import { TrackDetail } from './components/TrackDetail'
 import { Toast } from './components/Toast'
@@ -140,7 +141,7 @@ export default function App(): JSX.Element {
       <Titlebar />
       {activePage === 'library' && <FnBus />}
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
         <NavRail active={activePage} onNavigate={setActivePage} />
         {activePage === 'library' && <ErrorBoundary name="sidebar" inline><Sidebar /></ErrorBoundary>}
         <main className="flex-1 overflow-hidden flex bg-chassis">
@@ -180,6 +181,7 @@ export default function App(): JSX.Element {
             </ErrorBoundary>
           )}
         </main>
+        <PageHelp page={activePage} />
       </div>
 
       {activePage === 'lineage' ? (
