@@ -22,12 +22,14 @@ jobs:
           - name: macOS Apple Silicon (arm64)
             os: macos-14
             ebflags: --mac --arm64
-          # Intel macOS — built natively on GitHub's Intel runner (host == target),
-          # so the x64 ffmpeg-static / onnxruntime-node prebuilts are correct
-          # (they can't be cross-produced on an arm64 host).
-          - name: macOS Intel (x64)
-            os: macos-13
-            ebflags: --mac --x64
+          # Intel macOS is deliberately NOT in this matrix. GitHub's hosted Intel
+          # runner (macos-13) does not get scheduled for this repo — a tagged run
+          # would leave the x64 job queued forever and, because the publish job
+          # `needs: build`, hang the whole release (verified 2026-06-27: arm64 +
+          # Windows finished while macos-13 sat queued 9+ min). Build Intel natively
+          # on an Intel Mac with `npm run build:mac:x64`, or via an x64 Node
+          # toolchain under Rosetta (the x64 ffmpeg-static / onnxruntime-node
+          # prebuilts can't be cross-produced on an arm64 host).
           - name: Windows (x64)
             os: windows-latest
             ebflags: --win --x64
