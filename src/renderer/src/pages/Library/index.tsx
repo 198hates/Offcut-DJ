@@ -19,6 +19,7 @@ import { SetTimeline } from '../../components/SetTimeline'
 import { keyBlipColor } from '../../components/CamelotWheel'
 import { compatibilityScore } from '../../lib/compatibility'
 import { usePreview } from '../../hooks/usePreview'
+import { useTrackPreview } from '../../store/trackPreviewStore'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
 import { useToastStore } from '../../store/toastStore'
 import { useWaveformStore, displayKey } from '../../store/waveformStore'
@@ -34,7 +35,7 @@ const OVERSCAN      = 8
 interface ColumnDef {
   id: string
   /** Omitted for non-sortable columns (e.g. the waveform preview). */
-  sortKey?: keyof Track
+  sortKey?: SortKey
   label: string
   width: string
   defaultVisible: boolean
@@ -53,6 +54,7 @@ const COLUMN_DEFS: ColumnDef[] = [
   { id: 'mood',            sortKey: 'mood',            label: 'Mood',     width: '52px',  defaultVisible: true  },
   { id: 'rating',          sortKey: 'rating',          label: '★',        width: '52px',  defaultVisible: true  },
   { id: 'durationSeconds', sortKey: 'durationSeconds', label: 'Time',     width: '54px',  defaultVisible: true  },
+  { id: 'bitrate',         sortKey: 'bitrate',         label: 'kbps',     width: '54px',  defaultVisible: true  },
   { id: 'fileType',        sortKey: 'fileType',        label: 'Fmt',      width: '38px',  defaultVisible: false },
   { id: 'fileSize',        sortKey: 'fileSize',        label: 'Size',     width: '52px',  defaultVisible: false },
   { id: 'bitDepth',        sortKey: 'bitDepth',        label: 'Bits',     width: '42px',  defaultVisible: false },
@@ -60,7 +62,15 @@ const COLUMN_DEFS: ColumnDef[] = [
   { id: 'updatedAt',       sortKey: 'updatedAt',       label: 'Modified', width: '72px',  defaultVisible: false },
 ]
 
-type SortKey = keyof Track
+// 'bitrate' is a virtual key — derived from fileSize + duration, not a Track field.
+type SortKey = keyof Track | 'bitrate'
+
+/** Average bitrate in kbps from file size + duration (null if unknown). */
+function bitrateKbps(t: Track): number | null {
+  return t.fileSize && t.durationSeconds
+    ? Math.round((t.fileSize * 8) / t.durationSeconds / 1000)
+    : null
+}
 type SortDir = 'asc' | 'desc'
 interface SortLevel { key: SortKey; dir: SortDir }
 
@@ -78,7 +88,7 @@ export function LibraryPage(): JSX.Element {
   const showToast = useToastStore((s) => s.show)
   const loadTrackA = useDeckAStore((s) => s.loadTrack)
   const loadTrackB = useDeckBStore((s) => s.loadTrack)
-  const { toggle: previewToggle } = usePreview()
+  const { toggle: previewToggle, previewId: activePreviewId, stop: stopPreviewGlobal } = usePreview()
   const filteredTracks = useLibraryStore((s) => s.filteredTracks())
   const allTracks = useLibraryStore((s) => s.tracks)
   const automix = useAutomixStore()
@@ -165,9 +175,14 @@ export function LibraryPage(): JSX.Element {
   const sorted = useMemo(() => {
     return [...filteredTracks].sort((a, b) => {
       for (const { key, dir } of sortSpec) {
-        const av = a[key] ?? ''
-        const bv = b[key] ?? ''
-        const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true })
+        let cmp: number
+        if (key === 'bitrate') {
+          cmp = (bitrateKbps(a) ?? -1) - (bitrateKbps(b) ?? -1)
+        } else {
+          const av = a[key] ?? ''
+          const bv = b[key] ?? ''
+          cmp = String(av).localeCompare(String(bv), undefined, { numeric: true })
+        }
         if (cmp !== 0) return dir === 'asc' ? cmp : -cmp
       }
       return 0
@@ -266,6 +281,12 @@ export function LibraryPage(): JSX.Element {
       e.preventDefault()
       const target = lastClickedId ? sorted.find((t) => t.id === lastClickedId) : null
       if (target) previewToggle(target)
+      return
+    }
+    // Escape — stop a running preview (e.g. a click-to-preview on the waveform)
+    if (e.key === 'Escape' && useTrackPreview.getState().previewId) {
+      e.preventDefault()
+      useTrackPreview.getState().stop()
       return
     }
     // Delete / Backspace — remove from active playlist (or nothing if all-tracks view)
@@ -396,6 +417,17 @@ export function LibraryPage(): JSX.Element {
                 </button>
               </span>
             )
+          )}
+
+          {/* Stop the running track preview — always reachable while a preview plays */}
+          {activePreviewId && (
+            <button
+              onClick={() => stopPreviewGlobal()}
+              title="Stop the track preview (Esc)"
+              className="ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[12px] bg-accent/10 text-accent transition-colors"
+            >
+              ■ stop preview
+            </button>
           )}
           {activePlaylist && sorted.length >= 1 && (
             <button
@@ -591,8 +623,6 @@ interface TrackRowProps {
 // process to compute + cache them (throttled queue), showing a faint synthetic
 // silhouette until the real shape arrives.
 const MINI_WAVE_BARS = 38
-const MINI_WAVE_GRAD =
-  'linear-gradient(180deg,#EDE3CB,#C9A02C 26%,#C2683E 50%,#C9A02C 74%,#EDE3CB)'
 
 // Throttled lazy-load queue, shared across all rows (only visible rows request).
 const peaksCache = new Map<string, number[]>()
@@ -624,17 +654,6 @@ function fnv1a(s: string): number {
   return h >>> 0
 }
 
-/** Group stored peaks (~128) into N display bars (max-per-group). */
-function barsFromPeaks(peaks: number[], n: number): number[] {
-  if (peaks.length <= n) return peaks
-  const per = peaks.length / n
-  return Array.from({ length: n }, (_, b) => {
-    let m = 0
-    for (let i = Math.floor(b * per); i < Math.floor((b + 1) * per); i++) if (peaks[i] > m) m = peaks[i]
-    return Math.max(0.04, m)
-  })
-}
-
 /** Stable synthetic silhouette — placeholder until real peaks load. */
 function syntheticBars(track: Track): number[] {
   let seed = fnv1a(track.id || track.filePath || track.title || 'x') || 1
@@ -646,9 +665,24 @@ function syntheticBars(track: Track): number[] {
   })
 }
 
+// Canvas mini-overview drawn the SAME way as the deck's OverviewWaveform:
+// a centre-mirrored amplitude envelope under the earthen CDJ vertical gradient
+// (cream edges → amber → terracotta centre). Clicking previews the track from
+// that point (Rekordbox-style), with a played-region wash + playhead.
+const MINI_WAVE_H = 24
+
 function MiniWaveform({ track }: { track: Track }): JSX.Element {
   const [peaks, setPeaks] = useState<number[] | null>(
     track.overviewPeaks ?? peaksCache.get(track.id) ?? null
+  )
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const previewAt   = useTrackPreview((s) => s.previewAt)
+  const stopPreview = useTrackPreview((s) => s.stop)
+  const previewing  = useTrackPreview((s) => s.previewId === track.id)
+  // -1 when this row isn't the active preview, so non-previewing rows never
+  // re-render on the per-frame position ticks.
+  const posFrac = useTrackPreview((s) =>
+    s.previewId === track.id && s.trackDurationSec > 0 ? s.posSec / s.trackDurationSec : -1
   )
 
   useEffect(() => {
@@ -659,21 +693,89 @@ function MiniWaveform({ track }: { track: Track }): JSX.Element {
   }, [track.id, track.filePath, track.overviewPeaks])
 
   const real = peaks != null
-  const bars = useMemo(
-    () => (peaks ? barsFromPeaks(peaks, MINI_WAVE_BARS) : syntheticBars(track)),
-    [peaks, track.id, track.energy]
-  )
+  const data = useMemo(() => peaks ?? syntheticBars(track), [peaks, track.id, track.energy])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const dpr = window.devicePixelRatio || 1
+    const cssW = canvas.clientWidth || 50
+    canvas.width  = Math.max(1, Math.round(cssW * dpr))
+    canvas.height = Math.round(MINI_WAVE_H * dpr)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const cw = canvas.width, ch = canvas.height, mid = ch / 2
+    ctx.clearRect(0, 0, cw, ch)
+    if (!data.length) return
+
+    // Earthen CDJ gradient — identical stops to OverviewWaveform.
+    const uGrad = ctx.createLinearGradient(0, 0, 0, ch)
+    uGrad.addColorStop(0,    'rgba(107,90,62,0.70)')
+    uGrad.addColorStop(0.16, 'rgba(240,228,196,0.92)')
+    uGrad.addColorStop(0.30, 'rgba(224,162,60,1.0)')
+    uGrad.addColorStop(0.50, 'rgba(194,104,62,1.0)')
+    uGrad.addColorStop(0.70, 'rgba(224,162,60,1.0)')
+    uGrad.addColorStop(0.84, 'rgba(240,228,196,0.92)')
+    uGrad.addColorStop(1,    'rgba(107,90,62,0.70)')
+    const pGrad = ctx.createLinearGradient(0, 0, 0, ch)
+    pGrad.addColorStop(0,   'rgba(46,38,26,0.40)')
+    pGrad.addColorStop(0.5, 'rgba(82,58,30,0.55)')
+    pGrad.addColorStop(1,   'rgba(46,38,26,0.40)')
+
+    ctx.globalAlpha = real ? 1 : 0.3
+    // Discrete bars with a gap (rather than a solid per-pixel fill) + a little
+    // amplitude headroom read much better at this small size.
+    const n = data.length, SCALE = 0.80
+    const barW = Math.max(1, Math.round(1.5 * dpr))
+    const step = barW + Math.max(1, Math.round(dpr))
+    const nBars = Math.max(1, Math.floor(cw / step))
+    for (let bi = 0; bi < nBars; bi++) {
+      const x = bi * step
+      const a = Math.floor((bi / nBars) * n)
+      const b = Math.max(a + 1, Math.floor(((bi + 1) / nBars) * n))
+      let v = 0
+      for (let i = a; i < b && i < n; i++) if (data[i] > v) v = data[i]
+      const bh = v * mid * SCALE
+      if (bh < 0.4) continue
+      ctx.fillStyle = (previewing && posFrac >= 0 && x / cw < posFrac) ? pGrad : uGrad
+      ctx.fillRect(x, mid - bh, barW, bh * 2)
+    }
+    ctx.globalAlpha = 1
+
+    if (previewing && posFrac >= 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.9)'
+      ctx.fillRect(Math.round(posFrac * cw), 0, Math.max(1, Math.round(dpr)), ch)
+    }
+  }, [data, real, previewing, posFrac])
+
+  const onPreviewClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Preview from the clicked point; let the click still bubble so the row
+    // selects (Space/Enter then act on it). Double-click is blocked below so
+    // scrubbing the waveform never loads the track onto a deck.
+    const rect = e.currentTarget.getBoundingClientRect()
+    previewAt(track, (e.clientX - rect.left) / rect.width)
+  }, [previewAt, track])
 
   return (
-    <div className="flex items-center gap-px" style={{ height: 22 }}>
-      {bars.map((h, i) => (
-        <div key={i} style={{
-          flex: 1, height: `${Math.round(h * 100)}%`,
-          minHeight: 1, borderRadius: 0.5,
-          background: MINI_WAVE_GRAD,
-          opacity: real ? 0.95 : 0.28,
-        }} />
-      ))}
+    <div className="relative" style={{ height: MINI_WAVE_H }}>
+      <canvas
+        ref={canvasRef}
+        onClick={onPreviewClick}
+        onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault() }}
+        title={previewing ? 'click to seek · ■ to stop (Esc)' : 'click to preview'}
+        className="block w-full cursor-pointer"
+        style={{ height: MINI_WAVE_H }}
+      />
+      {previewing && (
+        <button
+          onClick={(e) => { e.stopPropagation(); e.preventDefault(); stopPreview() }}
+          onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault() }}
+          title="stop preview (Esc)"
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 grid place-items-center w-4 h-4 rounded-[3px] bg-ink/85 hover:bg-ink ring-1 ring-paper/30 shadow"
+        >
+          <span className="block w-[7px] h-[7px] bg-paper rounded-[1px]" />
+        </button>
+      )}
     </div>
   )
 }
@@ -900,6 +1002,13 @@ function TrackRow({ track, isSelected, visibleColIds, onClick, onDoubleClick, on
       {show('durationSeconds') && (
         <td className="px-2 font-mono text-[13px] text-muted tabular-nums">
           {formatDuration(track.durationSeconds)}
+        </td>
+      )}
+
+      {/* Bitrate (kbps) — derived from size + duration (avg bitrate) */}
+      {show('bitrate') && (
+        <td className="px-2 font-mono text-[12px] text-muted tabular-nums">
+          {bitrateKbps(track)?.toLocaleString() ?? '—'}
         </td>
       )}
 
