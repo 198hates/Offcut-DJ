@@ -791,11 +791,106 @@ function BackupSection({ tracks, playlists }: { tracks: Track[]; playlists: Play
   )
 }
 
+// ── Audio quality (low bitrate) ─────────────────────────────────────────────────
+
+/** Average bitrate in kbps from file size + duration (null if unknown). */
+function kbpsOf(t: Track): number | null {
+  return t.fileSize && t.durationSeconds
+    ? Math.round((t.fileSize * 8) / t.durationSeconds / 1000)
+    : null
+}
+
+const QUALITY_THRESHOLDS = [128, 192, 256, 320] as const
+
+function LowQualitySection({ tracks, playlists }: { tracks: Track[]; playlists: Playlist[] }): JSX.Element {
+  const loadLibrary = useLibraryStore((s) => s.loadLibrary)
+  const [threshold, setThreshold] = useState(256)
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  // Worst-first. Lossless files compute to ~1000+ kbps so they're never flagged.
+  const lowQ = tracks
+    .map((t) => ({ t, kbps: kbpsOf(t) }))
+    .filter((x): x is { t: Track; kbps: number } => x.kbps != null && x.kbps < threshold)
+    .sort((a, b) => a.kbps - b.kbps)
+
+  const createPlaylist = useCallback(async () => {
+    setRunning(true)
+    setResult(null)
+    const name = `Low quality · under ${threshold} kbps`
+    const ids = tracks
+      .filter((t) => { const k = kbpsOf(t); return k != null && k < threshold })
+      .map((t) => t.id)
+    const existing = playlists.find((p) => p.name === name && !p.isSmart && !p.isFolder)
+    if (existing) await window.api.library.addTracksToPlaylist(existing.id, ids)
+    else {
+      const pl = await window.api.library.createPlaylist(name)
+      await window.api.library.addTracksToPlaylist(pl.id, ids)
+    }
+    await loadLibrary()
+    setResult(`✓ playlist “${name}” · ${ids.length} tracks`)
+    setRunning(false)
+  }, [tracks, threshold, playlists, loadLibrary])
+
+  return (
+    <section className="space-y-4">
+      <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">audio quality</h2>
+      <p className="font-mono text-[13px] text-muted/70">
+        finds low-bitrate lossy tracks that can sound poor on a loud system. Bitrate is the average kbps
+        (file size ÷ duration), so lossless files (WAV / AIFF / FLAC) are never flagged.
+      </p>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="font-mono text-[12px] text-muted uppercase tracking-[0.1em]">flag under</span>
+        {QUALITY_THRESHOLDS.map((k) => (
+          <button key={k} onClick={() => setThreshold(k)}
+            className={`font-mono text-[12px] px-2.5 py-1 rounded border transition-colors ${threshold === k ? 'border-accent/50 bg-accent/[0.1] text-accent' : 'border-border/30 text-muted hover:text-ink'}`}>
+            {k} kbps
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-4 flex-wrap">
+        <span className="font-mono text-[13px] text-ink">
+          <span className="font-bold">{lowQ.length.toLocaleString()}</span> track{lowQ.length !== 1 ? 's' : ''} under {threshold} kbps
+        </span>
+        {lowQ.length > 0 && (
+          <button onClick={createPlaylist} disabled={running} className={btnGhost}>
+            {running ? 'creating…' : 'create playlist'}
+          </button>
+        )}
+        {result && <span className="font-mono text-[12px] text-green-600 dark:text-green-400">{result}</span>}
+      </div>
+
+      {lowQ.length === 0 ? (
+        <p className="font-mono text-[13px] text-green-600 dark:text-green-400 flex items-center gap-2">
+          <span>✓</span> no lossy tracks under {threshold} kbps
+        </p>
+      ) : (
+        <div className="border border-border/25 rounded divide-y divide-border/15 max-h-[22rem] overflow-y-auto">
+          {lowQ.slice(0, 500).map(({ t, kbps }) => (
+            <div key={t.id} className="flex items-center gap-3 px-3 py-1.5">
+              <span className={`font-mono text-[12px] tabular-nums w-12 shrink-0 font-bold ${kbps < 160 ? 'text-red-500' : 'text-amber-500'}`}>{kbps}</span>
+              <span className="font-mono text-[13px] text-ink-soft truncate flex-1">{t.title || '—'}</span>
+              <span className="font-mono text-[12px] text-muted truncate w-40 shrink-0">{t.artist || '—'}</span>
+              <span className="font-mono text-[11px] text-muted/60 uppercase w-10 shrink-0 text-right">{t.fileType?.replace('.', '') || ''}</span>
+            </div>
+          ))}
+          {lowQ.length > 500 && (
+            <div className="px-3 py-1.5 font-mono text-[11px] text-muted/50">+{(lowQ.length - 500).toLocaleString()} more — use “create playlist” to capture them all</div>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const HEALTH_TOOLS = [
   { id: 'duplicates', label: 'Duplicates' },
   { id: 'missing', label: 'Missing files' },
+  { id: 'quality', label: 'Audio quality' },
   { id: 'history', label: 'Play history' },
   { id: 'genres', label: 'Genre playlists' },
   { id: 'backup', label: 'Backup' }
@@ -825,6 +920,7 @@ export function HealthPage(): JSX.Element {
 
         {tool === 'duplicates' && <DuplicatesSection tracks={tracks} playlists={playlists} deleteTracks={deleteTracks} />}
         {tool === 'missing' && <MissingFilesSection deleteTracks={deleteTracks} updateTrack={updateTrack} />}
+        {tool === 'quality' && <LowQualitySection tracks={tracks} playlists={playlists} />}
         {tool === 'history' && <PlayHistorySection tracks={tracks} />}
         {tool === 'genres' && <GenrePlaylistsSection tracks={tracks} playlists={playlists} />}
         {tool === 'backup' && <BackupSection tracks={tracks} playlists={playlists} />}
