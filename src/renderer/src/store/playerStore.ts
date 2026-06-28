@@ -59,6 +59,10 @@ export interface DeckStore {
   trimGain: number
   /** DJ filter knob: −1 = full low-pass, 0 = off (transparent), +1 = full high-pass. */
   filterKnob: number
+  /** Transient display override for the EQ/filter knobs while auto-mixing — the
+   *  automix controller drives the engine itself, this only makes the on-screen
+   *  knobs track the automation. null when not in a transition. */
+  fxOverride: { eqLow: number; eqMid: number; eqHigh: number; filter: number } | null
   // Performance modes
   isQuantized: boolean        // cues/loops snap to nearest beat
   slipMode: boolean           // playhead advances under loops; exits to real position
@@ -95,6 +99,8 @@ export interface DeckStore {
   setFilter: (knob: number) => void
   /** Manual input-trim knob, in dB (drives the linear trimGain stage). */
   setTrimDb: (db: number) => void
+  /** Set/clear the automix EQ/filter display override (UI-only; no engine call). */
+  setFxOverride: (o: { eqLow: number; eqMid: number; eqHigh: number; filter: number } | null) => void
   pressCue: () => void
   setCue: (index: number) => Promise<void>
   clearCue: (index: number) => Promise<void>
@@ -309,6 +315,7 @@ function createDeckStore(deckId: 'A' | 'B') {
       eqLow:  0,
       trimGain: 1,
       filterKnob: 0,
+      fxOverride: null,
       isQuantized: false,
       slipMode: false,
       fluxEnabled: false,
@@ -451,6 +458,8 @@ function createDeckStore(deckId: 'A' | 'B') {
         engine.setFilter(k)
         set({ filterKnob: k })
       },
+
+      setFxOverride: (o) => set({ fxOverride: o }),
 
       // Manual input trim → linear trimGain stage (lib/mixBus applies it as
       // trim × fader × crossfader). Overrides the auto-gain value until reload.

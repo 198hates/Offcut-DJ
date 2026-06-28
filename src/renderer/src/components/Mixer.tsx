@@ -376,6 +376,7 @@ export function Mixer(): JSX.Element {
   const eqHighA    = useDeckAStore((s) => s.eqHigh)
   const eqMidA     = useDeckAStore((s) => s.eqMid)
   const eqLowA     = useDeckAStore((s) => s.eqLow)
+  const fxA        = useDeckAStore((s) => s.fxOverride)
   const isPlayingA = useDeckAStore((s) => s.isPlaying)
   const hasTrackA  = useDeckAStore((s) => !!s.currentTrack)
   const engineA    = useDeckAStore((s) => s._engine)
@@ -388,6 +389,7 @@ export function Mixer(): JSX.Element {
   const eqHighB    = useDeckBStore((s) => s.eqHigh)
   const eqMidB     = useDeckBStore((s) => s.eqMid)
   const eqLowB     = useDeckBStore((s) => s.eqLow)
+  const fxB        = useDeckBStore((s) => s.fxOverride)
   const isPlayingB = useDeckBStore((s) => s.isPlaying)
   const hasTrackB  = useDeckBStore((s) => !!s.currentTrack)
   const engineB    = useDeckBStore((s) => s._engine)
@@ -409,7 +411,9 @@ export function Mixer(): JSX.Element {
       <div className="flex flex-1 min-h-0" style={{ borderBottom: '1px solid var(--deck-rule)' }}>
         <ChannelStrip
           label="A"
-          trimDb={linToDb(trimGainA)} eqHigh={eqHighA} eqMid={eqMidA} eqLow={eqLowA} filter={filterA}
+          trimDb={linToDb(trimGainA)}
+          eqHigh={fxA?.eqHigh ?? eqHighA} eqMid={fxA?.eqMid ?? eqMidA} eqLow={fxA?.eqLow ?? eqLowA}
+          filter={fxA?.filter ?? filterA}
           volume={volA} isPlaying={isPlayingA} hasTrack={hasTrackA}
           engine={engineA} onTrim={setTrimA} onEq={setEqA} onFilter={setFilterA} onVolume={setVolA}
         />
@@ -419,7 +423,9 @@ export function Mixer(): JSX.Element {
 
         <ChannelStrip
           label="B"
-          trimDb={linToDb(trimGainB)} eqHigh={eqHighB} eqMid={eqMidB} eqLow={eqLowB} filter={filterB}
+          trimDb={linToDb(trimGainB)}
+          eqHigh={fxB?.eqHigh ?? eqHighB} eqMid={fxB?.eqMid ?? eqMidB} eqLow={fxB?.eqLow ?? eqLowB}
+          filter={fxB?.filter ?? filterB}
           volume={volB} isPlaying={isPlayingB} hasTrack={hasTrackB}
           engine={engineB} onTrim={setTrimB} onEq={setEqB} onFilter={setFilterB} onVolume={setVolB}
         />

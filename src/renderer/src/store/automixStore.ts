@@ -97,6 +97,10 @@ export const useAutomixStore = create<AutomixState>((set, get) => {
     if (!prev || prev.delayMix !== f.delayMix || prev.delayFeedback !== f.delayFeedback || prev.delayEnabled !== f.delayEnabled) {
       e.setDelay(delayMs, f.delayFeedback, f.delayMix, f.delayEnabled)
     }
+    // Mirror the automation onto the deck's EQ/filter knobs so the UI shows the
+    // moves (display-only — the engine is already driven above; the user's own
+    // EQ/filter settings are left untouched and restored by resetDeckFx).
+    api(deck).setFxOverride({ eqLow: f.eqLow, eqMid: f.eqMid, eqHigh: f.eqHigh, filter: f.filter })
     if (deck === 'A') _fxA = f
     else _fxB = f
   }
@@ -110,6 +114,7 @@ export const useAutomixStore = create<AutomixState>((set, get) => {
     s._engine.setEqGain('high', s.eqHigh)
     s._engine.setFilter(0)
     s._engine.setDelay(500, 0.4, 0, false)
+    s.setFxOverride(null) // knobs snap back to the user's own EQ/filter
     if (deck === 'A') _fxA = null
     else _fxB = null
   }
