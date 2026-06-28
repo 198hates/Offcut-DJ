@@ -51,6 +51,13 @@ const api = {
       ipcRenderer.invoke('library:removeTracksFromPlaylist', playlistId, trackIds),
     beatModelStatus: () => ipcRenderer.invoke('library:beatModelStatus'),
     warmBeatModel: () => ipcRenderer.invoke('library:warmBeatModel'),
+    downloadBeatModel: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('library:downloadBeatModel'),
+    onBeatModelProgress: (cb: (p: { percent: number; label: string }) => void) => {
+      const handler = (_e: unknown, p: { percent: number; label: string }) => cb(p)
+      ipcRenderer.on('library:beatModelProgress', handler)
+      return () => ipcRenderer.removeListener('library:beatModelProgress', handler)
+    },
     analyzeBeats: (trackId: string) => ipcRenderer.invoke('library:analyzeBeats', trackId),
     exportPlaylistM3U: (playlistId: string) => ipcRenderer.invoke('library:exportPlaylistM3U', playlistId),
     exportPlaylistCSV: (playlistId: string) => ipcRenderer.invoke('library:exportPlaylistCSV', playlistId),

@@ -26,7 +26,7 @@ import {
 } from '../integrations/engine-dj/reader'
 import { exportToIntegration as exportM3u } from '../integrations/m3u/writer'
 import { exportToIntegration as exportVirtualDj } from '../integrations/virtualdj/writer'
-import { analyzeBeats, isModelAvailable, getDefaultModelPath, warmModel } from '../integrations/beat-analysis'
+import { analyzeBeats, isModelAvailable, getDefaultModelPath, warmModel, installBeatModel } from '../integrations/beat-analysis'
 import { writeTagsToFile } from '../integrations/file-tags/writer'
 import { readUsbHistory, findPioneerUsbMount } from '../integrations/pioneer-usb/history-reader'
 import {
@@ -690,6 +690,20 @@ export function registerLibraryHandlers(): void {
 
   ipcMain.handle('library:warmBeatModel', (): void => {
     warmModel()
+  })
+
+  // Download the Beat This! ONNX model on demand → userData/models/beat_this.onnx.
+  // Streams percent (0..100) over 'library:beatModelProgress'.
+  ipcMain.handle('library:downloadBeatModel', async (e): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      await installBeatModel((percent, label) => {
+        if (!e.sender.isDestroyed()) e.sender.send('library:beatModelProgress', { percent, label })
+      })
+      warmModel() // pre-load the freshly installed session so the first analysis is instant
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   ipcMain.handle('library:analyzeBeats', async (_e, trackId: string): Promise<Track> => {

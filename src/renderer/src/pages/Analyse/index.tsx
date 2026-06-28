@@ -271,6 +271,7 @@ function BeatGridSection(): JSX.Element {
   const [progress, setProgress]       = useState({ current: 0, total: 0, trackPct: 0 })
   const [currentTitle, setCurrentTitle] = useState('')
   const [result, setResult]           = useState<{ updated: number; failed: Track[] } | null>(null)
+  const [modelDl, setModelDl]         = useState<{ active: boolean; pct: number; error: string }>({ active: false, pct: 0, error: '' })
   const cancelRef = useRef(false)
 
   useEffect(() => {
@@ -279,6 +280,27 @@ function BeatGridSection(): JSX.Element {
       // Initialise the singleton so `getQuantiser()` returns BeatThisQuantiser if available
       initQuantiser()
     })
+  }, [])
+
+  // Pull the Beat This! ONNX model on demand → flips this section from the
+  // essentia-js fallback to the higher-accuracy model with no Python/rebuild.
+  const downloadModel = useCallback(async () => {
+    setModelDl({ active: true, pct: 0, error: '' })
+    const off = window.api.library.onBeatModelProgress(({ percent }) => {
+      setModelDl((s) => (s.active ? { ...s, pct: percent } : s))
+    })
+    try {
+      const { ok, error } = await window.api.library.downloadBeatModel()
+      if (!ok) { setModelDl({ active: false, pct: 0, error: error || 'download failed' }); return }
+      const s = await window.api.library.beatModelStatus()
+      setModelStatus(s)
+      initQuantiser()
+      setModelDl({ active: false, pct: 0, error: '' })
+    } catch (e) {
+      setModelDl({ active: false, pct: 0, error: e instanceof Error ? e.message : String(e) })
+    } finally {
+      off()
+    }
   }, [])
 
   // Needs beat grid = no legacy markers at all, OR has markers but no v2 grid yet
@@ -388,13 +410,25 @@ function BeatGridSection(): JSX.Element {
       </div>
 
       {modelStatus && !modelStatus.available && (
-        <div className="bg-ink/[0.03] border border-accent/20 rounded px-4 py-3 space-y-1.5">
+        <div className="bg-ink/[0.03] border border-accent/20 rounded px-4 py-3 space-y-2">
           <p className="font-mono text-[13px] text-ink font-bold uppercase tracking-[0.1em]">using essentia js fallback</p>
           <p className="font-mono text-[12px] text-muted leading-relaxed">
-            Spectral flux + DP beat tracker runs in-browser — no model needed. For higher accuracy, install the Beat This! ONNX model:
+            Spectral flux + DP beat tracker runs in-browser — no model needed. For higher accuracy, download the Beat This! ONNX model (~80 MB, one time):
           </p>
-          <p className="font-mono text-[11px] text-muted/70">
-            Run <span className="text-ink bg-ink/10 px-1 rounded">python scripts/export-beat-this.py</span> then place <span className="text-ink">beat_this.onnx</span> at: <span className="break-all">{modelStatus.path}</span>
+          <div className="flex items-center gap-3 pt-0.5">
+            <button onClick={downloadModel} disabled={modelDl.active}
+              className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[13px] uppercase tracking-[0.12em] rounded transition-colors whitespace-nowrap">
+              {modelDl.active ? `downloading… ${modelDl.pct}%` : 'download model'}
+            </button>
+            {modelDl.active && (
+              <div className="flex-1 h-1.5 bg-ink/10 rounded overflow-hidden">
+                <div className="h-full bg-accent transition-[width] duration-150" style={{ width: `${modelDl.pct}%` }} />
+              </div>
+            )}
+          </div>
+          {modelDl.error && <p className="font-mono text-[11px] text-red-500 break-all">{modelDl.error}</p>}
+          <p className="font-mono text-[11px] text-muted/60">
+            Prefer to build it yourself? Run <span className="text-ink/80 bg-ink/10 px-1 rounded">python scripts/export-beat-this.py</span> and place <span className="text-ink/80">beat_this.onnx</span> at <span className="break-all">{modelStatus.path}</span>
           </p>
         </div>
       )}
@@ -856,6 +890,7 @@ function SimilaritySection(): JSX.Element {
   const [progress, setProgress] = useState({ current: 0, total: 0, label: '' })
   const [done, setDone]         = useState(false)
   const [failed, setFailed]     = useState<Track[]>([])
+  const [firstErr, setFirstErr] = useState('')
   const cancelRef = useRef(false)
 
   const unanalysed = tracks.filter((t) => t.embedding == null)
@@ -876,7 +911,8 @@ function SimilaritySection(): JSX.Element {
       try {
         const embedding = await window.api.audio.embed(t.filePath)
         await updateTrack({ id: t.id, embedding })
-      } catch {
+      } catch (e) {
+        if (!failedNow.length) setFirstErr(`${t.filePath}\n${String((e as Error)?.message ?? e)}`)
         failedNow.push(t)
       }
     }, { onProgress: (done, total) => setProgress({ current: done, total, label: '' }), cancelled: () => cancelRef.current })
@@ -912,7 +948,7 @@ function SimilaritySection(): JSX.Element {
 
       <div className="grid grid-cols-3 gap-3">
         <StatCard label="analysed" value={analysedCount.toLocaleString()} sub={`of ${tracks.length.toLocaleString()} tracks`} accent={analysedCount > 0} />
-        <StatCard label="pending" value={unanalysed.length.toLocaleString()} />
+        <StatCard label="pending" value={Math.max(0, unanalysed.length - failed.length).toLocaleString()} />
         {failed.length > 0 && <StatCard label="failed" value={failed.length.toLocaleString()} />}
       </div>
 
@@ -927,8 +963,9 @@ function SimilaritySection(): JSX.Element {
       {done && failed.length > 0 && (
         <div className="space-y-1">
           <p className="font-mono text-[13px] text-red-500">
-            {failed.length} track{failed.length !== 1 ? 's' : ''} couldn’t be fingerprinted (unreadable / unsupported audio)
+            {failed.length} track{failed.length !== 1 ? 's' : ''} couldn’t be fingerprinted — first error below
           </p>
+          {firstErr && <pre className="font-mono text-[11px] text-amber-500 whitespace-pre-wrap break-all border border-amber-500/30 rounded p-2">{firstErr}</pre>}
           <FailedList tracks={failed} />
         </div>
       )}

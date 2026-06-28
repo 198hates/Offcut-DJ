@@ -54,6 +54,8 @@ declare global {
         removeTracksFromPlaylist: (playlistId: string, trackIds: string[]) => Promise<void>
         beatModelStatus: () => Promise<{ available: boolean; path: string }>
         warmBeatModel: () => Promise<void>
+        downloadBeatModel: () => Promise<{ ok: boolean; error?: string }>
+        onBeatModelProgress: (cb: (p: { percent: number; label: string }) => void) => () => void
         analyzeBeats: (trackId: string) => Promise<Track>
         exportPlaylistM3U: (playlistId: string) => Promise<void>
         exportPlaylistCSV: (playlistId: string) => Promise<void>

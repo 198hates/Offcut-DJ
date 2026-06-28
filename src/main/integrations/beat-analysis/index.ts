@@ -5,6 +5,7 @@ import { isModelAvailable, getDefaultModelPath } from './beat-model'
 import type { BeatgridMarker } from '../../../shared/types'
 
 export { isModelAvailable, getDefaultModelPath }
+export { installBeatModel, beatModelUrl } from './model-installer'
 
 export interface BeatAnalysisResult {
   markers: BeatgridMarker[]
