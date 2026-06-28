@@ -184,7 +184,7 @@ const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; l
 
 export function NavRail({ active, onNavigate }: Props): JSX.Element {
   const cls = (id: Section) =>
-    `w-[58px] py-1.5 flex flex-col items-center gap-1 rounded transition-colors ${
+    `w-[58px] py-1 flex flex-col items-center gap-1 rounded transition-colors shrink-0 ${
       active === id
         ? 'bg-accent/15 text-accent'
         : 'text-muted hover:text-ink hover:bg-ink/[0.07]'
@@ -195,7 +195,7 @@ export function NavRail({ active, onNavigate }: Props): JSX.Element {
 
   return (
     <div className="w-[66px] shrink-0 flex flex-col items-center bg-chassis border-r border-border/30 py-2 gap-0.5">
-      <div className="flex flex-col items-center gap-0.5 flex-1 pt-1">
+      <div className="flex flex-col items-center gap-0.5 flex-1 min-h-0 overflow-y-auto pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {MAIN_ITEMS.map(({ id, Icon, label }) => (
           <button key={id} onClick={() => onNavigate(id)} title={label} className={cls(id)}>
             <Icon />

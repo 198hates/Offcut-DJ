@@ -764,7 +764,7 @@ export function OrdersPage(): JSX.Element {
     <div className="h-full min-h-0 flex overflow-hidden">
       {/* ── Left panel — order list ──────────────────────────────────────── */}
       <div className="w-44 shrink-0 flex flex-col border-r border-border/30 bg-chassis">
-        <div className="shrink-0 flex items-center justify-between px-3 py-2 border-b border-border/30">
+        <div className="relative shrink-0 flex items-center justify-between px-3 py-2 border-b border-border/30">
           <span className="font-mono text-[12px] font-bold uppercase tracking-[0.18em] text-accent">Orders</span>
           <div className="flex items-center gap-1 relative">
             <button onClick={importFromUsb}
@@ -783,27 +783,27 @@ export function OrdersPage(): JSX.Element {
               className="w-5 h-5 flex items-center justify-center text-muted hover:text-accent transition-colors text-base leading-none">
               +
             </button>
-            {/* Playlist picker dropdown */}
-            {showPlaylistPicker && (
-              <div className="absolute top-full right-0 z-30 mt-1 w-52 bg-chassis border border-border/40 rounded shadow-xl max-h-60 overflow-y-auto">
-                <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/30">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted/50">create from playlist</span>
-                  <button onClick={() => setShowPlaylistPicker(false)} className="text-muted/30 hover:text-muted text-xs">✕</button>
-                </div>
-                {playlists.filter((p) => !p.isFolder && !p.isSmart && p.trackIds.length > 0).map((pl) => (
-                  <button key={pl.id}
-                    onClick={() => createFromPlaylist(pl)}
-                    className="w-full text-left px-3 py-1.5 hover:bg-accent/[0.05] border-b border-border/10 transition-colors">
-                    <p className="font-mono text-[12px] text-ink truncate">{pl.name}</p>
-                    <p className="font-mono text-[10px] text-muted/40">{pl.trackIds.length} tracks</p>
-                  </button>
-                ))}
-                {playlists.filter((p) => !p.isFolder && !p.isSmart && p.trackIds.length > 0).length === 0 && (
-                  <p className="font-mono text-[11px] text-muted/30 px-3 py-2 italic">no playlists found</p>
-                )}
-              </div>
-            )}
           </div>
+          {/* Playlist picker dropdown — spans the panel so it never clips under the rail */}
+          {showPlaylistPicker && (
+            <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-chassis border border-border/40 rounded shadow-xl max-h-60 overflow-y-auto">
+              <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/30">
+                <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted/50">create from playlist</span>
+                <button onClick={() => setShowPlaylistPicker(false)} className="text-muted/30 hover:text-muted text-xs">✕</button>
+              </div>
+              {playlists.filter((p) => !p.isFolder && !p.isSmart && p.trackIds.length > 0).map((pl) => (
+                <button key={pl.id}
+                  onClick={() => createFromPlaylist(pl)}
+                  className="w-full text-left px-3 py-1.5 hover:bg-accent/[0.05] border-b border-border/10 transition-colors">
+                  <p className="font-mono text-[12px] text-ink truncate">{pl.name}</p>
+                  <p className="font-mono text-[10px] text-muted/40">{pl.trackIds.length} tracks</p>
+                </button>
+              ))}
+              {playlists.filter((p) => !p.isFolder && !p.isSmart && p.trackIds.length > 0).length === 0 && (
+                <p className="font-mono text-[11px] text-muted/30 px-3 py-2 italic">no playlists found</p>
+              )}
+            </div>
+          )}
         </div>
         {/* USB history picker */}
         {usbSets && (
