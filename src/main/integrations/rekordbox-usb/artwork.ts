@@ -3,7 +3,7 @@
 // the CDJ won't render PNG), so the player shows artwork on the deck and browser.
 
 import { spawn } from 'child_process'
-import ffmpegPath from 'ffmpeg-static'
+import { ffmpegBinary as ffmpegPath } from '../../ffmpeg'
 
 /** Read the first embedded picture from a track, or null if it has none. */
 export async function readEmbeddedArt(audioPath: string): Promise<Buffer | null> {

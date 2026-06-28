@@ -10,7 +10,7 @@
 import { spawn } from 'child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs'
 import { join, dirname } from 'path'
-import ffmpegPath from 'ffmpeg-static'
+import { ffmpegBinary as ffmpegPath } from '../ffmpeg'
 import type { Database } from 'better-sqlite3'
 import { decodeAudioToPcm } from '../integrations/beat-analysis/audio-decode'
 import { computeWaveformBands } from '../integrations/rekordbox-usb/waveform'

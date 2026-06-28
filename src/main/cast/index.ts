@@ -18,7 +18,7 @@ import { createServer, type Server } from 'node:http'
 import { mkdtempSync, existsSync, rmSync, createReadStream } from 'node:fs'
 import { tmpdir, networkInterfaces } from 'node:os'
 import { join, basename } from 'node:path'
-import ffmpegPath from 'ffmpeg-static'
+import { ffmpegBinary as ffmpegPath } from '../ffmpeg'
 import type { CastDevice, CastStatus } from '../../shared/types'
 import { startMasterTap, stopMasterTap, drainMasterTap } from '../engine'
 

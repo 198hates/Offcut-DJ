@@ -1,5 +1,5 @@
 import { spawn } from 'child_process'
-import ffmpegPath from 'ffmpeg-static'
+import { ffmpegBinary as ffmpegPath } from '../../ffmpeg'
 
 /** Safety ceiling — beyond this even a "track" is a recorded set; bounded so a
  *  multi-hour file can't OOM the main process (90 min mono f32 @22 050 ≈ 475 MB). */

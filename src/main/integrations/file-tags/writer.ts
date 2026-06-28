@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import { existsSync, renameSync, unlinkSync } from 'fs'
 import { extname, dirname, basename } from 'path'
-import ffmpegPath from 'ffmpeg-static'
+import { ffmpegBinary as ffmpegPath } from '../../ffmpeg'
 import type { Track } from '../../../shared/types'
 
 const SUPPORTED = new Set(['.mp3', '.flac', '.aif', '.aiff', '.m4a', '.aac', '.wav', '.ogg'])
