@@ -84,7 +84,7 @@ export function importFromRekordboxDb(
                k.ScaleName AS Tonality,
                lb.Name  AS LabelName,
                c.BPM, c.StockDate, c.Rating, c.Commnt, c.Length,
-               c.Year
+               c.ReleaseYear
         FROM djmdContent c
         LEFT JOIN djmdArtist ar ON ar.ID = c.ArtistID
         LEFT JOIN djmdAlbum  al ON al.ID = c.AlbumID
@@ -118,7 +118,7 @@ export function importFromRekordboxDb(
           artist: String(row.ArtistName ?? ''),
           album: String(row.AlbumName ?? ''),
           genre: String(row.GenreName ?? ''),
-          year: row.Year != null ? Number(row.Year) : null,
+          year: row.ReleaseYear != null ? Number(row.ReleaseYear) : null,
           label: String(row.LabelName ?? ''),
           bpm: row.BPM != null ? Number(row.BPM) / 100 : null,
           key: rbScaleNameToCamelot(row.Tonality as string | null),
