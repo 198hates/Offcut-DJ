@@ -1,6 +1,12 @@
 // Tests the MOBILE smart-rule evaluator (apps/mobile/src/smartRules.ts) directly
 // — it's pure logic with type-only imports, so vitest can exercise it here. This
 // guards the in-memory port against the desktop SQL evaluator's semantics.
+//
+// Requires `apps/mobile/node_modules` to exist (run `npm install` there once —
+// see apps/mobile/README.md). apps/mobile is an isolated npm project, so a root
+// `npm install` alone won't fetch it. Without it, vitest's oxc transform can't
+// resolve apps/mobile/tsconfig.json's `extends: "expo/tsconfig.base"` and this
+// file fails to load with a cryptic "[TSCONFIG_ERROR] Tsconfig not found".
 
 import { describe, it, expect } from 'vitest'
 import { matchesAllRules, playlistTracks } from '../../../../apps/mobile/src/smartRules'
