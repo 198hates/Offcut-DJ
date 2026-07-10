@@ -57,7 +57,7 @@ export function buildRekordboxXml(
   const lines: string[] = []
   lines.push('<?xml version="1.0" encoding="UTF-8"?>')
   lines.push('<DJ_PLAYLISTS Version="1.0.0">')
-  lines.push(`  <PRODUCT Name="Offcut" Version="0.1.0" Company="Between the Bridges"/>`)
+  lines.push(`  <PRODUCT Name="Offcut" Version="0.1.0" Company="Offcut"/>`)
   lines.push(`  <COLLECTION Entries="${tracks.length}">`)
 
   for (const track of tracks) {

@@ -21,7 +21,7 @@ import type {
 } from '../../shared/types'
 
 // Descriptive UA — Discogs & MusicBrainz reject blank User-Agents.
-const USER_AGENT = 'Offcut/1.0 +https://betweenthebridges.co.uk'
+const USER_AGENT = 'Offcut/1.0 +https://github.com/198hates/Offcut-DJ'
 
 let _engine: LineageEngine | null = null
 let _builtWithKey: string | undefined

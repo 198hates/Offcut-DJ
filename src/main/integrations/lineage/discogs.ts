@@ -114,7 +114,7 @@ export class DiscogsClient {
   }) {
     if (!userAgent) throw new Error('Discogs requires a descriptive User-Agent')
     this.token = token || undefined
-    this.userAgent = userAgent // e.g. 'Offcut/1.0 +https://betweenthebridges.co.uk'
+    this.userAgent = userAgent // e.g. 'Offcut/1.0 +https://github.com/198hates/Offcut-DJ'
     this.cache = cache
     this.authenticated = !!this.token
     // Authenticated: ~55 req/min (under the 60 cap). Unauthenticated: ~24/min

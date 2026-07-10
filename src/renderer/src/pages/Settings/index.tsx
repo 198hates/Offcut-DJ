@@ -1243,8 +1243,8 @@ function LicenceSection(): JSX.Element {
 
       <div className="bg-ink/[0.03] border border-border/30 rounded p-3 space-y-2">
         <p className="font-mono text-[12px] text-muted leading-relaxed">
-          <span className="text-ink font-bold">Offcut</span> © 2026 Between the Bridges / Peppermint
-          Events Limited. Licensed for personal use, not sold. <strong>Not for resale or
+          <span className="text-ink font-bold">Offcut</span> © 2026. Licensed for personal
+          use, not sold. <strong>Not for resale or
           redistribution.</strong> Provided “as is”, without warranty of any kind; the authors accept
           no liability for any loss arising from its use. Your library stays on your device; AI
           features send only track metadata (never audio) to Anthropic when you enable them.

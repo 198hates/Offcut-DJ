@@ -36,9 +36,9 @@ if (existsSync(join(__dirname, MODEL))) {
 }
 
 module.exports = {
-  appId: 'co.betweenthebridges.offcut',
+  appId: 'com.offcut.app',
   productName: 'Offcut',
-  copyright: 'Copyright © 2026 Between the Bridges',
+  copyright: 'Copyright © 2026',
   directories: { buildResources: 'resources', output: 'dist' },
   files: ['out/**/*'],
   extraResources,

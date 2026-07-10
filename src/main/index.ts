@@ -84,7 +84,7 @@ function setupAutoUpdater(): void {
 app.whenReady().then(() => {
   // One-time: carry library/settings over from the old "Crate" data folder.
   migrateUserDataFromCrate()
-  electronApp.setAppUserModelId('co.betweenthebridges.offcut')
+  electronApp.setAppUserModelId('com.offcut.app')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

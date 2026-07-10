@@ -957,7 +957,7 @@ ${rows}
 
     try {
       const url = `https://api.discogs.com/database/search?q=${encodeURIComponent(query)}&type=release&per_page=3`
-      const res = await fetch(url, { headers: { 'User-Agent': 'Offcut/1.0 +https://betweenthebridges.co.uk' } })
+      const res = await fetch(url, { headers: { 'User-Agent': 'Offcut/1.0 +https://github.com/198hates/Offcut-DJ' } })
       if (!res.ok) return { ok: false, error: `Discogs API error: ${res.status}` }
       const json = await res.json() as { results?: { year?: string; genre?: string[]; label?: string[]; catno?: string }[] }
       const hit = json.results?.[0]

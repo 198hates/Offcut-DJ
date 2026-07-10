@@ -42,8 +42,8 @@ export function LicenceGate({ onActivated }: { onActivated: () => void }): JSX.E
 
         <h1 className="font-sans font-bold text-xl text-ink mb-1">activate offcut</h1>
         <p className="font-mono text-[13px] text-muted leading-relaxed mb-5">
-          Enter your licence key to unlock the app. Don&apos;t have one? Contact{' '}
-          <span className="text-ink-soft">Between the Bridges</span> for a key.
+          Enter your licence key to unlock the app. Don&apos;t have one? Contact the
+          developer for a key.
         </p>
 
         <input
@@ -73,8 +73,8 @@ export function LicenceGate({ onActivated }: { onActivated: () => void }): JSX.E
         </button>
 
         <p className="font-mono text-[11px] text-muted/60 leading-relaxed mt-5 pt-4 border-t border-border/20">
-          Offcut © 2026 Between the Bridges / Peppermint Events Limited. Licensed for personal use —
-          not for resale or redistribution.
+          Offcut © 2026. Licensed for personal use — not for resale or
+          redistribution.
         </p>
       </div>
     </div>
