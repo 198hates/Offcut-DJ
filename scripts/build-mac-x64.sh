@@ -20,6 +20,10 @@ cd "$(dirname "$0")/.."
 
 TARGET=x86_64-apple-darwin
 VERSION=$(node -p "require('./package.json').version")
+# Read productName from the JS config (not just package.json — electron-builder.cjs
+# is the source of truth and can differ, e.g. the "Offcut Dark" fork). electron-builder
+# keeps spaces as-is in both the .app bundle name and the artifact filename.
+PRODUCT_NAME=$(node -p "require('./electron-builder.cjs').productName")
 
 restore() {
   echo "==> Restoring arm64 dev toolchain…"
@@ -47,7 +51,7 @@ echo "==> Packaging x64 DMG (electron-builder rebuilds SQLCipher for x64)…"
 CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config electron-builder.cjs --mac --x64 --publish never
 
 echo "==> Verifying every bundled native binary is x86_64…"
-APP="dist/mac/Offcut.app"
+APP="dist/mac/$PRODUCT_NAME.app"
 RES="$APP/Contents/Resources"
 fail=0
 check() {
@@ -59,7 +63,7 @@ check() {
     *)        echo "  ✗   $a  $label"; fail=1 ;;
   esac
 }
-check "$APP/Contents/MacOS/Offcut" "electron binary"
+check "$APP/Contents/MacOS/$PRODUCT_NAME" "electron binary"
 check "$RES/crate-audio-engine.node" "rust audio engine"
 check "$RES/app.asar.unpacked/node_modules/ffmpeg-static/ffmpeg" "ffmpeg"
 check "$(ls "$RES"/app.asar.unpacked/node_modules/better-sqlite3-multiple-ciphers/build/Release/*.node 2>/dev/null | head -1)" "sqlcipher"
@@ -71,6 +75,6 @@ fi
 
 echo "✓ All native binaries are x86_64."
 echo
-echo "Built: $(ls dist/Offcut-"$VERSION"-mac-x64.dmg)"
+echo "Built: $(ls "dist/$PRODUCT_NAME-$VERSION-mac-x64.dmg")"
 echo "Upload to the release with:"
-echo "  gh release upload v$VERSION dist/Offcut-$VERSION-mac-x64.dmg dist/Offcut-$VERSION-mac-x64.dmg.blockmap --clobber"
+echo "  gh release upload v$VERSION \"dist/$PRODUCT_NAME-$VERSION-mac-x64.dmg\" \"dist/$PRODUCT_NAME-$VERSION-mac-x64.dmg.blockmap\" --clobber"
