@@ -247,6 +247,7 @@ export function exportToRekordboxDb(
           BPM = ?,
           Rating = ?,
           Commnt = ?,
+          FolderPath = ?,
           updated_at = datetime('now')
         WHERE ID = ?
       `).run(
@@ -254,6 +255,7 @@ export function exportToRekordboxDb(
         track.bpm != null ? Math.round(track.bpm * 100) : null,
         starsToRbRating(track.rating),
         track.comment,
+        encodeRbPath(track.filePath),
         rbId
       )
 
@@ -298,6 +300,11 @@ export function exportToRekordboxDb(
 
 function decodeRbPath(path: string): string {
   // Rekordbox stores paths without URL encoding on macOS, just straight filesystem paths
+  return path
+}
+
+function encodeRbPath(path: string): string {
+  // Symmetric with decodeRbPath — Rekordbox expects the same plain filesystem path back.
   return path
 }
 

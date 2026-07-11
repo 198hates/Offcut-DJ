@@ -5,9 +5,8 @@ import { randomUUID } from 'crypto'
 import { basename, extname } from 'path'
 import { BrowserWindow } from 'electron'
 import { getLibraryDb, insertOrUpdateTrack } from '../../library/db'
+import { AUDIO_EXTS } from '../../library/file-scan'
 import type { Track } from '../../../shared/types'
-
-const AUDIO_EXTS = new Set(['.mp3', '.flac', '.aiff', '.aif', '.wav', '.m4a', '.ogg'])
 
 let watcher: FSWatcher | null = null
 

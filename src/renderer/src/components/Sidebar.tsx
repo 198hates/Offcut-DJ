@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from 'react'
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { useToastStore } from '../store/toastStore'
 import { ContextMenu } from './ContextMenu'
@@ -25,7 +25,7 @@ export function Sidebar(): JSX.Element {
     playlists, stats, activePlaylistId,
     setActivePlaylistId,
     createPlaylist, createSmartPlaylist, updateSmartPlaylistRules,
-    renamePlaylist, deletePlaylist,
+    renamePlaylist, deletePlaylist, reorderPlaylists,
   } = useLibraryStore()
 
   const [newPlaylistName, setNewPlaylistName] = useState('')
@@ -35,6 +35,31 @@ export function Sidebar(): JSX.Element {
   const [smartEditorPlaylist, setSmartEditorPlaylist] = useState<Playlist | null | undefined>(undefined)
   const [showTemplates, setShowTemplates] = useState(false)
   const newPlaylistInputRef = useRef<HTMLInputElement>(null)
+
+  // ── Playlist list sort mode (persisted) ─────────────────────────────────────
+  type PlaylistSortMode = 'name' | 'created' | 'manual'
+  const [sortMode, setSortMode] = useState<PlaylistSortMode>('manual')
+  const [showSortMenu, setShowSortMenu] = useState(false)
+  const [draggedId, setDraggedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    window.api.settings.get().then((s) => setSortMode((s.playlistSortMode as PlaylistSortMode) || 'manual'))
+  }, [])
+
+  const chooseSortMode = async (mode: PlaylistSortMode): Promise<void> => {
+    setSortMode(mode)
+    setShowSortMenu(false)
+    await window.api.settings.save({ playlistSortMode: mode })
+  }
+
+  const reorderRegular = async (draggedPlId: string, targetPlId: string): Promise<void> => {
+    const ids = regular.map((p) => p.id)
+    const from = ids.indexOf(draggedPlId)
+    const to = ids.indexOf(targetPlId)
+    if (from < 0 || to < 0 || from === to) return
+    ids.splice(to, 0, ids.splice(from, 1)[0])
+    await reorderPlaylists(ids)
+  }
 
   // Collapsible sidebar sections (persisted). Folders/auto-groups manage their own.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
@@ -119,7 +144,11 @@ export function Sidebar(): JSX.Element {
   const playlistDuration = useCallback((ids: string[]): number =>
     ids.reduce((s, id) => s + (durMap.get(id) ?? 0), 0), [durMap])
 
-  const regular    = playlists.filter((p) => !p.parentId && !p.isFolder && !p.isSmart && !p.isAutoGroup)
+  const regularUnsorted = playlists.filter((p) => !p.parentId && !p.isFolder && !p.isSmart && !p.isAutoGroup)
+  const regular =
+    sortMode === 'name' ? [...regularUnsorted].sort((a, b) => a.name.localeCompare(b.name)) :
+    sortMode === 'created' ? [...regularUnsorted].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) :
+    regularUnsorted // 'manual' — already in sort_order from the store query
   const smart      = playlists.filter((p) => !p.parentId && !p.isFolder && p.isSmart)
   const folders    = playlists.filter((p) => !p.parentId && p.isFolder && !p.isAutoGroup)
   const autoGroups = playlists.filter((p) => !p.isFolder && p.isAutoGroup)
@@ -160,6 +189,29 @@ export function Sidebar(): JSX.Element {
                 <span className="ml-1 text-muted/40">{collapsed.has('playlists') ? '▸' : '▾'}</span>
               </button>
               <div className="flex items-center gap-1.5 relative">
+                {/* Sort mode picker */}
+                <button
+                  onClick={() => setShowSortMenu((v) => !v)}
+                  className="text-muted/50 hover:text-accent text-[13px] leading-none transition-colors"
+                  title="Sort playlists"
+                >⇅</button>
+                {showSortMenu && (
+                  <div className="absolute top-full right-0 z-30 mt-1 w-36 bg-chassis border border-border/40 rounded shadow-xl">
+                    {([
+                      ['manual', 'Manual (drag)'],
+                      ['name', 'Name (A–Z)'],
+                      ['created', 'Date created'],
+                    ] as const).map(([mode, label]) => (
+                      <button key={mode}
+                        onClick={() => chooseSortMode(mode)}
+                        className={`w-full text-left flex items-center gap-2 px-2 py-1 hover:bg-accent/[0.06] border-b border-border/10 last:border-b-0 transition-colors font-mono text-[11px] ${
+                          sortMode === mode ? 'text-accent' : 'text-ink'
+                        }`}>
+                        {sortMode === mode && <span>✓</span>} {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {/* Template picker */}
                 <button
                   onClick={() => setShowTemplates((v) => !v)}
@@ -215,20 +267,33 @@ export function Sidebar(): JSX.Element {
 
             <div className="space-y-px">
               {regular.map((pl) => (
-                <PlaylistItem
+                <div
                   key={pl.id}
-                  playlist={pl}
-                  totalDurationSeconds={playlistDuration(pl.trackIds)}
-                  isActive={activePlaylistId === pl.id}
-                  isRenaming={renamingId === pl.id}
-                  renameValue={renameValue}
-                  onRenameChange={setRenameValue}
-                  onRenameCommit={commitRename}
-                  onClick={() => setActivePlaylistId(pl.id)}
-                  onStartRename={() => startRename(pl)}
-                  onDelete={() => handleDeletePlaylist(pl.id, pl.name)}
-                  onEditSmart={() => setSmartEditorPlaylist(pl)}
-                />
+                  draggable={sortMode === 'manual'}
+                  onDragStart={() => setDraggedId(pl.id)}
+                  onDragOver={(e) => { if (sortMode === 'manual' && draggedId && draggedId !== pl.id) e.preventDefault() }}
+                  onDrop={(e) => {
+                    if (sortMode !== 'manual' || !draggedId || draggedId === pl.id) return
+                    e.preventDefault()
+                    reorderRegular(draggedId, pl.id)
+                    setDraggedId(null)
+                  }}
+                  onDragEnd={() => setDraggedId(null)}
+                >
+                  <PlaylistItem
+                    playlist={pl}
+                    totalDurationSeconds={playlistDuration(pl.trackIds)}
+                    isActive={activePlaylistId === pl.id}
+                    isRenaming={renamingId === pl.id}
+                    renameValue={renameValue}
+                    onRenameChange={setRenameValue}
+                    onRenameCommit={commitRename}
+                    onClick={() => setActivePlaylistId(pl.id)}
+                    onStartRename={() => startRename(pl)}
+                    onDelete={() => handleDeletePlaylist(pl.id, pl.name)}
+                    onEditSmart={() => setSmartEditorPlaylist(pl)}
+                  />
+                </div>
               ))}
               {regular.length === 0 && !addingPlaylist && (
                 <p className="px-3 py-1 text-[13px] font-mono text-muted/50 italic">no playlists yet</p>

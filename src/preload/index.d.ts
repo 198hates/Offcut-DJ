@@ -10,6 +10,7 @@ import type {
   SyncStatus, SyncPairingInfo,
   SetSummary, SetDetail, SetPatch, SetListFilter, UsbHistoryPreview, UsbImportResult,
   Residency, ResidencyPatch, ResidencyDashboard, SetComparison,
+  OrganizeMove, OrganizeMoveResult, TrashResult,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -36,6 +37,7 @@ declare global {
         bulkUpdateTracks: (ids: string[], patch: Partial<Track>) => Promise<Track[]>
         deleteTrack: (id: string) => Promise<void>
         deleteTracks: (ids: string[]) => Promise<void>
+        trashFiles: (paths: string[]) => Promise<TrashResult[]>
         importFromPath: (integrationId: IntegrationId, filePath?: string) => Promise<ImportResult>
         exportToPath: (integrationId: IntegrationId, filePath?: string) => Promise<ExportResult>
         createPlaylist: (name: string) => Promise<Playlist>
@@ -43,6 +45,7 @@ declare global {
         updateSmartPlaylistRules: (id: string, name: string, rules: SmartRule[]) => Promise<void>
         renamePlaylist: (id: string, name: string) => Promise<void>
         updatePlaylistColor: (id: string, color: string) => Promise<void>
+        reorderPlaylists: (orderedIds: string[]) => Promise<void>
         recordPlay: (id: string, opts?: { mixedFrom?: string; deckId?: 'A' | 'B' }) => Promise<Track>
         getCutHistory: (trackId: string) => Promise<CutHistory>
         updateEditLineage: (trackId: string, lineage: EditLineage) => Promise<void>
@@ -65,6 +68,8 @@ declare global {
         applyPathMapping: (from: string, to: string) => Promise<number>
         getWatchFolders: () => Promise<string[]>
         setWatchFolders: (paths: string[]) => Promise<void>
+        scanForOrganize: (sourceDirs: string[], libraryRoot: string) => Promise<OrganizeMove[]>
+        organizeFiles: (moves: OrganizeMove[]) => Promise<OrganizeMoveResult[]>
         scanMissingFiles: () => Promise<Track[]>
         autoLocateMissing: (searchDir?: string) => Promise<{ trackId: string; foundPath: string }[]>
         rekordboxDbStatus: () => Promise<{ available: boolean; path: string }>

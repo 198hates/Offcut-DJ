@@ -1,11 +1,12 @@
-import { ipcMain, dialog, BrowserWindow, app } from 'electron'
-import { existsSync, writeFileSync, mkdirSync, watch, readFileSync } from 'fs'
+import { ipcMain, dialog, BrowserWindow, app, shell } from 'electron'
+import { existsSync, writeFileSync, mkdirSync, watch, readFileSync, renameSync, copyFileSync, unlinkSync } from 'fs'
 import { execFile } from 'child_process'
-import { join } from 'path'
+import { join, dirname, basename, extname, relative, isAbsolute } from 'path'
 import { randomUUID } from 'crypto'
 import { getLibraryDb, rowToTrack, rowToPlaylist } from '../library/db'
 import { computeOverviewPeaks } from '../library/overview-peaks'
 import { resolveSmartPlaylist } from '../library/smart-playlist'
+import { buildFilenameMap, walkAudioFiles } from '../library/file-scan'
 import { importFromIntegration as importRekordbox } from '../integrations/rekordbox/reader'
 import { exportToIntegration as exportRekordbox } from '../integrations/rekordbox/writer'
 import {
@@ -42,7 +43,7 @@ import { importFromUsbBackup } from '../integrations/rekordbox-usb/backup-import
 import { startWatcher } from '../integrations/watch-folder'
 import { loadSettings, saveSettings, getSettings } from '../settings'
 import { autoBackup } from '../backup'
-import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule, UsbExport, UsbPreflight } from '../../shared/types'
+import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule, UsbExport, UsbPreflight, OrganizeMove, OrganizeMoveResult, TrashResult } from '../../shared/types'
 import type Database from 'better-sqlite3'
 
 type IntegrationReader = (db: Database.Database, path: string) => ImportResult
@@ -254,10 +255,29 @@ export function registerLibraryHandlers(): void {
     del()
   })
 
+  // Moves files to the OS Trash (recoverable), not a permanent delete — used by
+  // the Duplicates tool's "also delete from disk" option. Per-file try/catch so
+  // one locked/missing file doesn't abort the rest of the batch.
+  ipcMain.handle('library:trashFiles', async (_e, paths: string[]): Promise<TrashResult[]> => {
+    const results: TrashResult[] = []
+    for (const path of paths) {
+      try {
+        await shell.trashItem(path)
+        results.push({ path, ok: true })
+      } catch (err) {
+        results.push({ path, ok: false, error: (err as Error).message })
+      }
+    }
+    return results
+  })
+
   // ── Playlists ─────────────────────────────────────────────────────────────
+  const nextTopLevelSortOrder = (): number =>
+    ((db.prepare('SELECT COALESCE(MAX(sort_order),-1) as m FROM playlists WHERE parent_id IS NULL').get()) as { m: number }).m + 1
+
   ipcMain.handle('library:createPlaylist', (_e, name: string): Playlist => {
     const id = randomUUID()
-    db.prepare('INSERT INTO playlists (id, name, is_folder, sort_order, source_ids) VALUES (?, ?, 0, 0, \'{}\')').run(id, name)
+    db.prepare('INSERT INTO playlists (id, name, is_folder, sort_order, source_ids) VALUES (?, ?, 0, ?, \'{}\')').run(id, name, nextTopLevelSortOrder())
     const row = db.prepare('SELECT * FROM playlists WHERE id = ?').get(id) as Record<string, unknown>
     return rowToPlaylist(row, [])
   })
@@ -265,11 +285,17 @@ export function registerLibraryHandlers(): void {
   ipcMain.handle('library:createSmartPlaylist', (_e, name: string, rules: SmartRule[]): Playlist => {
     const id = randomUUID()
     db.prepare(
-      "INSERT INTO playlists (id, name, is_folder, is_smart, rules, sort_order, source_ids) VALUES (?, ?, 0, 1, ?, 0, '{}')"
-    ).run(id, name, JSON.stringify(rules))
+      "INSERT INTO playlists (id, name, is_folder, is_smart, rules, sort_order, source_ids) VALUES (?, ?, 0, 1, ?, ?, '{}')"
+    ).run(id, name, JSON.stringify(rules), nextTopLevelSortOrder())
     const row = db.prepare('SELECT * FROM playlists WHERE id = ?').get(id) as Record<string, unknown>
     const trackIds = resolveSmartPlaylist(db, rules)
     return rowToPlaylist(row, trackIds)
+  })
+
+  ipcMain.handle('library:reorderPlaylists', (_e, orderedIds: string[]): void => {
+    const stmt = db.prepare("UPDATE playlists SET sort_order = ?, updated_at = datetime('now') WHERE id = ? AND parent_id IS NULL")
+    const update = db.transaction(() => { orderedIds.forEach((id, i) => stmt.run(i, id)) })
+    update()
   })
 
   ipcMain.handle('library:updateSmartPlaylistRules', (_e, id: string, name: string, rules: SmartRule[]): void => {
@@ -596,6 +622,95 @@ export function registerLibraryHandlers(): void {
     return result.changes
   })
 
+  // Walks the given source folders for audio files not already under
+  // libraryRoot, and computes a collision-free destination for each — the
+  // Organize page's preview step before any file is actually touched.
+  ipcMain.handle('library:scanForOrganize', (_e, sourceDirs: string[], libraryRoot: string): OrganizeMove[] => {
+    if (!sourceDirs.length || !libraryRoot) return []
+    const root = libraryRoot
+
+    // A file is "already under root" when the relative path from root to it
+    // doesn't climb out ('..') and isn't absolute. Using path.relative keeps
+    // this correct on Windows (backslashes) as well as POSIX.
+    const isUnderRoot = (f: string): boolean => {
+      const rel = relative(root, f)
+      return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+    }
+    const files = sourceDirs.flatMap((dir) => walkAudioFiles(dir))
+      .filter((f) => !isUnderRoot(f))
+
+    const trackByPath = new Map<string, string>()
+    for (const row of db.prepare('SELECT id, file_path FROM tracks').all() as { id: string; file_path: string }[]) {
+      trackByPath.set(row.file_path, row.id)
+    }
+
+    const usedDestNames = new Set<string>()
+    const moves: OrganizeMove[] = []
+    for (const from of files) {
+      const ext = extname(from)
+      const base = basename(from, ext)
+      let destName = `${base}${ext}`
+      let n = 1
+      while (existsSync(join(root, destName)) || usedDestNames.has(destName)) {
+        destName = `${base} (${n})${ext}`
+        n++
+      }
+      usedDestNames.add(destName)
+      moves.push({ from, to: join(root, destName), trackId: trackByPath.get(from) })
+    }
+    return moves
+  })
+
+  // ── Organize: move scattered files into the music library root ────────────
+  // The renderer already resolved collisions (Offcut never overwrites a file
+  // it didn't just move here), so this just executes the plan and reports
+  // per-file success/failure without leaving disk and DB out of sync.
+  ipcMain.handle('library:organizeFiles', (_e, moves: OrganizeMove[]): OrganizeMoveResult[] => {
+    const results: OrganizeMoveResult[] = []
+    const relinks: { id: string; path: string }[] = []
+
+    for (const move of moves) {
+      try {
+        if (!existsSync(move.from)) throw new Error('source file no longer exists')
+        if (existsSync(move.to)) throw new Error('a file already exists at the destination')
+        mkdirSync(dirname(move.to), { recursive: true })
+        try {
+          renameSync(move.from, move.to)
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+            // Cross-device (e.g. moving onto a different volume) — rename can't
+            // do this atomically, so copy then remove the original. If the
+            // unlink fails, roll back the copy so a failed move can't leave a
+            // duplicate behind (original + copy both present).
+            copyFileSync(move.from, move.to)
+            try {
+              unlinkSync(move.from)
+            } catch (unlinkErr) {
+              try { unlinkSync(move.to) } catch { /* best-effort rollback */ }
+              throw unlinkErr
+            }
+          } else {
+            throw err
+          }
+        }
+        if (move.trackId) relinks.push({ id: move.trackId, path: move.to })
+        results.push({ ...move, ok: true })
+      } catch (err) {
+        results.push({ ...move, ok: false, error: (err as Error).message })
+      }
+    }
+
+    if (relinks.length) {
+      const stmt = db.prepare("UPDATE tracks SET file_path = ?, updated_at = datetime('now') WHERE id = ?")
+      const applyRelinks = db.transaction(() => {
+        for (const r of relinks) stmt.run(r.path, r.id)
+      })
+      applyRelinks()
+    }
+
+    return results
+  })
+
   // ── Watch folders ─────────────────────────────────────────────────────────
   ipcMain.handle('library:setWatchFolders', (_e, paths: string[]): void => {
     saveSettings({ watchFolders: paths })
@@ -615,48 +730,91 @@ export function registerLibraryHandlers(): void {
   })
 
   ipcMain.handle('library:autoLocateMissing', async (_e, searchDir?: string): Promise<{ trackId: string; foundPath: string }[]> => {
-    const { readdirSync, statSync } = await import('fs')
     const { basename } = await import('path')
 
-    let resolvedDir = searchDir
-    if (!resolvedDir) {
-      const res = await dialog.showOpenDialog({ title: 'Choose search folder', properties: ['openDirectory'] })
-      if (res.canceled) return []
-      resolvedDir = res.filePaths[0]
+    // Default to the configured music library root + watch folders — only
+    // fall back to a folder-picker prompt if neither is set.
+    let searchDirs: string[]
+    if (searchDir) {
+      searchDirs = [searchDir]
+    } else {
+      const settings = loadSettings()
+      searchDirs = [settings.musicLibraryRoot, ...settings.watchFolders].filter((d): d is string => !!d)
+      if (!searchDirs.length) {
+        const res = await dialog.showOpenDialog({ title: 'Choose search folder', properties: ['openDirectory'] })
+        if (res.canceled) return []
+        searchDirs = [res.filePaths[0]]
+      }
     }
 
-    const AUDIO_EXTS = new Set(['.mp3', '.flac', '.aiff', '.aif', '.wav', '.m4a', '.ogg'])
-
-    // Build filename → absolute path map for all audio files under searchDir
-    const fileMap = new Map<string, string>()
-    const walk = (dir: string): void => {
-      try {
-        for (const entry of readdirSync(dir, { withFileTypes: true })) {
-          const full = `${dir}/${entry.name}`
-          if (entry.isDirectory()) {
-            walk(full)
-          } else if (AUDIO_EXTS.has(entry.name.slice(entry.name.lastIndexOf('.')).toLowerCase())) {
-            fileMap.set(entry.name.toLowerCase(), full)
-          }
-        }
-      } catch { /* skip unreadable dirs */ }
-    }
-    walk(resolvedDir)
+    const fileMap = buildFilenameMap(searchDirs)
+    const matchedFiles = new Set<string>()
 
     const missingRows = (db.prepare('SELECT * FROM tracks').all() as Record<string, unknown>[])
       .filter((r) => !existsSync(r.file_path as string))
-    void statSync   // satisfy import
 
     const results: { trackId: string; foundPath: string }[] = []
+    const relink = (trackId: string, foundPath: string): void => {
+      db.prepare("UPDATE tracks SET file_path = ?, updated_at = datetime('now') WHERE id = ?").run(foundPath, trackId)
+      results.push({ trackId, foundPath })
+      matchedFiles.add(foundPath)
+    }
+
+    // Pass 1: exact filename match.
+    const stillMissing: Record<string, unknown>[] = []
     for (const row of missingRows) {
-      const oldPath = row.file_path as string
-      const name = basename(oldPath).toLowerCase()
-      const found = fileMap.get(name)
-      if (found) {
-        db.prepare("UPDATE tracks SET file_path = ?, updated_at = datetime('now') WHERE id = ?").run(found, row.id as string)
-        results.push({ trackId: row.id as string, foundPath: found })
+      const found = fileMap.get(basename(row.file_path as string).toLowerCase())
+      if (found) relink(row.id as string, found)
+      else stillMissing.push(row)
+    }
+
+    // Pass 2: audio-fingerprint fuzzy match, for files the filename pass missed
+    // (renamed, re-tagged) — same cosine-similarity primitive as the duplicate
+    // scanner, but decoding candidates on demand since they aren't tracks yet.
+    // Pre-parse each missing track's stored embedding once (not per candidate).
+    const withEmbedding = stillMissing
+      .filter((r) => r.embedding && r.duration_seconds)
+      .map((r) => ({
+        id: r.id as string,
+        duration: r.duration_seconds as number,
+        embedding: JSON.parse(r.embedding as string) as number[]
+      }))
+    const candidates = [...fileMap.values()].filter((p) => !matchedFiles.has(p))
+    if (withEmbedding.length && candidates.length) {
+      const { decodeAudioToPcm } = await import('../integrations/beat-analysis/audio-decode')
+      const { audioFeatureVector } = await import('../../shared/audioFeatures')
+      const cosine = (a: number[], b: number[]): number => {
+        let dot = 0, na = 0, nb = 0
+        for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
+        const den = Math.sqrt(na) * Math.sqrt(nb)
+        return den ? dot / den : 0
+      }
+      const matchedTracks = new Set<string>()
+      for (const candidate of candidates) {
+        // Stop decoding once every fingerprint-eligible track is located —
+        // otherwise a 2-track relink would decode the entire library.
+        if (matchedTracks.size === withEmbedding.length) break
+        let candidateEmbedding: number[]
+        let candidateDuration: number
+        try {
+          const samples = await decodeAudioToPcm(candidate, 22050)
+          candidateEmbedding = audioFeatureVector(samples, 22050)
+          candidateDuration = samples.length / 22050
+        } catch {
+          continue // unreadable/corrupt — skip
+        }
+        for (const track of withEmbedding) {
+          if (matchedTracks.has(track.id)) continue
+          const durRatio = Math.abs(track.duration - candidateDuration) / track.duration
+          if (durRatio < 0.03 && cosine(track.embedding, candidateEmbedding) >= 0.995) {
+            relink(track.id, candidate)
+            matchedTracks.add(track.id)
+            break
+          }
+        }
       }
     }
+
     return results
   })
 

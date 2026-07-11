@@ -69,6 +69,7 @@ interface LibraryState {
   updateSmartPlaylistRules: (id: string, name: string, rules: SmartRule[]) => Promise<void>
   renamePlaylist: (id: string, name: string) => Promise<void>
   updatePlaylistColor: (id: string, color: string) => Promise<void>
+  reorderPlaylists: (orderedIds: string[]) => Promise<void>
   deletePlaylist: (id: string) => Promise<void>
   reorderPlaylistTracks: (playlistId: string, orderedIds: string[]) => Promise<void>
   addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<void>
@@ -244,6 +245,26 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   updatePlaylistColor: async (id, color) => {
     await window.api.library.updatePlaylistColor(id, color)
     set((s) => ({ playlists: s.playlists.map((p) => (p.id === id ? { ...p, color } : p)) }))
+  },
+
+  reorderPlaylists: async (orderedIds) => {
+    await window.api.library.reorderPlaylists(orderedIds)
+    // Reorder the array itself (not just sortOrder) — the sidebar's manual mode
+    // renders in array order, so mutating the field alone had no visible effect.
+    // Only the reordered playlists move; everything else keeps its position.
+    set((s) => {
+      const orderPos = new Map(orderedIds.map((id, i) => [id, i]))
+      // The reordered playlists, in their new order, with refreshed sortOrder.
+      const moved = s.playlists
+        .filter((p) => orderPos.has(p.id))
+        .sort((a, b) => orderPos.get(a.id)! - orderPos.get(b.id)!)
+        .map((p) => ({ ...p, sortOrder: orderPos.get(p.id)! }))
+      // Slot them back into the same array positions they occupied, leaving
+      // smart playlists / folders / auto-groups untouched.
+      let mi = 0
+      const playlists = s.playlists.map((p) => (orderPos.has(p.id) ? moved[mi++] : p))
+      return { playlists }
+    })
   },
 
   deletePlaylist: async (id) => {

@@ -52,6 +52,15 @@ const PAGE_HELP: Record<Section, Help> = {
       'Take versioned backups before risky bulk edits.'
     ]
   },
+  organize: {
+    title: 'Organize',
+    summary: 'Consolidate audio files scattered across your laptop into one music folder.',
+    points: [
+      'Pick your music library folder and add source folders to scan (Downloads, Desktop, an old drive…).',
+      'Review the preview before anything moves — library tracks are relinked automatically.',
+      'Files that fail to move (permissions, disk full) are reported without leaving the library out of sync.'
+    ]
+  },
   fixes: {
     title: 'Smart Fixes',
     summary: 'Tidy messy metadata across many tracks at once.',

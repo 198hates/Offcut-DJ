@@ -1,4 +1,4 @@
-export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'fixes' | 'builder' | 'orders' | 'search' | 'lineage' | 'assistant' | 'sethistory' | 'phonesync' | 'usb' | 'settings'
+export type Section = 'library' | 'sync' | 'analyse' | 'health' | 'organize' | 'fixes' | 'builder' | 'orders' | 'search' | 'lineage' | 'assistant' | 'sethistory' | 'phonesync' | 'usb' | 'settings'
 
 interface Props {
   active: Section
@@ -40,6 +40,16 @@ function HealthIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="0.5,8 3.5,8 5,4.5 7,11.5 9,5.5 10.5,8 15.5,8"/>
+    </svg>
+  )
+}
+
+/** Organize — folder with arrow: consolidating scattered files */
+function OrganizeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M1.5 4.5h4l1 1.5h8v7.5h-13z"/>
+      <path d="M8 7.5v4M6.2 9.7 8 11.5l1.8-1.8" fill="none"/>
     </svg>
   )
 }
@@ -173,6 +183,7 @@ const MAIN_ITEMS: { id: Exclude<Section, 'settings'>; Icon: () => JSX.Element; l
   { id: 'sync',    Icon: SyncIcon,    label: 'Sync'            },
   { id: 'analyse', Icon: AnalyseIcon, label: 'Analyse'         },
   { id: 'health',  Icon: HealthIcon,  label: 'Library Health'  },
+  { id: 'organize', Icon: OrganizeIcon, label: 'Organize'      },
   { id: 'fixes',   Icon: FixesIcon,   label: 'Smart Fixes'     },
   { id: 'builder', Icon: BuilderIcon, label: 'Set Builder'     },
   { id: 'sethistory', Icon: SetHistoryIcon, label: 'Set History' },

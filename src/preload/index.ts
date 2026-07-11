@@ -19,6 +19,8 @@ const api = {
       ipcRenderer.invoke('library:bulkUpdateTracks', ids, patch),
     deleteTrack: (id: string) => ipcRenderer.invoke('library:deleteTrack', id),
     deleteTracks: (ids: string[]) => ipcRenderer.invoke('library:deleteTracks', ids),
+    trashFiles: (paths: string[]) =>
+      ipcRenderer.invoke('library:trashFiles', paths) as Promise<import('../shared/types').TrashResult[]>,
     importFromPath: (integrationId: IntegrationId, filePath?: string) =>
       ipcRenderer.invoke('library:importFromPath', integrationId, filePath),
     exportToPath: (integrationId: IntegrationId, filePath?: string) =>
@@ -32,6 +34,8 @@ const api = {
       ipcRenderer.invoke('library:renamePlaylist', id, name),
     updatePlaylistColor: (id: string, color: string) =>
       ipcRenderer.invoke('library:updatePlaylistColor', id, color),
+    reorderPlaylists: (orderedIds: string[]) =>
+      ipcRenderer.invoke('library:reorderPlaylists', orderedIds),
     recordPlay: (id: string, opts?: { mixedFrom?: string; deckId?: 'A' | 'B' }) =>
       ipcRenderer.invoke('library:recordPlay', id, opts),
     getCutHistory: (trackId: string) =>
@@ -71,6 +75,10 @@ const api = {
       ipcRenderer.invoke('library:applyPathMapping', from, to),
     getWatchFolders: () => ipcRenderer.invoke('library:getWatchFolders'),
     setWatchFolders: (paths: string[]) => ipcRenderer.invoke('library:setWatchFolders', paths),
+    scanForOrganize: (sourceDirs: string[], libraryRoot: string) =>
+      ipcRenderer.invoke('library:scanForOrganize', sourceDirs, libraryRoot) as Promise<import('../shared/types').OrganizeMove[]>,
+    organizeFiles: (moves: import('../shared/types').OrganizeMove[]) =>
+      ipcRenderer.invoke('library:organizeFiles', moves) as Promise<import('../shared/types').OrganizeMoveResult[]>,
     scanMissingFiles: () => ipcRenderer.invoke('library:scanMissingFiles'),
     autoLocateMissing: (searchDir?: string) => ipcRenderer.invoke('library:autoLocateMissing', searchDir),
     rekordboxDbStatus: () => ipcRenderer.invoke('library:rekordboxDbStatus'),
