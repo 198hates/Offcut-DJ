@@ -43,9 +43,11 @@ bash $D renderer  # assert the Vite renderer (5173) serves HTML
 bash $D api       # /sync/pull → prints "library: N tracks, M playlists" (proves SQLCipher opened)
 bash $D smoke     # dev → health → renderer → api → boot-log, end to end
 ```
-`api` reads the Phone Sync token from `~/Library/Application Support/offcut/phone-sync.json`
-and requires Phone Sync to be **enabled** in the app (Settings/PhoneSync page). The
-dev log is `/tmp/offcut-desktop-dev.log`.
+`api` reads the Phone Sync token from `~/Library/Application Support/<package.json name>/phone-sync.json`
+(the userData dir Electron derives from `package.json`'s `name` field — `offcut` for
+this repo, `offcut-dark` for the Offcut Dark fork) and requires Phone Sync to be
+**enabled** in the app (Settings/PhoneSync page). The dev log is
+`/tmp/offcut-desktop-dev-<name>.log`.
 
 ## Run (human path)
 ```bash

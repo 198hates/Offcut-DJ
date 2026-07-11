@@ -445,6 +445,7 @@ export interface Playlist {
   sortOrder: number
   trackIds: string[]
   sourceIds: Partial<Record<IntegrationId, string>>
+  createdAt: string
 }
 
 export interface LibraryStats {
@@ -463,6 +464,26 @@ export interface ExportResult {
   playlistsExported: number
   errors: string[]
   cancelled: boolean
+}
+
+/** A single file move planned by the Organize page — `trackId` set only if the
+ *  source file is already a library track (so its `file_path` gets relinked). */
+export interface OrganizeMove {
+  trackId?: string
+  from: string
+  to: string
+}
+
+export interface OrganizeMoveResult extends OrganizeMove {
+  ok: boolean
+  error?: string
+}
+
+/** Result of moving one file to the OS Trash (library:trashFiles). */
+export interface TrashResult {
+  path: string
+  ok: boolean
+  error?: string
 }
 
 /** Pioneer device settings written to DEVSETTING.DAT on USB export (mirrors the
@@ -521,6 +542,10 @@ export interface AppSettings {
   showWelcomeOnStartup: boolean
   /** Folders watched for new tracks (auto-import). */
   watchFolders: string[]
+  /** Central folder the Organize page consolidates scattered audio files into. */
+  musicLibraryRoot: string
+  /** Sidebar playlist-list order: alphabetical, most-recently-created, or user drag order. */
+  playlistSortMode?: 'name' | 'created' | 'manual'
   lastImportedAt: string | null
   windowBounds: { x: number; y: number; width: number; height: number } | null
   /** Device settings written to the USB on export (waveform colour, key display…). */

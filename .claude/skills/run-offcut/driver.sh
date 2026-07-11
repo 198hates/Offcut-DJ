@@ -21,8 +21,12 @@ SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP="$(cd "$SKILL_DIR/../../.." && pwd)"   # repo root (.claude/skills/run-offcut → up 3)
 export PATH="$HOME/.cargo/bin:$PATH"    # cargo, for engine:build
 PORT=47823
-PS="$HOME/Library/Application Support/offcut/phone-sync.json"
-DEV_LOG="/tmp/offcut-desktop-dev.log"
+# userData dir = package.json "name" (electron's default app.getName()) — this repo
+# may be a fork (e.g. offcut-dark) with its own userData dir distinct from "offcut".
+APP_NAME="$(node -pe "require('$APP/package.json').name" 2>/dev/null || echo offcut)"
+PS="$HOME/Library/Application Support/$APP_NAME/phone-sync.json"
+DEV_LOG="/tmp/offcut-desktop-dev-$APP_NAME.log"
+PULL_JSON="/tmp/offcut-pull-$APP_NAME.json"
 
 server_up()   { lsof -nP -iTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; }
 renderer_up() { lsof -nP -iTCP:5173 -sTCP:LISTEN  >/dev/null 2>&1; }
@@ -67,8 +71,8 @@ cmd_api() {
   local t; t="$(token)"
   [ -z "$t" ] && { echo "no pairing token in $PS — enable Phone Sync once in the app, then retry"; return 0; }
   curl -s --max-time 30 -H "Authorization: Bearer $t" "http://127.0.0.1:$PORT/sync/pull?cursor=0" \
-    -o /tmp/offcut-pull.json -w "pull [%{http_code}] %{size_download} bytes\n"
-  node -e "const d=require('/tmp/offcut-pull.json');console.log('library:',d.tracks.length,'tracks,',d.playlists.length,'playlists')" 2>/dev/null || true
+    -o "$PULL_JSON" -w "pull [%{http_code}] %{size_download} bytes\n"
+  node -e "const d=require('$PULL_JSON');console.log('library:',d.tracks.length,'tracks,',d.playlists.length,'playlists')" 2>/dev/null || true
 }
 
 cmd_shot() {

@@ -198,6 +198,8 @@ function DuplicatesSection({ tracks, playlists, deleteTracks }: {
   const [dupes, setDupes]               = useState<DuplicateGroup[] | null>(null)
   const [scanning, setScanning]         = useState(false)
   const [selected, setSelected]         = useState(new Set<string>())
+  const [deleteFilesToo, setDeleteFilesToo] = useState(false)
+  const [trashErrors, setTrashErrors]   = useState<string[] | null>(null)
 
   const scan = useCallback(() => {
     setScanning(true)
@@ -229,16 +231,25 @@ function DuplicatesSection({ tracks, playlists, deleteTracks }: {
     const nonSmartPlaylists = playlists.filter((p) => !p.isSmart)
     const inPlaylists = [...selected].filter((id) => nonSmartPlaylists.some((p) => p.trackIds.includes(id))).length
     const suffix = selected.size !== 1 ? 's' : ''
-    const msg = inPlaylists > 0
+    const fileNote = deleteFilesToo ? '\n\nThe underlying files will also be moved to the Trash.' : ''
+    const msg = (inPlaylists > 0
       ? `Remove ${selected.size} track${suffix} from library?\n\n${inPlaylists} of them appear in playlists — they will be replaced with the kept version.`
-      : `Remove ${selected.size} track${suffix} from library?`
+      : `Remove ${selected.size} track${suffix} from library?`) + fileNote
     if (!window.confirm(msg)) return
     for (const [removeId, keepId] of keepMap) await window.api.library.replaceTrackInPlaylists(removeId, keepId)
     const toDelete = [...selected]
+    setTrashErrors(null)
+    if (deleteFilesToo) {
+      const paths = tracks.filter((t) => selected.has(t.id)).map((t) => t.filePath)
+      const trashResults = await window.api.library.trashFiles(paths)
+      const failed = trashResults.filter((r) => !r.ok)
+      if (failed.length) setTrashErrors(failed.map((f) => `${f.path}: ${f.error}`))
+    }
     await deleteTracks(toDelete)
     await useLibraryStore.getState().loadLibrary()
     const deletedSet = new Set(toDelete)
     setSelected(new Set())
+    setDeleteFilesToo(false)
     setDupes((prev) => prev?.map((g) => g.filter((t) => !deletedSet.has(t.id))).filter((g) => g.length > 1) ?? null)
   }
 
@@ -276,13 +287,27 @@ function DuplicatesSection({ tracks, playlists, deleteTracks }: {
                   auto-select extras
                 </button>
                 {selected.size > 0 && (
-                  <button onClick={deleteSelected}
-                    className="px-3 py-1.5 bg-red-600/15 hover:bg-red-600/25 text-red-500 font-mono text-[13px] uppercase tracking-[0.1em] rounded border border-red-600/25 transition-colors">
-                    remove {selected.size} selected
-                  </button>
+                  <>
+                    <label className="flex items-center gap-1.5 font-mono text-[12px] text-muted hover:text-ink cursor-pointer transition-colors">
+                      <input type="checkbox" checked={deleteFilesToo} onChange={(e) => setDeleteFilesToo(e.target.checked)} />
+                      also delete files (to Trash)
+                    </label>
+                    <button onClick={deleteSelected}
+                      className="px-3 py-1.5 bg-red-600/15 hover:bg-red-600/25 text-red-500 font-mono text-[13px] uppercase tracking-[0.1em] rounded border border-red-600/25 transition-colors">
+                      remove {selected.size} selected
+                    </button>
+                  </>
                 )}
               </div>
             </div>
+            {trashErrors && (
+              <div className="space-y-1">
+                <p className="font-mono text-[12px] text-red-500">{trashErrors.length} file{trashErrors.length !== 1 ? 's' : ''} failed to move to Trash:</p>
+                {trashErrors.map((e, i) => (
+                  <p key={i} className="font-mono text-[11px] text-muted truncate">{e}</p>
+                ))}
+              </div>
+            )}
             <div className="space-y-2">
               {dupes.map((group, gi) => (
                 <DuplicateGroupCard key={gi} group={group} selected={selected} playlists={playlists.filter((p) => !p.isSmart)}
@@ -316,17 +341,22 @@ function MissingFilesSection({ deleteTracks, updateTrack }: {
     setScanning(false)
   }, [])
 
-  const autoLocate = async () => {
+  const autoLocate = async (searchDir?: string) => {
     if (!missing?.length) return
     setLocating(true)
     setLocateResult(null)
-    const results = await window.api.library.autoLocateMissing()
+    const results = await window.api.library.autoLocateMissing(searchDir)
     setLocating(false)
     if (!results.length) { setLocateResult({ found: 0, total: missing.length }); return }
     const foundIds = new Set(results.map((r) => r.trackId))
     await useLibraryStore.getState().loadLibrary()
     setMissing((prev) => prev?.filter((t) => !foundIds.has(t.id)) ?? null)
     setLocateResult({ found: results.length, total: missing.length })
+  }
+
+  const chooseLocateFolder = async () => {
+    const p = await window.api.settings.choosePath('Choose folder to search', true)
+    if (p) await autoLocate(p)
   }
 
   const locateTrack = async (track: Track) => {
@@ -355,6 +385,7 @@ function MissingFilesSection({ deleteTracks, updateTrack }: {
           <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-ink">missing files
           </h2>
           <p className="font-mono text-[13px] text-muted mt-0.5">checks which tracks can no longer be found on disk</p>
+          <p className="font-mono text-[12px] text-muted/60 mt-0.5">auto-locate searches your music library folder and watch folders by filename, then by audio fingerprint for renamed files</p>
         </div>
         <button onClick={scan} disabled={scanning || tracks.length === 0}
           className="px-4 py-2 bg-accent hover:bg-accent/90 disabled:opacity-40 text-paper font-mono text-[13px] uppercase tracking-[0.12em] rounded transition-colors">
@@ -374,9 +405,13 @@ function MissingFilesSection({ deleteTracks, updateTrack }: {
                 <span className="text-red-500 font-bold">{missing.length}</span> missing file{missing.length !== 1 ? 's' : ''}
               </p>
               <div className="flex items-center gap-2">
-                <button onClick={autoLocate} disabled={locating}
+                <button onClick={() => autoLocate()} disabled={locating}
                   className="px-3 py-1.5 bg-accent/10 hover:bg-accent/20 text-accent font-mono text-[13px] uppercase tracking-[0.1em] rounded border border-accent/25 transition-colors disabled:opacity-40">
-                  {locating ? 'searching…' : 'auto-locate'}
+                  {locating ? 'searching… (fingerprint pass can take a moment)' : 'auto-locate'}
+                </button>
+                <button onClick={chooseLocateFolder} disabled={locating}
+                  className="px-3 py-1.5 bg-ink/5 hover:bg-ink/10 text-ink-soft hover:text-ink font-mono text-[13px] uppercase tracking-[0.1em] rounded transition-colors disabled:opacity-40">
+                  choose folder…
                 </button>
                 <button onClick={deleteAllMissing}
                   className="px-3 py-1.5 bg-red-600/15 hover:bg-red-600/25 text-red-500 font-mono text-[13px] uppercase tracking-[0.1em] rounded border border-red-600/25 transition-colors">

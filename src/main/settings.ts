@@ -25,6 +25,8 @@ const DEFAULTS: AppSettings = {
   defaultExportDir: '',
   showWelcomeOnStartup: true,
   watchFolders: [],
+  musicLibraryRoot: autoDetectMusicLibraryRoot(),
+  playlistSortMode: 'manual',
   lastImportedAt: null,
   windowBounds: null,
   usbDeviceSettings: {
@@ -116,6 +118,11 @@ export function autoDetectSeratoDir(): string {
       ? [join(home, 'Music', '_Serato_')]
       : [join(home, 'Music', '_Serato_')]
   return candidates.find(existsSync) ?? ''
+}
+
+export function autoDetectMusicLibraryRoot(): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
+  return join(home, 'Music')
 }
 
 export function autoDetectAppleMusicXml(): string {

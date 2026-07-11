@@ -6,6 +6,7 @@ import './lib/mixBus'
 import { LibraryPage } from './pages/Library'
 import { AnalysePage } from './pages/Analyse'
 import { HealthPage } from './pages/Health'
+import { OrganizePage } from './pages/Organize'
 import { SmartFixesPage } from './pages/SmartFixes'
 import { SettingsPage } from './pages/Settings'
 import { SyncPage } from './pages/Sync'
@@ -151,6 +152,7 @@ export default function App(): JSX.Element {
               ['sync',       <ErrorBoundary name="sync"><SyncPage /></ErrorBoundary>],
               ['analyse',    <ErrorBoundary name="analyse"><AnalysePage /></ErrorBoundary>],
               ['health',     <ErrorBoundary name="health"><HealthPage /></ErrorBoundary>],
+              ['organize',   <ErrorBoundary name="organize"><OrganizePage /></ErrorBoundary>],
               ['fixes',      <ErrorBoundary name="fixes"><SmartFixesPage /></ErrorBoundary>],
               ['builder',    <ErrorBoundary name="builder"><SetBuilderPage /></ErrorBoundary>],
               ['search',     <ErrorBoundary name="search"><SearchPage /></ErrorBoundary>],

@@ -89,7 +89,8 @@ export function rowToPlaylist(
     parentId: (row.parent_id as string) || null,
     sortOrder: row.sort_order as number,
     trackIds,
-    sourceIds: JSON.parse(row.source_ids as string)
+    sourceIds: JSON.parse(row.source_ids as string),
+    createdAt: row.created_at as string
   }
 }
 
