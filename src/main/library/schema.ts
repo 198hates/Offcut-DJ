@@ -101,6 +101,12 @@ export function applySchema(db: import('better-sqlite3').Database): void {
 
   // Safe column migrations — ignore "duplicate column" errors
   for (const stmt of [
+    // Child-key index for playlist_tracks.track_id. Without it, every DELETE
+    // from tracks full-scans playlist_tracks to enforce the ON DELETE CASCADE
+    // foreign key — measured at 71.8s to delete 15.6k tracks on a real library
+    // (~400M row comparisons), versus well under a second with the index.
+    // Deleting tracks anywhere in the app pays this, not just the migration.
+    "CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track ON playlist_tracks(track_id)",
     "ALTER TABLE playlists ADD COLUMN is_smart INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE playlists ADD COLUMN rules TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE playlists ADD COLUMN color TEXT NOT NULL DEFAULT '#8A8474'",

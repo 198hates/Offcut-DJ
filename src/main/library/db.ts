@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
 import { applySchema } from './schema'
+import { dedupeTracksByFilePath } from './migrations/dedupe-tracks'
 import type { Track, Playlist } from '../../shared/types'
 
 let _db: Database.Database | null = null
@@ -14,6 +15,23 @@ export function getLibraryDb(): Database.Database {
   _db.pragma('journal_mode = WAL')
   _db.pragma('foreign_keys = ON')
   applySchema(_db)
+
+  // Repair libraries duplicated by the old ON CONFLICT(id) upsert, and install
+  // the UNIQUE(file_path) index the new upsert keys on. Self-skipping once the
+  // index exists, so this costs one index lookup on every later launch.
+  try {
+    const res = dedupeTracksByFilePath(_db)
+    if (res.ran && res.removed > 0) {
+      console.info(
+        `[library] de-duplicated ${res.removed} track rows (${res.before} → ${res.after}); ` +
+        `repointed ${res.playlistRefsRepointed} playlist entries`
+      )
+    }
+  } catch (err) {
+    // A library that can't be de-duplicated is still usable — it just stays
+    // slow and keeps duplicating. Better than refusing to open at all.
+    console.error('[library] track de-duplication failed:', (err as Error).message)
+  }
 
   return _db
 }
@@ -107,8 +125,14 @@ export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
       @tags, @cuePoints, @beatgrid, @sourceIds,
       @fileSize, @fileType, @sampleRate, @bitDepth
     )
-    ON CONFLICT(id) DO UPDATE SET
-      file_path = excluded.file_path,
+    /* Keyed on file_path, NOT id. Every importer mints a fresh randomUUID() per
+       track, so ON CONFLICT(id) could never fire on a re-import: it appended a
+       whole second copy of the library instead of updating, and none of the
+       "preserve the user's edits" branches below ever ran. file_path is the
+       stable identity of a track and carries a UNIQUE index (added by the
+       dedupe-tracks migration). The existing row keeps its own id, so playlist
+       and history references survive. */
+    ON CONFLICT(file_path) DO UPDATE SET
       title = excluded.title,
       artist = excluded.artist,
       album = excluded.album,
