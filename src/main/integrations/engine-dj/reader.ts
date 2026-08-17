@@ -13,7 +13,7 @@ import { join } from 'path'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { insertOrUpdateTrack } from '../../library/db'
-import type { Track, CuePoint, ImportResult } from '../../../shared/types'
+import type {TrackInput, CuePoint, ImportResult} from '../../../shared/types'
 
 export function getDefaultEngineDbPath(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
@@ -40,7 +40,7 @@ export function importFromIntegration(appDb: Database.Database, dbPath: string):
       WHERE path IS NOT NULL
     `).all() as Record<string, unknown>[]
 
-    const insertTrack = appDb.transaction((track: Track) => insertOrUpdateTrack(appDb, track))
+    const insertTrack = appDb.transaction((track: TrackInput) => insertOrUpdateTrack(appDb, track))
 
     for (const row of tracks) {
       try {
@@ -48,7 +48,7 @@ export function importFromIntegration(appDb: Database.Database, dbPath: string):
         const cues = getCuePoints(eng, engId)
         const filePath = resolveEnginePath(String(row.path ?? ''))
 
-        const track: Track = {
+        const track: TrackInput = {
           id: randomUUID(),
           filePath,
           title: String(row.title ?? row.filename ?? ''),

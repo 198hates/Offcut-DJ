@@ -6,6 +6,13 @@
  */
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
+
+// Beat grids are omitted from library rows (~770MB across a library), so any
+// pass that reads real markers hydrates first and then re-reads the store row.
+const hydrateGrids = (ids: string[]): Promise<void> =>
+  useLibraryStore.getState().hydrateGrids(ids)
+const findLive = (t: Track): Track =>
+  useLibraryStore.getState().tracks.find((x) => x.id === t.id) ?? t
 import { useAnalysisStore } from '../../store/analysisStore'
 import { analyzeAudio, generateCuesForFile, downbeatsForTrack } from '../../lib/analyzer'
 import { integratedLufs, lufsGainDb } from '../../lib/loudness'
@@ -165,18 +172,24 @@ function BpmKeySection(): JSX.Element {
       try {
         const ab = await window.api.audio.readFile(track.filePath)
         const buf = await ctx.decodeAudioData(ab)
-        const r   = await analyzeAudio(buf, downbeatsForTrack(track))
+        // List rows carry no grid markers (the grids are ~770MB library-wide), and
+        // the newGrid decision below treats an empty array as "needs a grid" —
+        // without hydrating first, a generated uniform grid would replace a
+        // model-analysed or hand-edited one.
+        await hydrateGrids([track.id])
+        const live = findLive(track)
+        const r   = await analyzeAudio(buf, downbeatsForTrack(live))
         const newBpm  = (!track.bpm && r.bpm) ? r.bpm : track.bpm
         const newKey  = (!track.key && r.key) ? r.key : track.key
         const newNrg  = (track.energy == null && r.energy != null) ? r.energy : track.energy
         const newDnce = (track.danceability == null && r.danceability != null) ? r.danceability : track.danceability
         const newMood = (track.mood == null && r.mood != null) ? r.mood : track.mood
-        const newGrid = (track.beatgrid.length === 0 && newBpm && r.offsetMs != null)
-          ? generateBeatgrid(newBpm, r.offsetMs, buf.duration * 1000) : track.beatgrid
+        const newGrid = (live.beatgrid.length === 0 && newBpm && r.offsetMs != null)
+          ? generateBeatgrid(newBpm, r.offsetMs, buf.duration * 1000) : live.beatgrid
         const newCues = (track.cuePoints.length === 0 && r.suggestedCues.length > 0)
           ? r.suggestedCues.map((c, idx) => ({ index: idx, type: 'hotcue' as const, positionMs: c.positionMs, color: c.color, label: c.label, confidence: c.confidence }))
           : track.cuePoints
-        if (newBpm !== track.bpm || newKey !== track.key || newNrg !== track.energy || newDnce !== track.danceability || newMood !== track.mood || newGrid !== track.beatgrid || newCues !== track.cuePoints) {
+        if (newBpm !== track.bpm || newKey !== track.key || newNrg !== track.energy || newDnce !== track.danceability || newMood !== track.mood || newGrid !== live.beatgrid || newCues !== track.cuePoints) {
           await updateTrack({ id: track.id, bpm: newBpm, key: newKey, energy: newNrg, danceability: newDnce, mood: newMood, beatgrid: newGrid, cuePoints: newCues })
           updated++; updatedIds.push(track.id)
         } else skipped++
@@ -304,8 +317,8 @@ function BeatGridSection(): JSX.Element {
   }, [])
 
   // Needs beat grid = no legacy markers at all, OR has markers but no v2 grid yet
-  const needingGrid    = tracks.filter((t) => !t.beatgrid || t.beatgrid.length === 0)
-  const needingUpgrade = tracks.filter((t) => t.beatgrid?.length > 0 && !t.analysedBeatgrid)
+  const needingGrid    = tracks.filter((t) => t.gridSummary.markers === 0)
+  const needingUpgrade = tracks.filter((t) => t.gridSummary.markers > 0 && !t.gridSummary.hasAnalysed)
 
   // Full re-grid with the model: every track whose v2 grid was NOT produced by
   // the Beat This! model. Hand-edited ('manual') grids are preserved by default
@@ -313,7 +326,7 @@ function BeatGridSection(): JSX.Element {
   const [includeManual, setIncludeManual] = useState(false)
   const analysisRunning = useAnalysisStore((s) => s.running)
   const regridTargets = tracks.filter((t) => {
-    const src = t.analysedBeatgrid?.source
+    const src = t.gridSummary.analysedSource
     if (src === 'beat-this') return false
     if (src === 'manual' && !includeManual) return false
     return true
@@ -368,7 +381,8 @@ function BeatGridSection(): JSX.Element {
       setProgress({ current: i + 1, total: needingUpgrade.length, trackPct: 1 })
       setCurrentTitle(track.title || track.filePath.split('/').pop() || '')
       try {
-        const sorted = [...track.beatgrid].sort((a, b) => a.positionMs - b.positionMs)
+        await hydrateGrids([track.id])
+        const sorted = [...findLive(track).beatgrid].sort((a, b) => a.positionMs - b.positionMs)
         const v2 = conv(sorted, 'tags')
         await window.api.library.updateTrack({ id: track.id, analysedBeatgrid: v2 })
         updated++
@@ -993,7 +1007,9 @@ function PhraseSection(): JSX.Element {
     setProgress({ current: 0, total: toProcess.length, label: '' })
     await mapPool(toProcess, await runConcurrency(), async (t) => {
       const { samples, sampleRate } = await window.api.audio.decodePcm(t.filePath, 22050)
-      const firstBeatMs = t.beatgrid[0]?.positionMs ?? t.analysedBeatgrid?.firstBeatMs ?? 0
+      await hydrateGrids([t.id])
+      const live = findLive(t)
+      const firstBeatMs = live.beatgrid[0]?.positionMs ?? live.analysedBeatgrid?.firstBeatMs ?? 0
       const phrases = detectPhrasesFromMono(samples, sampleRate, t.bpm, firstBeatMs)
       await updateTrack({ id: t.id, phrases })
     }, { onProgress: (done, total) => setProgress({ current: done, total, label: '' }), cancelled: () => cancelRef.current })
@@ -1052,7 +1068,7 @@ export function AnalysePage(): JSX.Element {
   const [tool, setTool] = useState<AnalyseTool>('meta')
 
   // Tracks needing each step (matches the per-section targeting below).
-  const needGrid = tracks.filter((t) => !t.beatgrid?.length).length
+  const needGrid = tracks.filter((t) => t.gridSummary.markers === 0).length
   const needMeta = tracks.filter((t) => !t.bpm || !t.key || t.energy == null).length
   const needCues = tracks.filter((t) => t.cuePoints.length === 0 && t.bpm != null).length
   const needAny  = needGrid + needMeta + needCues
@@ -1067,7 +1083,7 @@ export function AnalysePage(): JSX.Element {
       const cancelled = (): boolean => useAnalysisStore.getState().cancelled
       useAnalysisStore.setState({ cancelled: false })
       const snap = (): typeof tracks => useLibraryStore.getState().tracks
-      const grid = snap().filter((t) => !t.beatgrid?.length).map((t) => t.id)
+      const grid = snap().filter((t) => t.gridSummary.markers === 0).map((t) => t.id)
       if (grid.length) await store.analyseBeats(grid)
       if (cancelled()) return
       const meta = snap().filter((t) => !t.bpm || !t.key || t.energy == null).map((t) => t.id)

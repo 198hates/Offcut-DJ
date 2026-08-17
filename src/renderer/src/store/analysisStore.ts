@@ -61,6 +61,19 @@ interface AnalysisState {
 const findTrack = (id: string): Track | undefined =>
   useLibraryStore.getState().tracks.find((x) => x.id === id)
 
+/**
+ * Load a track's real beat grid into the store before analysing it.
+ *
+ * Library rows come back with `beatgrid: []` (the grids are ~770MB library-wide,
+ * so the list query omits them). Analysis decides whether to GENERATE a grid from
+ * `beatgrid.length === 0`, so without this an empty list row reads as "no grid"
+ * and a freshly generated uniform grid would silently replace a model-analysed or
+ * hand-edited one — exactly what the "never clobber an existing beatgrid" comment
+ * below is there to prevent.
+ */
+const hydrate = async (id: string): Promise<void> =>
+  useLibraryStore.getState().hydrateGrids([id])
+
 const toast = (msg: string, type: 'success' | 'info' | 'error'): void =>
   useToastStore.getState().show(msg, type)
 
@@ -92,6 +105,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
         }
       } catch { /* continue */ }
       // Phase 2: audio decode (if bpm, key, OR energy still missing)
+      await hydrate(id)
       const current = findTrack(id) ?? t
       if (!current.bpm || !current.key || current.energy == null || current.beatgrid.length === 0) {
         const buf = await decodeTrackToBuffer(t.filePath, ctx)
@@ -129,6 +143,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       if (!t) return
       const buf = await decodeTrackToBuffer(t.filePath, ctx)
       const result = await analyzeAudio(buf)
+      await hydrate(id)
       const current = findTrack(id) ?? t
       const newBpm = result.bpm ?? current.bpm
       const beatgrid = (current.beatgrid.length === 0 && newBpm && result.offsetMs != null)

@@ -468,9 +468,10 @@ const FIXES: Fix[] = [
     scan: (tracks) => {
       const results: FixResult[] = []
       for (const t of tracks) {
-        if (!t.bpm || !t.analysedBeatgrid) continue
+        // gridSummary, not the grid: this scans the entire library.
+        if (!t.bpm || !t.gridSummary.hasAnalysed) continue
         const stored   = t.bpm
-        const analysed = t.analysedBeatgrid.medianBpm
+        const analysed = t.gridSummary.analysedMedianBpm
         if (!analysed || analysed <= 0) continue
 
         // Is stored BPM about half the analysed?  → double it

@@ -61,7 +61,7 @@ function track(filePath: string): Track {
     analysedBeatgrid: null, editLineage: null, color: '', playCount: 0,
     lastPlayedAt: null, updatedAt: null, fileSize: null, fileType: null,
     sampleRate: null, bitDepth: null, gainDb: null, phrases: null, embedding: null, overviewPeaks: null, sourceIds: {},
-  } as Track
+  } as unknown as Track
 }
 
 describe('crate buffer round-trip', () => {

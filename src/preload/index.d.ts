@@ -31,6 +31,10 @@ declare global {
         getPlaylists: () => Promise<Playlist[]>
         getStats: () => Promise<LibraryStats>
         updateTrack: (patch: Partial<Track> & { id: string }) => Promise<Track>
+        getTrackGrids: (ids: string[]) => Promise<Record<string, {
+          beatgrid: import('../shared/types').BeatgridMarker[]
+          analysedBeatgrid: import('../shared/types').Beatgrid | null
+        }>>
         overviewPeaks: (trackId: string, filePath: string) => Promise<number[] | null>
         putOverviewPeaks: (trackId: string, peaks: number[]) => Promise<void>
         backfillFileMeta: () => Promise<number>

@@ -358,8 +358,11 @@ export function LibraryPage(): JSX.Element {
   const activePlaylist = activePlaylistId ? playlists.find((p) => p.id === activePlaylistId) : null
   const timelineTracks = useMemo(() => {
     if (!activePlaylist) return []
+    // Index once rather than scanning allTracks per id: a 500-track playlist
+    // against a 15k-track library is ~7.5M comparisons on every recompute.
+    const byId = new Map(allTracks.map((t) => [t.id, t]))
     return activePlaylist.trackIds
-      .map((id) => allTracks.find((t) => t.id === id))
+      .map((id) => byId.get(id))
       .filter((t): t is Track => !!t)
   }, [activePlaylist, allTracks])
 
@@ -857,12 +860,13 @@ function TrackRow({ track, isSelected, visibleColIds, onClick, onDoubleClick, on
               </svg>
             </span>
           )}
-          {track.beatgrid.length > 0 && (() => {
-            const bg = track.analysedBeatgrid
-            const isKept = bg?.source === 'manual'
-            const meanConf = bg && bg.beats.length > 0
-              ? bg.beats.reduce((s, b) => s + b.confidence, 0) / bg.beats.length
-              : null
+          {/* Reads gridSummary, never the grids themselves: list rows carry no
+              markers (the grids are ~770MB library-wide and are fetched on
+              demand). Mean confidence is precomputed in SQL rather than reduced
+              over every beat here, for every visible row, on every render. */}
+          {track.gridSummary.markers > 0 && (() => {
+            const isKept = track.gridSummary.analysedSource === 'manual'
+            const meanConf = track.gridSummary.analysedConfidence
             const needsEye = !isKept && meanConf !== null && meanConf < 0.60
 
             return (

@@ -9,7 +9,7 @@ import type Database from 'better-sqlite3'
 import { insertOrUpdateTrack } from '../../library/db'
 import { resolveExportPdb, parseExportPdb } from './reader'
 import { readAnlzAnalysis } from './anlz-reader'
-import type { Track, ImportResult, UsbPlaylistNode } from '../../../shared/types'
+import type { Track, TrackInput, ImportResult, UsbPlaylistNode } from '../../../shared/types'
 
 /** Resolve a device-relative path (e.g. /Contents/x.mp3) to a real path in the backup. */
 function devicePath(backupRoot: string, deviceRelative: string): string {
@@ -82,7 +82,7 @@ export async function importFromUsbBackup(
             /* audio missing from backup — still import the metadata */
           }
 
-          const track: Track = {
+          const track: TrackInput = {
             id,
             filePath: audioPath,
             title: t.title,

@@ -14,7 +14,7 @@ import { XMLParser } from 'fast-xml-parser'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { insertOrUpdateTrack } from '../../library/db'
-import type { Track, ImportResult } from '../../../shared/types'
+import type {TrackInput, ImportResult} from '../../../shared/types'
 
 export type PlistValue = string | number | boolean | PlistDict | PlistValue[]
 export interface PlistDict {
@@ -117,7 +117,7 @@ export function importFromIntegration(db: Database.Database, xmlPath: string): I
     return result
   }
 
-  const insertTrack = db.transaction((track: Track) => insertOrUpdateTrack(db, track))
+  const insertTrack = db.transaction((track: TrackInput) => insertOrUpdateTrack(db, track))
 
   for (const [appleMusicId, trackData] of Object.entries(tracksDict)) {
     try {
@@ -125,7 +125,7 @@ export function importFromIntegration(db: Database.Database, xmlPath: string): I
       const filePath = decodeAppleFileUrl(t['Location'] as string | undefined)
       if (!filePath) continue
 
-      const track: Track = {
+      const track: TrackInput = {
         id: randomUUID(),
         filePath,
         title: String(t['Name'] ?? ''),

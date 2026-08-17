@@ -9,6 +9,9 @@ const api = {
     getStats: () => ipcRenderer.invoke('library:getStats'),
     updateTrack: (patch: Partial<Track> & { id: string }) =>
       ipcRenderer.invoke('library:updateTrack', patch),
+    // Full beat grids for specific tracks. getTracks deliberately omits them
+    // (~770MB across a real library), so hydrate before drawing/editing/exporting.
+    getTrackGrids: (ids: string[]) => ipcRenderer.invoke('library:getTrackGrids', ids),
     overviewPeaks: (trackId: string, filePath: string): Promise<number[] | null> =>
       ipcRenderer.invoke('library:overviewPeaks', trackId, filePath),
     putOverviewPeaks: (trackId: string, peaks: number[]): Promise<void> =>

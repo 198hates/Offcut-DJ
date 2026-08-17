@@ -18,7 +18,7 @@ import Database from 'better-sqlite3'
 import SqlCipherDatabase from 'better-sqlite3-multiple-ciphers'
 import { rowToTrack, insertOrUpdateTrack } from '../../library/db'
 import { rbScaleNameToCamelot } from '../key-notation'
-import type { Track, CuePoint, ImportResult, ExportResult } from '../../../shared/types'
+import type { Track, TrackInput, CuePoint, ImportResult, ExportResult } from '../../../shared/types'
 
 export const RB_KEY = '402fd482c38817c35ffa8ffb8c7d93143b749e7d315df7a81732a1ff43608497'
 
@@ -95,7 +95,7 @@ export function importFromRekordboxDb(
       `)
       .all() as Record<string, unknown>[]
 
-    const insertTrack = appDb.transaction((track: Track) => insertOrUpdateTrack(appDb, track))
+    const insertTrack = appDb.transaction((track: TrackInput) => insertOrUpdateTrack(appDb, track))
 
     for (const row of tracks) {
       try {
@@ -111,7 +111,7 @@ export function importFromRekordboxDb(
           `)
           .all(rbId) as Record<string, unknown>[]
 
-        const track: Track = {
+        const track: TrackInput = {
           id: randomUUID(),
           filePath: decodeRbPath(String(row.FolderPath ?? '')),
           title: String(row.Title ?? ''),

@@ -211,7 +211,7 @@ export function SearchPage(): JSX.Element {
     if (flags.hasBpm)    r = r.filter((t) => t.bpm != null)
     if (flags.hasKey)    r = r.filter((t) => !!t.key)
     if (flags.hasCues)   r = r.filter((t) => t.cuePoints.some((c) => c.type === 'hotcue'))
-    if (flags.hasGrid)   r = r.filter((t) => t.beatgrid.length > 0)
+    if (flags.hasGrid)   r = r.filter((t) => t.gridSummary.markers > 0)
     if (flags.unplayed)  r = r.filter((t) => t.playCount === 0)
 
     return [...r].sort((a, b) => {

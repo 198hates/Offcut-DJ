@@ -49,12 +49,16 @@ interface LibraryState {
   fnBus: Set<string>
   fnBusContext: FnBusContext
   isLoading: boolean
+  /** Ids whose full grids have been fetched — see hydrateGrids. */
+  gridsLoaded: Set<string>
   isImporting: boolean
   isExporting: boolean
   isDraggingTracks: boolean
   draggingTrackIds: string[]
 
   loadLibrary: () => Promise<void>
+  /** Load real beat grids for these tracks into the store (see hydrateGrids). */
+  hydrateGrids: (ids: string[]) => Promise<void>
   updateTrack: (patch: Partial<Track> & { id: string }) => Promise<void>
   bulkUpdateTracks: (ids: string[], patch: Partial<Track>) => Promise<void>
   deleteTrack: (id: string) => Promise<void>
@@ -98,11 +102,44 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   filters: DEFAULT_FILTERS,
   fnBus: new Set<string>(),
   fnBusContext: { harmonicKey: null, bpmRef: null, moodRef: null },
+  gridsLoaded: new Set<string>(),
   isLoading: false,
   isImporting: false,
   isExporting: false,
   isDraggingTracks: false,
   draggingTrackIds: [],
+
+  /**
+   * `library.getTracks` returns rows with `beatgrid: []` and
+   * `analysedBeatgrid: null` — the grids total ~770MB and shipping them on every
+   * load is what pinned the renderer at 100% CPU behind a blank window. Anything
+   * that needs the real markers (deck, grid editor, analysis, USB export) calls
+   * this first; anything that only *displays* grid state reads `track.gridSummary`.
+   *
+   * Already-hydrated ids are skipped, so calling it per deck load is cheap.
+   */
+  hydrateGrids: async (ids) => {
+    const have = get().gridsLoaded
+    const missing = ids.filter((id) => id && !have.has(id))
+    if (missing.length === 0) return
+    try {
+      const grids = await window.api.library.getTrackGrids(missing)
+      set((s) => {
+        const loaded = new Set(s.gridsLoaded)
+        for (const id of missing) loaded.add(id)
+        return {
+          gridsLoaded: loaded,
+          tracks: s.tracks.map((t) =>
+            grids[t.id]
+              ? { ...t, beatgrid: grids[t.id].beatgrid, analysedBeatgrid: grids[t.id].analysedBeatgrid }
+              : t
+          )
+        }
+      })
+    } catch {
+      // Non-fatal: the caller still has a summary, it just can't draw the grid.
+    }
+  },
 
   loadLibrary: async () => {
     set({ isLoading: true })
@@ -112,7 +149,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         window.api.library.getPlaylists(),
         window.api.library.getStats()
       ])
-      set({ tracks, playlists, stats, isLoading: false })
+      // Fresh rows carry no grids, so previous hydration no longer applies.
+      set({ tracks, playlists, stats, isLoading: false, gridsLoaded: new Set<string>() })
       // Backfill bit depth / sample rate for lossless tracks that came from
       // external libraries without it (self-limiting — skips once filled).
       void window.api.library.backfillFileMeta().then((n) => {

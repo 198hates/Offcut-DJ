@@ -330,6 +330,17 @@ function createDeckStore(deckId: 'A' | 'B') {
 
       loadTrack: async (track, opts) => {
         const autoplay = opts?.autoplay ?? true
+        // Library rows arrive without beat grids (they total ~770MB, so the list
+        // query omits them). Everything below — beat snap, sync, the waveform
+        // overlay, the quantiser — needs the real markers, so fetch them for
+        // this one track before it becomes currentTrack. Cheap and cached.
+        if (track.beatgrid.length === 0 && track.gridSummary.markers > 0) {
+          try {
+            const grids = await window.api.library.getTrackGrids([track.id])
+            const g = grids[track.id]
+            if (g) track = { ...track, beatgrid: g.beatgrid, analysedBeatgrid: g.analysedBeatgrid }
+          } catch { /* fall through with an empty grid rather than failing the load */ }
+        }
         const startAtSec = opts?.startAtMs != null ? Math.max(0, opts.startAtMs / 1000) : 0
         const gen = ++_loadGen
         _fluxStartPos = 0; _fluxStartClock = Date.now()

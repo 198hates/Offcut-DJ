@@ -3,10 +3,17 @@ import Database from 'better-sqlite3'
 import { applySchema } from '../schema'
 import { dedupeTracksByFilePath } from '../migrations/dedupe-tracks'
 
-function freshDb(): Database.Database {
+/**
+ * A database in the state this migration exists to repair: the schema as it was
+ * BEFORE file_path was unique, so duplicate rows can still be created. applySchema
+ * now adds that index up front, which is why it has to be dropped here — on a
+ * legacy library it could not be created until the duplicates were gone.
+ */
+function legacyDb(): Database.Database {
   const db = new Database(':memory:')
   db.pragma('foreign_keys = ON')
   applySchema(db)
+  db.exec('DROP INDEX IF EXISTS idx_tracks_file_path_unique')
   return db
 }
 
@@ -36,7 +43,7 @@ function insert(db: Database.Database, t: TrackSeed): void {
 }
 
 let db: Database.Database
-beforeEach(() => { db = freshDb() })
+beforeEach(() => { db = legacyDb() })
 
 describe('dedupeTracksByFilePath', () => {
   it('collapses duplicates down to one row per path', () => {

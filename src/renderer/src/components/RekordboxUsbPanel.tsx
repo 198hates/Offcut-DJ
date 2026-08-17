@@ -483,10 +483,22 @@ export function RekordboxUsbPanel(): JSX.Element {
     setProgress(null)
     writeStartRef.current = performance.now()
     setElapsedMs(0)
+    // Library rows carry no beat markers (the grids are ~770MB library-wide and
+    // are fetched on demand), so hydrate every track being exported first —
+    // otherwise the USB would be written with empty grids and the CDJs would
+    // show no beat grid at all.
+    await useLibraryStore.getState().hydrateGrids(
+      selectedPlaylists.flatMap((pl) => pl.trackIds)
+    )
+    // Re-read from the store: libTrackById is memoised from a render-time
+    // snapshot, so it still holds the pre-hydration (grid-less) rows.
+    const hydratedById = new Map(
+      useLibraryStore.getState().tracks.map((t) => [t.id, t])
+    )
     const payload = selectedPlaylists.map((pl) => ({
       name: pl.name,
       tracks: pl.trackIds
-        .map((id) => libTrackById.get(id))
+        .map((id) => hydratedById.get(id) ?? libTrackById.get(id))
         .filter((t): t is NonNullable<typeof t> => !!t)
         .map((t) => ({
           artist: t.artist,

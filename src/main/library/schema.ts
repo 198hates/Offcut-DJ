@@ -160,6 +160,16 @@ export function applySchema(db: import('better-sqlite3').Database): void {
     "ALTER TABLE tracks ADD COLUMN embedding TEXT",
     // Down-sampled amplitude overview for the library mini-waveform (JSON array)
     "ALTER TABLE tracks ADD COLUMN overview_peaks TEXT",
+    // ── Beat-grid summaries ─────────────────────────────────────────────────
+    // beatgrid + analysed_beatgrid are ~770MB of JSON on a real library and the
+    // list query used to ship every byte to the renderer. These four small
+    // columns carry everything the library/health/search/analyse views actually
+    // display about a grid, so the list can be read without touching the blobs.
+    // Kept in step by refreshGridSummary() after any grid write.
+    "ALTER TABLE tracks ADD COLUMN beatgrid_markers INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE tracks ADD COLUMN analysed_source TEXT",
+    "ALTER TABLE tracks ADD COLUMN analysed_median_bpm REAL",
+    "ALTER TABLE tracks ADD COLUMN analysed_confidence REAL",
     // Date last modified (tag write-back timestamp)
     "ALTER TABLE tracks ADD COLUMN updated_at TEXT",
     // Session history playlist type
@@ -250,7 +260,15 @@ export function applySchema(db: import('better-sqlite3').Database): void {
     `CREATE TRIGGER IF NOT EXISTS sync_pltrk_ad AFTER DELETE ON playlist_tracks
        WHEN EXISTS (SELECT 1 FROM playlists WHERE id = OLD.playlist_id) BEGIN
        INSERT INTO sync_log(entity, entity_id, op) VALUES ('playlist', OLD.playlist_id, 'upsert');
-     END`
+     END`,
+    // insertOrUpdateTrack keys on ON CONFLICT(file_path), which SQLite rejects
+    // outright ("does not match any PRIMARY KEY or UNIQUE constraint") unless
+    // this index exists — so every import would fail without it. Creating it
+    // here means a fresh database is correct immediately, rather than depending
+    // on the dedupe migration having run. On a library that still holds
+    // duplicates this throws, and the tolerated-error list below lets it pass:
+    // dedupeTracksByFilePath collapses them and creates the index itself.
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_file_path_unique ON tracks(file_path)"
   ]) {
     try {
       db.exec(stmt)
@@ -258,7 +276,13 @@ export function applySchema(db: import('better-sqlite3').Database): void {
       // Only "already exists" is expected — swallowing every error here let
       // real migration failures (disk full, locked DB, syntax) pass silently
       // and surface later as missing-column crashes.
-      if (!/duplicate column|already exists/i.test((e as Error).message)) throw e
+      //
+      // "UNIQUE constraint failed" joins it for one specific reason: the
+      // file_path unique index above cannot be built while a library still
+      // holds the duplicates the old ON CONFLICT(id) upsert created. That is
+      // expected on first launch after upgrading, and dedupeTracksByFilePath
+      // (run straight after this) removes them and builds the index itself.
+      if (!/duplicate column|already exists|UNIQUE constraint failed/i.test((e as Error).message)) throw e
     }
   }
 }

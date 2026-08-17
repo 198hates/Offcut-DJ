@@ -6,7 +6,7 @@ import { basename, extname } from 'path'
 import { BrowserWindow } from 'electron'
 import { getLibraryDb, insertOrUpdateTrack } from '../../library/db'
 import { AUDIO_EXTS } from '../../library/file-scan'
-import type { Track } from '../../../shared/types'
+import type {TrackInput} from '../../../shared/types'
 
 let watcher: FSWatcher | null = null
 
@@ -23,7 +23,7 @@ async function importFile(filePath: string): Promise<void> {
     const ext = extname(filePath).toLowerCase().replace('.', '')
     const fileType = ext === 'aif' ? 'aiff' : ext || null
 
-    const track: Track = {
+    const track: TrackInput = {
       id: randomUUID(),
       filePath,
       title: c.title || basename(filePath, extname(filePath)),

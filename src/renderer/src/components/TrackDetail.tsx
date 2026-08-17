@@ -52,6 +52,24 @@ export function TrackDetail({ trackId, onClose }: TrackDetailProps): JSX.Element
     setDraft(track ? { ...track } : null)
     setDirty(false)
     setSaved(false)
+    // The panel shows and edits the beat grid, but library rows arrive without
+    // one (~770MB library-wide, fetched on demand). Pull it in for this track
+    // and fold it into the draft, otherwise the grid section reads as "create"
+    // for a track that already has a perfectly good grid — and saving would
+    // then write the empty draft back over it.
+    if (!track || track.gridSummary.markers === 0 || track.beatgrid.length > 0) return
+    let cancelled = false
+    void (async () => {
+      const grids = await window.api.library.getTrackGrids([track.id])
+      const g = grids[track.id]
+      if (cancelled || !g) return
+      setDraft((d) =>
+        d && d.id === track.id
+          ? { ...d, beatgrid: g.beatgrid, analysedBeatgrid: g.analysedBeatgrid }
+          : d
+      )
+    })()
+    return () => { cancelled = true }
   }, [trackId, track?.id])
 
   if (!draft) return null

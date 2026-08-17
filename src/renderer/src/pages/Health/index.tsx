@@ -107,7 +107,7 @@ function StatsSection({ tracks }: { tracks: Track[] }): JSX.Element {
   const withEnergy  = tracks.filter((t) => t.energy != null).length
   const withGenre   = tracks.filter((t) => t.genre?.trim()).length
   const withCues    = tracks.filter((t) => t.cuePoints.length > 0).length
-  const withBeatgrid= tracks.filter((t) => t.analysedBeatgrid != null).length
+  const withBeatgrid= tracks.filter((t) => t.gridSummary.hasAnalysed).length
   const needsAny    = tracks.filter((t) => !t.bpm || !t.key).length
   const rated       = tracks.filter((t) => t.rating > 0).length
   const tagged      = tracks.filter((t) => t.tags.length > 0).length
@@ -183,7 +183,7 @@ function DuplicateGroupCard({ group, selected, playlists, onToggle, onSelectExtr
               {track.bpm != null && <span>{track.bpm.toFixed(1)}</span>}
               {track.durationSeconds != null && <span>{Math.floor(track.durationSeconds / 60)}:{String(Math.round(track.durationSeconds % 60)).padStart(2, '0')}</span>}
               {track.cuePoints.length > 0 && <span className="text-accent/70">{track.cuePoints.length} cues</span>}
-              {track.beatgrid.length > 0 && <span className="text-teal-500/70">grid</span>}
+              {track.gridSummary.markers > 0 && <span className="text-teal-500/70">grid</span>}
             </div>
           </div>
         )

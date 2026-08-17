@@ -172,6 +172,30 @@ export interface Quantiser {
   ): Promise<Beatgrid>
 }
 
+/**
+ * A track as an importer or scanner builds it, before it exists in the database.
+ * `gridSummary` is derived by SQLite from the stored grids, so a producer has no
+ * business inventing one — this keeps that a compile-time guarantee.
+ */
+export type TrackInput = Omit<Track, 'gridSummary'>
+
+/**
+ * What a list needs to know about a track's beat grids without loading them.
+ * Derived from the stored JSON and kept in step on every grid write.
+ */
+export interface GridSummary {
+  /** Number of markers in the legacy `beatgrid` array; 0 = no grid. */
+  markers: number
+  /** Whether an analysed (v2) grid exists. A NULL check on the column, so it
+   *  costs a row-header read rather than loading the grid itself. */
+  hasAnalysed: boolean
+  /** Where the analysed grid came from, e.g. 'manual' | 'beat-this'; null = none. */
+  analysedSource: string | null
+  analysedMedianBpm: number | null
+  /** Mean per-beat confidence of the analysed grid, 0–1; null = none. */
+  analysedConfidence: number | null
+}
+
 export interface Track {
   id: string
   filePath: string
@@ -197,9 +221,20 @@ export interface Track {
   tags: string[]
   customTags: Record<string, string>   // user-defined key→value fields
   cuePoints: CuePoint[]
+  /**
+   * Beat markers. EMPTY on rows from `library.getTracks` — the grids run to
+   * ~770MB across a real library, and shipping them to the renderer is what
+   * pinned it at 100% CPU behind a blank window on startup. Use `gridSummary`
+   * for anything you only need to *display*, and `library.getTrackGrids(ids)`
+   * to hydrate before drawing, editing or exporting.
+   */
   beatgrid: BeatgridMarker[]
-  /** v2 beatgrid — produced by Quantiser pipeline; null until analysed */
+  /** v2 beatgrid — produced by Quantiser pipeline; null until analysed.
+   *  Also omitted (null) by `library.getTracks`; see `beatgrid` above. */
   analysedBeatgrid: Beatgrid | null
+  /** Cheap denormalised facts about the grids, always populated — including on
+   *  rows whose grids were not loaded, so lists can render grid badges. */
+  gridSummary: GridSummary
   /** provenance: is this an edit of another track? */
   editLineage: EditLineage | null
   sourceIds: Partial<Record<IntegrationId, string>>

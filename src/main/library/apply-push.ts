@@ -6,6 +6,7 @@
 import type { Database } from 'better-sqlite3'
 import { getSyncCursor } from './sync'
 import type { SyncPushPayload, SyncPushResult, TrackPatch, PlaylistPatch } from '../../shared/types'
+import { refreshGridSummary } from './grid-summary'
 
 /** Parse a timestamp (ISO or SQLite 'YYYY-MM-DD HH:MM:SS') to epoch ms; null/garbage → 0. */
 function ms(ts: string | null | undefined): number {
@@ -57,6 +58,8 @@ function applyTrackPatch(db: Database, patch: TrackPatch): boolean {
   values.push(patch.updatedAt)
   values.push(row.id)
   db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE id = ?`).run(...values)
+  // Keep the denormalised grid badges in step with a grid pushed from a device.
+  if ('beatgrid' in patch || 'analysedBeatgrid' in patch) refreshGridSummary(db, row.id)
   return true
 }
 

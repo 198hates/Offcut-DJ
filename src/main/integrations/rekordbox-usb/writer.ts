@@ -20,7 +20,7 @@ import { readEmbeddedArt, toStickJpeg } from './artwork'
 import { patchDevSetting, patchMySetting, patchMySetting2 } from './settings'
 import { createHash } from 'node:crypto'
 import type { UsbPlaylistNode, UsbTrack } from './types'
-import type { BeatgridMarker, CuePoint, UsbDeviceSettings } from '../../../shared/types'
+import type {BeatgridMarker, CuePoint, UsbDeviceSettings} from '../../../shared/types'
 
 /**
  * Map Offcut cue points to ANLZ cues. Hot cues become numbered hot cues

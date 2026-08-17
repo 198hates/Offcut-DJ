@@ -5,7 +5,7 @@ import Database from 'better-sqlite3'
 import { insertOrUpdateTrack } from '../../library/db'
 import { parseSeratoTagsFromFile } from './geob'
 import { decodeSeratoUtf16BE, fromSeratoPath } from './path'
-import type { Track, ImportResult } from '../../../shared/types'
+import type {TrackInput, ImportResult} from '../../../shared/types'
 
 export function importFromIntegration(appDb: Database.Database, seratoDir: string): ImportResult {
   const result: ImportResult = { tracksImported: 0, playlistsImported: 0, errors: [] }
@@ -19,7 +19,7 @@ export function importFromIntegration(appDb: Database.Database, seratoDir: strin
     return result
   }
 
-  const insertTrack = appDb.transaction((track: Track) => insertOrUpdateTrack(appDb, track))
+  const insertTrack = appDb.transaction((track: TrackInput) => insertOrUpdateTrack(appDb, track))
 
   for (const crateFile of crateFiles) {
     try {
@@ -41,7 +41,7 @@ export function importFromIntegration(appDb: Database.Database, seratoDir: strin
         const trackId = existingRow?.id ?? (() => {
           const id = randomUUID()
           const geob = parseSeratoTagsFromFile(filePath)
-          const track: Track = {
+          const track: TrackInput = {
             id,
             filePath,
             title: basename(filePath, filePath.includes('.') ? `.${filePath.split('.').pop()}` : ''),

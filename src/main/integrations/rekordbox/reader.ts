@@ -10,7 +10,7 @@ import { XMLParser } from 'fast-xml-parser'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { insertOrUpdateTrack } from '../../library/db'
-import type { Track, CuePoint, ImportResult } from '../../../shared/types'
+import type {TrackInput, CuePoint, ImportResult} from '../../../shared/types'
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
 
@@ -37,7 +37,7 @@ export function importFromIntegration(appDb: Database.Database, xmlPath: string)
   const trackArr = Array.isArray(trackNodes) ? trackNodes : [trackNodes]
 
   const rbIdToInternalId = new Map<string, string>()
-  const insertTrack = appDb.transaction((track: Track) => insertOrUpdateTrack(appDb, track))
+  const insertTrack = appDb.transaction((track: TrackInput) => insertOrUpdateTrack(appDb, track))
 
   for (const node of trackArr) {
     try {
@@ -49,7 +49,7 @@ export function importFromIntegration(appDb: Database.Database, xmlPath: string)
       const cueNodes = t['POSITION_MARK'] ?? []
       const cueArr = Array.isArray(cueNodes) ? cueNodes : [cueNodes]
 
-      const track: Track = {
+      const track: TrackInput = {
         id,
         filePath: decodeRbLocation(t['@_Location'] as string),
         title: String(t['@_Name'] ?? ''),

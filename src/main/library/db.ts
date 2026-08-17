@@ -3,7 +3,8 @@ import { app } from 'electron'
 import { join } from 'path'
 import { applySchema } from './schema'
 import { dedupeTracksByFilePath } from './migrations/dedupe-tracks'
-import type { Track, Playlist } from '../../shared/types'
+import { backfillGridSummaries } from './grid-summary'
+import type { Track, TrackInput, Playlist } from '../../shared/types'
 
 let _db: Database.Database | null = null
 
@@ -33,6 +34,15 @@ export function getLibraryDb(): Database.Database {
     console.error('[library] track de-duplication failed:', (err as Error).message)
   }
 
+  // Populate the grid summary columns for libraries written before they existed.
+  // One pass; afterwards the write paths keep them current.
+  try {
+    const filled = backfillGridSummaries(_db)
+    if (filled > 0) console.info(`[library] backfilled grid summaries for ${filled} tracks`)
+  } catch (err) {
+    console.error('[library] grid summary backfill failed:', (err as Error).message)
+  }
+
   return _db
 }
 
@@ -46,6 +56,30 @@ export function closeLibraryDb(): void {
   try { _db?.close() } catch { /* already closed */ }
   _db = null
 }
+
+/**
+ * Every tracks column EXCEPT the two grid blobs. `beatgrid` (509MB) and
+ * `analysed_beatgrid` (260MB) dominate a real library, so selecting them for a
+ * list read costs seconds in SQLite, hundreds of MB over IPC, and a renderer
+ * GC storm. The grid summaries below carry what lists actually display.
+ *
+ * Spelled out rather than "SELECT *" on purpose: a future blob column added to
+ * tracks should have to be opted in here, not silently join the list payload.
+ */
+export const LIST_COLUMNS = `
+  id, file_path, title, artist, album, genre, year, label, bpm, key,
+  duration_seconds, rating, color, energy, danceability, mood, play_count,
+  last_played_at, date_added, updated_at, comment, tags, custom_tags,
+  cue_points, edit_lineage, source_ids, file_size, file_type, sample_rate,
+  bit_depth, gain_db, phrases, overview_peaks, content_hash, embedding,
+  beatgrid_markers, analysed_source, analysed_median_bpm, analysed_confidence,
+  (analysed_beatgrid IS NOT NULL) AS has_analysed
+`
+// `embedding` stays in the list despite being a blob-ish column: similarity
+// search (TrackDetail candidates, roadNotTaken, Health duplicate detection,
+// SetBuilder) scans it across the WHOLE library, so fetching it per-track would
+// mean fetching all of it anyway. It measures 0.0MB today. If that changes,
+// move it behind an on-demand fetch like the grids rather than growing this list.
 
 export function rowToTrack(row: Record<string, unknown>): Track {
   return {
@@ -72,10 +106,23 @@ export function rowToTrack(row: Record<string, unknown>): Track {
     tags: JSON.parse(row.tags as string),
     customTags: JSON.parse((row.custom_tags as string) || '{}'),
     cuePoints: JSON.parse(row.cue_points as string),
-    beatgrid: JSON.parse(row.beatgrid as string),
+    // Absent when the caller selected the lean list column set: the grids are
+    // deliberately not fetched there (see LIST_COLUMNS), so default rather than
+    // parse — `undefined` would break every `track.beatgrid.length` in the UI.
+    beatgrid: row.beatgrid ? JSON.parse(row.beatgrid as string) : [],
     analysedBeatgrid: row.analysed_beatgrid
       ? JSON.parse(row.analysed_beatgrid as string)
       : null,
+    gridSummary: {
+      markers: (row.beatgrid_markers as number | null) ?? 0,
+      // `has_analysed` on lean rows; on a full row fall back to the grid itself.
+      hasAnalysed: row.has_analysed != null
+        ? Boolean(row.has_analysed)
+        : row.analysed_beatgrid != null,
+      analysedSource: (row.analysed_source as string | null) ?? null,
+      analysedMedianBpm: (row.analysed_median_bpm as number | null) ?? null,
+      analysedConfidence: (row.analysed_confidence as number | null) ?? null
+    },
     editLineage: row.edit_lineage
       ? JSON.parse(row.edit_lineage as string)
       : null,
@@ -112,18 +159,22 @@ export function rowToPlaylist(
   }
 }
 
-export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
+export function insertOrUpdateTrack(db: Database.Database, track: TrackInput): void {
   db.prepare(`
     INSERT INTO tracks (
       id, file_path, title, artist, album, genre, year, label, bpm, key,
       duration_seconds, rating, energy, danceability, date_added, comment,
       tags, cue_points, beatgrid, source_ids,
-      file_size, file_type, sample_rate, bit_depth
+      file_size, file_type, sample_rate, bit_depth, beatgrid_markers
     ) VALUES (
       @id, @filePath, @title, @artist, @album, @genre, @year, @label, @bpm, @key,
       @durationSeconds, @rating, @energy, @danceability, @dateAdded, @comment,
       @tags, @cuePoints, @beatgrid, @sourceIds,
-      @fileSize, @fileType, @sampleRate, @bitDepth
+      @fileSize, @fileType, @sampleRate, @bitDepth,
+      /* Derived inline rather than via a follow-up refreshGridSummary() call:
+         importers run this once per track, and a second UPDATE per row would
+         double the write cost of a 15k-track import. */
+      COALESCE(json_array_length(NULLIF(@beatgrid, '')), 0)
     )
     /* Keyed on file_path, NOT id. Every importer mints a fresh randomUUID() per
        track, so ON CONFLICT(id) could never fire on a re-import: it appended a
@@ -156,6 +207,9 @@ export function insertOrUpdateTrack(db: Database.Database, track: Track): void {
       tags = CASE WHEN tags IS NULL OR tags = '' OR tags = '[]' THEN excluded.tags ELSE tags END,
       cue_points = CASE WHEN cue_points IS NULL OR cue_points = '' OR cue_points = '[]' THEN excluded.cue_points ELSE cue_points END,
       beatgrid = CASE WHEN beatgrid IS NULL OR beatgrid = '' OR beatgrid = '[]' THEN excluded.beatgrid ELSE beatgrid END,
+      /* Must mirror the CASE above exactly, or the badge disagrees with the grid. */
+      beatgrid_markers = COALESCE(json_array_length(NULLIF(
+        CASE WHEN beatgrid IS NULL OR beatgrid = '' OR beatgrid = '[]' THEN excluded.beatgrid ELSE beatgrid END, '')), 0),
       source_ids = excluded.source_ids,
       /* file info: fill in if not yet set */
       file_size   = COALESCE(file_size,   excluded.file_size),

@@ -5,7 +5,7 @@ import Database from 'better-sqlite3'
 import { insertOrUpdateTrack } from '../../library/db'
 import { joinTraktorPath } from './path'
 import { traktorValueToCamelot } from '../key-notation'
-import type { Track, ImportResult, CuePoint } from '../../../shared/types'
+import type {TrackInput, ImportResult, CuePoint} from '../../../shared/types'
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
 
@@ -32,7 +32,7 @@ export function importFromIntegration(db: Database.Database, nmlPath: string): I
 
   const traktorIdToInternalId = new Map<string, string>()
 
-  const insertTrack = db.transaction((track: Track) => {
+  const insertTrack = db.transaction((track: TrackInput) => {
     insertOrUpdateTrack(db, track)
   })
 
@@ -52,7 +52,7 @@ export function importFromIntegration(db: Database.Database, nmlPath: string): I
       const musicalKey = (e['MUSICAL_KEY'] as Record<string, unknown>) ?? {}
       const cuePoints = parseCuePoints(e['CUE_V2'])
 
-      const track: Track = {
+      const track: TrackInput = {
         id,
         filePath,
         title: String(e['@_TITLE'] ?? ''),

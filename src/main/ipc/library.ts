@@ -3,7 +3,8 @@ import { existsSync, writeFileSync, mkdirSync, watch, readFileSync, renameSync, 
 import { execFile } from 'child_process'
 import { join, dirname, basename, extname, relative, isAbsolute } from 'path'
 import { randomUUID } from 'crypto'
-import { getLibraryDb, rowToTrack, rowToPlaylist } from '../library/db'
+import { getLibraryDb, rowToTrack, rowToPlaylist, LIST_COLUMNS } from '../library/db'
+import { refreshGridSummary } from '../library/grid-summary'
 import { computeOverviewPeaks } from '../library/overview-peaks'
 import { resolveSmartPlaylist } from '../library/smart-playlist'
 import { buildFilenameMap, walkAudioFiles } from '../library/file-scan'
@@ -140,9 +141,42 @@ export function registerLibraryHandlers(): void {
   const db = getLibraryDb()
 
   // ── Read ──────────────────────────────────────────────────────────────────
+  // Deliberately NOT `SELECT *`: the two beat-grid blobs are ~770MB across a
+  // real library and used to be shipped in full on every load. Rows come back
+  // with `beatgrid: []` / `analysedBeatgrid: null` plus a `gridSummary`; call
+  // getTrackGrids to hydrate the real thing where it is actually needed.
   ipcMain.handle('library:getTracks', (): Track[] =>
-    (db.prepare('SELECT * FROM tracks ORDER BY artist, title').all() as Record<string, unknown>[]).map(rowToTrack)
+    (db.prepare(`SELECT ${LIST_COLUMNS} FROM tracks ORDER BY artist, title`)
+      .all() as Record<string, unknown>[]).map(rowToTrack)
   )
+
+  /**
+   * Full grids for specific tracks — the deck, the grid editor, analysis and
+   * USB export need real markers rather than a summary. Chunked because SQLite
+   * caps a statement at 999 bound parameters.
+   */
+  ipcMain.handle('library:getTrackGrids', (_e, ids: string[]): Record<string, {
+    beatgrid: unknown
+    analysedBeatgrid: unknown
+  }> => {
+    const out: Record<string, { beatgrid: unknown; analysedBeatgrid: unknown }> = {}
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500)
+      const rows = db
+        .prepare(
+          `SELECT id, beatgrid, analysed_beatgrid FROM tracks
+           WHERE id IN (${chunk.map(() => '?').join(',')})`
+        )
+        .all(...chunk) as Record<string, unknown>[]
+      for (const r of rows) {
+        out[r.id as string] = {
+          beatgrid: r.beatgrid ? JSON.parse(r.beatgrid as string) : [],
+          analysedBeatgrid: r.analysed_beatgrid ? JSON.parse(r.analysed_beatgrid as string) : null
+        }
+      }
+    }
+    return out
+  })
 
   ipcMain.handle('library:getPlaylists', (): Playlist[] => {
     const rows = db.prepare('SELECT * FROM playlists ORDER BY sort_order, name').all() as Record<string, unknown>[]
@@ -175,6 +209,9 @@ export function registerLibraryHandlers(): void {
       const setClauses = patchEntries(fields).map(([k, col]) => `${col} = @${k}`).join(', ')
       db.prepare(`UPDATE tracks SET ${setClauses}, updated_at = datetime('now') WHERE id = @id`)
         .run({ ...patchParams(fields), id })
+      // Recompute before re-reading, so the row returned to the renderer carries
+      // a gridSummary that matches the grid just written.
+      if ('beatgrid' in fields || 'analysedBeatgrid' in fields) refreshGridSummary(db, id)
     }
     return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown>)
   })
@@ -874,6 +911,7 @@ export function registerLibraryHandlers(): void {
     db.prepare(
       "UPDATE tracks SET beatgrid = ?, bpm = ?, updated_at = datetime('now') WHERE id = ?"
     ).run(JSON.stringify(result.markers), result.detectedBpm || track.bpm, trackId)
+    refreshGridSummary(db, trackId)
 
     return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>)
   })
