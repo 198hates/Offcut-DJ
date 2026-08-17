@@ -200,6 +200,21 @@ const api = {
       return () => ipcRenderer.removeListener('sync:libraryChanged', h)
     }
   },
+  updater: {
+    // The check usually resolves before the renderer mounts, so ask for any
+    // already-found update on startup rather than relying on the event alone.
+    getAvailable: (): Promise<{ version: string; downloadUrl: string | null } | null> =>
+      ipcRenderer.invoke('updater:getAvailable'),
+    // downloadUrl is non-null only on macOS, which cannot self-install (unsigned
+    // app — Squirrel.Mac refuses) and so must be sent to the release page.
+    onUpdateAvailable: (
+      cb: (info: { version: string; downloadUrl: string | null }) => void
+    ): (() => void) => {
+      const h = (_e: unknown, info: { version: string; downloadUrl: string | null }): void => cb(info)
+      ipcRenderer.on('updater:update-available', h)
+      return () => ipcRenderer.removeListener('updater:update-available', h)
+    }
+  },
   audio: {
     readFile: (filePath: string): Promise<ArrayBuffer> =>
       ipcRenderer.invoke('audio:readFile', filePath),

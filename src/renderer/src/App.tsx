@@ -25,6 +25,7 @@ import { PageHelp } from './components/PageHelp'
 import { Titlebar } from './components/Titlebar'
 import { TrackDetail } from './components/TrackDetail'
 import { Toast } from './components/Toast'
+import { useToastStore } from './store/toastStore'
 import { Onboarding } from './components/Onboarding'
 import { LicenceGate } from './components/LicenceGate'
 import { Player } from './components/Player'
@@ -96,6 +97,24 @@ export default function App(): JSX.Element {
 
   // Reload when a paired phone pushes prep edits.
   useEffect(() => window.api.sync.onLibraryChanged(() => loadLibrary()), [loadLibrary])
+
+  // macOS can't self-install updates (unsigned app — Squirrel.Mac refuses; see
+  // setupAutoUpdater), so offer a manual download instead of silently doing
+  // nothing. Windows/Linux install on quit and send no downloadUrl, so no toast.
+  useEffect(() => {
+    const offer = (info: { version: string; downloadUrl: string | null } | null): void => {
+      if (!info?.downloadUrl) return
+      useToastStore.getState().show(`Offcut ${info.version} is available.`, 'info', {
+        persist: true,
+        action: { label: 'Download', href: info.downloadUrl }
+      })
+    }
+    // The check normally resolves before this mounts, so pull any update already
+    // found; also subscribe in case one is found later. The store dedupes
+    // persistent toasts by message, so both firing shows only one.
+    window.api.updater.getAvailable().then(offer).catch(() => {})
+    return window.api.updater.onUpdateAvailable(offer)
+  }, [])
 
   useEffect(() => {
     if (isLoading) return

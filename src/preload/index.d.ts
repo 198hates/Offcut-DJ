@@ -128,6 +128,12 @@ declare global {
         removeDevice: (id: string) => Promise<SyncStatus>
         onLibraryChanged: (cb: () => void) => () => void
       }
+      updater: {
+        getAvailable: () => Promise<{ version: string; downloadUrl: string | null } | null>
+        onUpdateAvailable: (
+          cb: (info: { version: string; downloadUrl: string | null }) => void
+        ) => () => void
+      }
       audio: {
         readFile: (filePath: string) => Promise<ArrayBuffer>
         decodePcm: (filePath: string, sampleRate?: number) => Promise<{ samples: Float32Array; sampleRate: number }>

@@ -14,13 +14,18 @@ export function Toast(): JSX.Element {
 
 interface ToastItemProps {
   id: string; message: string; type: 'success' | 'error' | 'info'; onDismiss: () => void
+  persist?: boolean
+  action?: { label: string; href: string }
 }
 
-function ToastItem({ message, type, onDismiss }: ToastItemProps): JSX.Element {
+function ToastItem({ message, type, onDismiss, persist, action }: ToastItemProps): JSX.Element {
   useEffect(() => {
+    // Persistent toasts wait for the user — auto-dismissing one would hide the
+    // very action it exists to offer.
+    if (persist) return
     const t = setTimeout(onDismiss, type === 'error' ? 6000 : 3500)
     return () => clearTimeout(t)
-  }, [type, onDismiss])
+  }, [type, onDismiss, persist])
 
   const style = {
     success: 'bg-paper border-border/50 text-ink',
@@ -38,7 +43,18 @@ function ToastItem({ message, type, onDismiss }: ToastItemProps): JSX.Element {
     <div className={`pointer-events-auto flex items-start gap-3 px-4 py-3 rounded border shadow-lg max-w-xs ${style}`}
          style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)' }}>
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1 ${dot}`} />
-      <span className="font-mono text-[13px] leading-snug flex-1">{message}</span>
+      <span className="font-mono text-[13px] leading-snug flex-1">
+        {message}
+        {action && (
+          <>
+            {' '}
+            <a href={action.href} target="_blank" rel="noreferrer"
+               className="text-accent underline underline-offset-2 hover:opacity-80 transition-opacity">
+              {action.label}
+            </a>
+          </>
+        )}
+      </span>
       <button onClick={onDismiss} className="shrink-0 text-muted hover:text-ink transition-colors text-sm leading-none ml-1">×</button>
     </div>
   )
