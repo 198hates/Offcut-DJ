@@ -4,6 +4,7 @@ import { join } from 'path'
 import { applySchema } from './schema'
 import { dedupeTracksByFilePath } from './migrations/dedupe-tracks'
 import { backfillGridSummaries } from './grid-summary'
+import { compactSyncLog } from './sync-log-compact'
 import type { Track, TrackInput, Playlist } from '../../shared/types'
 
 let _db: Database.Database | null = null
@@ -41,6 +42,18 @@ export function getLibraryDb(): Database.Database {
     if (filled > 0) console.info(`[library] backfilled grid summaries for ${filled} tracks`)
   } catch (err) {
     console.error('[library] grid summary backfill failed:', (err as Error).message)
+  }
+
+  // The change journal is append-only and nothing ever pruned it; a single
+  // library-wide import adds a row per track. Collapsing to the newest row per
+  // entity is invisible to any client (see compactSyncLog) and bounds the table.
+  try {
+    const res = compactSyncLog(_db)
+    if (res.removed > 0) {
+      console.info(`[library] compacted sync journal: ${res.before} → ${res.after} rows`)
+    }
+  } catch (err) {
+    console.error('[library] sync journal compaction failed:', (err as Error).message)
   }
 
   return _db
