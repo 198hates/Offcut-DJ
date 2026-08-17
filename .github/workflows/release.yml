@@ -30,6 +30,13 @@ jobs:
           # on an Intel Mac with `npm run build:mac:x64`, or via an x64 Node
           # toolchain under Rosetta (the x64 ffmpeg-static / onnxruntime-node
           # prebuilts can't be cross-produced on an arm64 host).
+          #
+          # IMPORTANT: this workflow publishes an arm64-ONLY latest-mac.yml.
+          # Intel auto-update stays broken until someone runs
+          # scripts/build-mac-x64.sh AFTER this release exists — it merges the
+          # x64 zip + dmg into that manifest and re-uploads it (see PACKAGING.md).
+          # Skipping that step fails nothing loudly; it just silently strands
+          # every Intel user on their installed build.
           - name: Windows (x64)
             os: windows-latest
             ebflags: --win --x64

@@ -27,10 +27,36 @@ after):
 bash scripts/build-mac-x64.sh        # → dist/Offcut-<ver>-mac-x64.dmg (verified x86_64)
 ```
 
+**Order matters: push the tag and let CI publish the arm64 release FIRST, then
+run this script.** It downloads the release's `latest-mac.yml` and merges the x64
+entries into it — so it needs the arm64 manifest to already be there. The script
+hard-fails with instructions if it isn't.
+
 Note: `onnxruntime-node` has no Intel-macOS binary (Microsoft dropped it), so
 onnxruntime is loaded lazily and ONNX beat-analysis is unavailable on Intel (the
 JS beat tracker is the fallback). The script ends with the exact `gh release
-upload` command to attach the DMG to the matching release.
+upload` command for the Intel assets.
+
+### Why the Intel upload includes a zip and latest-mac.yml
+
+Both are load-bearing for auto-update, and omitting them is why **every Intel
+user was silently frozen on whatever DMG they hand-installed** (they hit a
+fixed-in-v1.0.7 Rekordbox sync bug for weeks because the fix could never reach
+them):
+
+- **electron-updater never updates macOS from a `.dmg` — only from a `.zip`.**
+  The Intel build previously shipped a DMG alone.
+- **`latest-mac.yml` is written per build, and last upload wins.** CI's arm64 run
+  and the Intel run each describe only their own arch, so the published manifest
+  listed arm64 only. `MacUpdater` then filters candidates by whether the URL
+  contains `arm64` — on Intel that filter emptied the list and the update died
+  with `ERR_UPDATER_ZIP_FILE_NOT_FOUND`.
+
+`scripts/merge-latest-mac-yml.js` merges both arches into one `files:` list,
+which satisfies the filter on both sides. Artifact names are pinned by
+`mac.artifactName` in `electron-builder.cjs` so the x64 zip can never
+accidentally contain `arm64` (electron-builder otherwise drops the arch from the
+*default* arch's filename, yielding a bare `Offcut-<ver>-mac.zip`).
 
 (`npm run build:mac:x64` builds x64 directly only on a *real* Intel Mac; on
 Apple Silicon use the script above.)

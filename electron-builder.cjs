@@ -68,6 +68,15 @@ module.exports = {
       NSDownloadsFolderUsageDescription: 'Offcut reads your music files to analyse and play them.',
       NSRemovableVolumesUsageDescription: 'Offcut reads music files stored on external drives.'
     },
+    // Force the arch into every mac artifact name. Without an explicit pattern
+    // electron-builder omits the arch for the platform's DEFAULT arch (x64), so
+    // the Intel updater zip came out as "Offcut-<v>-mac.zip" while Apple Silicon
+    // got "Offcut-<v>-arm64-mac.zip". electron-updater selects a file per arch
+    // purely by testing whether the URL contains "arm64", so both arches must be
+    // predictably named to coexist in one latest-mac.yml. This pattern is
+    // byte-identical to the old default for arm64 — only x64 changes.
+    // (dmg keeps its own artifactName below; target-specific options win.)
+    artifactName: '${productName}-${version}-${arch}-mac.${ext}',
     // No explicit arch here on purpose: arch is chosen per-build by the CLI flag
     // (--arm64 / --x64), so each run produces exactly one arch. Listing
     // ['arm64','x64'] would override the flag and make a single --arm64 run ALSO

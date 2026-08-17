@@ -74,7 +74,48 @@ if [ "$fail" != 0 ]; then
 fi
 
 echo "✓ All native binaries are x86_64."
+
+# The updater zip is what electron-updater actually installs on macOS (it never
+# updates from a dmg). Shipping the dmg alone is exactly why Intel users could
+# not auto-update at all.
+DMG="dist/$PRODUCT_NAME-$VERSION-mac-x64.dmg"
+ZIP="dist/$PRODUCT_NAME-$VERSION-x64-mac.zip"
+if [ ! -e "$ZIP" ]; then
+  echo "✗ Updater zip missing: $ZIP"
+  echo "  Expected from the mac 'zip' target + the mac.artifactName pattern in electron-builder.cjs."
+  echo "  Present in dist/:"; ls dist/*.zip 2>/dev/null || echo "    (no zips at all)"
+  exit 1
+fi
+case "$ZIP" in
+  *arm64*) echo "✗ x64 zip name contains 'arm64' — electron-updater would serve it to Apple Silicon."; exit 1 ;;
+esac
+
 echo
-echo "Built: $(ls "dist/$PRODUCT_NAME-$VERSION-mac-x64.dmg")"
-echo "Upload to the release with:"
-echo "  gh release upload v$VERSION \"dist/$PRODUCT_NAME-$VERSION-mac-x64.dmg\" \"dist/$PRODUCT_NAME-$VERSION-mac-x64.dmg.blockmap\" --clobber"
+echo "==> Merging x64 entries into the published latest-mac.yml…"
+# CI publishes an arm64-only manifest; without this merge the x64 assets are
+# invisible to electron-updater and Intel stays frozen on its installed build.
+WORK=$(mktemp -d)
+if ! gh release download "v$VERSION" --repo 198hates/Offcut-DJ \
+      --pattern latest-mac.yml --dir "$WORK" --clobber; then
+  echo "✗ Could not download latest-mac.yml from release v$VERSION."
+  echo "  Push the tag and let CI publish the arm64 build FIRST, then re-run this script."
+  exit 1
+fi
+
+node scripts/merge-latest-mac-yml.js \
+  --base "$WORK/latest-mac.yml" \
+  --add  dist/latest-mac.yml \
+  --out  "$WORK/merged-latest-mac.yml"
+
+cp "$WORK/merged-latest-mac.yml" dist/latest-mac.yml
+
+echo
+echo "✓ Intel build ready. Upload it with:"
+echo
+echo "  gh release upload v$VERSION \\"
+echo "    \"$DMG\" \"$DMG.blockmap\" \\"
+echo "    \"$ZIP\" \"$ZIP.blockmap\" \\"
+echo "    dist/latest-mac.yml --clobber"
+echo
+echo "  (latest-mac.yml MUST be uploaded last-ish and with --clobber: it is the"
+echo "   merged arm64+x64 manifest that makes Intel auto-update work at all.)"
