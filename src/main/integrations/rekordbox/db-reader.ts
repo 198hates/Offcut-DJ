@@ -19,6 +19,7 @@ import SqlCipherDatabase from 'better-sqlite3-multiple-ciphers'
 import { rowToTrack, insertOrUpdateTrack } from '../../library/db'
 import { rbScaleNameToCamelot } from '../key-notation'
 import type { Track, TrackInput, CuePoint, ImportResult, ExportResult } from '../../../shared/types'
+import { findPlaylistIdBySource } from '../../library/migrations/dedupe-playlists'
 
 export const RB_KEY = '402fd482c38817c35ffa8ffb8c7d93143b749e7d315df7a81732a1ff43608497'
 
@@ -170,7 +171,9 @@ export function importFromRekordboxDb(
     for (let i = 0; i < playlists.length; i++) {
       const pl = playlists[i]
       const rbPlId = String(pl.ID)
-      const internalId = randomUUID()
+      // Reuse the existing row's id, else INSERT OR REPLACE inserts a duplicate
+      // on every re-import (a fresh UUID can never collide with the primary key).
+      const internalId = findPlaylistIdBySource(appDb, 'rekordbox', rbPlId) ?? randomUUID()
       rbPlaylistIdToInternal.set(rbPlId, internalId)
 
       const isFolder = Number(pl.Attribute) === 1

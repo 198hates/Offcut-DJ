@@ -3,6 +3,7 @@ import { app } from 'electron'
 import { join } from 'path'
 import { applySchema } from './schema'
 import { dedupeTracksByFilePath, isDedupeDone } from './migrations/dedupe-tracks'
+import { dedupePlaylistsBySource } from './migrations/dedupe-playlists'
 import { backfillGridSummaries, gridSummaryBackfillPending } from './grid-summary'
 import { compactSyncLog, syncLogCompactionPending } from './sync-log-compact'
 import type { Track, TrackInput, Playlist } from '../../shared/types'
@@ -42,13 +43,27 @@ function openDb(): void {
 function pendingPhases(db: Database.Database): string[] {
   const out: string[] = []
   try { if (!isDedupeDone(db)) out.push('dedupe') } catch { /* ignore */ }
+  try { if (duplicatePlaylistCount(db) > 0) out.push('playlists') } catch { /* ignore */ }
   try { if (gridSummaryBackfillPending(db) > 0) out.push('summaries') } catch { /* ignore */ }
   try { if (syncLogCompactionPending(db)) out.push('journal') } catch { /* ignore */ }
   return out
 }
 
+/** Playlists sharing a source id — what dedupePlaylistsBySource would merge. */
+function duplicatePlaylistCount(db: Database.Database): number {
+  return (
+    db.prepare(`
+      SELECT COALESCE(SUM(n - 1), 0) AS c FROM (
+        SELECT COUNT(*) AS n FROM playlists
+        WHERE source_ids IS NOT NULL AND source_ids NOT IN ('', '{}')
+        GROUP BY source_ids HAVING n > 1
+      )`).get() as { c: number }
+  ).c
+}
+
 const PHASE_LABEL: Record<string, string> = {
   dedupe: 'Removing duplicate tracks…',
+  playlists: 'Merging duplicate playlists…',
   summaries: 'Indexing beat grids…',
   journal: 'Tidying the change journal…'
 }
@@ -67,6 +82,19 @@ function runMaintenance(db: Database.Database, only?: string): void {
       // A library that can't be de-duplicated is still usable — it just stays
       // slow and keeps duplicating. Better than refusing to open at all.
       console.error('[library] track de-duplication failed:', (err as Error).message)
+    }
+  }
+  if (!only || only === 'playlists') {
+    try {
+      const res = dedupePlaylistsBySource(db)
+      if (res.removed > 0) {
+        console.info(
+          `[library] merged ${res.removed} duplicate playlists (${res.before} → ${res.after}); ` +
+          `${res.membershipMerged} track entries folded in`
+        )
+      }
+    } catch (err) {
+      console.error('[library] playlist de-duplication failed:', (err as Error).message)
     }
   }
   if (!only || only === 'summaries') {

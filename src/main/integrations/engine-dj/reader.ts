@@ -14,6 +14,7 @@ import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { insertOrUpdateTrack } from '../../library/db'
 import type {TrackInput, CuePoint, ImportResult} from '../../../shared/types'
+import { findPlaylistIdBySource } from '../../library/migrations/dedupe-playlists'
 
 export function getDefaultEngineDbPath(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
@@ -104,7 +105,10 @@ export function importFromIntegration(appDb: Database.Database, dbPath: string):
     for (let i = 0; i < crates.length; i++) {
       const crate = crates[i]
       const crateId = String(crate.id)
-      const internalId = randomUUID()
+      // Reuse the existing row's id so INSERT OR REPLACE actually replaces. Keyed
+      // on the primary key with a fresh UUID it never could, and every re-import
+      // appended a second copy of the whole crate list.
+      const internalId = findPlaylistIdBySource(appDb, 'engine-dj', crateId) ?? randomUUID()
 
       appDb.prepare(`
         INSERT OR REPLACE INTO playlists (id, name, is_folder, sort_order, source_ids)

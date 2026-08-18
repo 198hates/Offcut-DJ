@@ -6,6 +6,7 @@ import { insertOrUpdateTrack } from '../../library/db'
 import { parseSeratoTagsFromFile } from './geob'
 import { decodeSeratoUtf16BE, fromSeratoPath } from './path'
 import type {TrackInput, ImportResult} from '../../../shared/types'
+import { findPlaylistIdBySource } from '../../library/migrations/dedupe-playlists'
 
 export function importFromIntegration(appDb: Database.Database, seratoDir: string): ImportResult {
   const result: ImportResult = { tracksImported: 0, playlistsImported: 0, errors: [] }
@@ -27,7 +28,9 @@ export function importFromIntegration(appDb: Database.Database, seratoDir: strin
       const buf = readFileSync(join(subcratePath, crateFile))
       const trackPaths = parseCrateFile(buf)
 
-      const playlistId = randomUUID()
+      // Reuse the existing row's id, else INSERT OR REPLACE inserts a duplicate
+      // on every re-import (a fresh UUID can never collide with the primary key).
+      const playlistId = findPlaylistIdBySource(appDb, 'serato', crateFile) ?? randomUUID()
       appDb.prepare(`
         INSERT OR REPLACE INTO playlists (id, name, is_folder, sort_order, source_ids)
         VALUES (?, ?, 0, 0, ?)
