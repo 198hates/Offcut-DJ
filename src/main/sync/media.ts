@@ -147,7 +147,7 @@ async function generatePeaks(info: TrackFile): Promise<PeaksData | null> {
 /** Peaks for a track (cached). Null if the track is unknown or won't decode. */
 /** Derive the compact beat reference from a track's analysed v2 grid, or null. */
 function compactGrid(db: Database, trackId: string): CompactGrid | null {
-  const row = db.prepare('SELECT analysed_beatgrid FROM tracks WHERE id = ?').get(trackId) as
+  const row = db.prepare('SELECT analysed_beatgrid FROM track_grids WHERE track_id = ?').get(trackId) as
     | { analysed_beatgrid: string | null }
     | undefined
   if (!row?.analysed_beatgrid) return null

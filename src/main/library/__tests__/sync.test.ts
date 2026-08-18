@@ -6,6 +6,7 @@ import Database from 'better-sqlite3'
 import { applySchema } from '../schema'
 import { getSyncCursor, getChangesSince, pullChanges, leanTrack } from '../sync'
 import { computeContentHash, backfillContentHashes, backfillContentHashesChunked } from '../content-hash'
+import { rowToTrack, FULL_TRACK_SELECT } from '../db'
 
 function freshDb(): Database.Database {
   const db = new Database(':memory:')
@@ -139,26 +140,40 @@ describe('leanTrack', () => {
     id = 0
   })
 
-  it('drops the heavy grids and embedding but keeps metadata', () => {
+  it('the bulk snapshot carries no grids at all', () => {
+    // They live in track_grids, so the snapshot query never even reads them —
+    // previously it loaded hundreds of MB only for leanTrack to throw it away.
     const db = freshDb()
     const tid = insertTrack(db, { title: 'keep me' })
-    db.prepare(
-      'UPDATE tracks SET beatgrid = ?, analysed_beatgrid = ?, embedding = ? WHERE id = ?'
-    ).run(
-      JSON.stringify([{ position: 0, bpm: 128 }]),
-      JSON.stringify({ bpm: 128, anchorMs: 0, beatPhase: 0 }),
-      JSON.stringify([0.1, 0.2, 0.3]),
-      tid
-    )
+    db.prepare('INSERT INTO track_grids (track_id, beatgrid, analysed_beatgrid) VALUES (?, ?, ?)')
+      .run(tid, JSON.stringify([{ position: 0, bpm: 128 }]), JSON.stringify({ bpm: 128 }))
 
-    const full = pullChanges(db, 0).tracks[0]
-    expect(full.beatgrid).toHaveLength(1) // sanity: the heavy data is present pre-projection
+    const snapshot = pullChanges(db, 0).tracks[0]
+
+    expect(snapshot.beatgrid).toEqual([])
+    expect(snapshot.analysedBeatgrid).toBeNull()
+    expect(snapshot.title).toBe('keep me') // metadata still there
+  })
+
+  it('strips grids and embedding from a fully-hydrated track', () => {
+    const db = freshDb()
+    const tid = insertTrack(db, { title: 'keep me' })
+    db.prepare('INSERT INTO track_grids (track_id, beatgrid, analysed_beatgrid) VALUES (?, ?, ?)')
+      .run(tid, JSON.stringify([{ position: 0, bpm: 128 }]),
+           JSON.stringify({ bpm: 128, anchorMs: 0, beatPhase: 0 }))
+    db.prepare('UPDATE tracks SET embedding = ? WHERE id = ?')
+      .run(JSON.stringify([0.1, 0.2, 0.3]), tid)
+
+    // The joined read is what per-change syncs use, so it really does carry grids.
+    const full = rowToTrack(
+      db.prepare(`${FULL_TRACK_SELECT} WHERE t.id = ?`).get(tid) as Record<string, unknown>
+    )
+    expect(full.beatgrid).toHaveLength(1) // sanity: heavy data present pre-projection
 
     const lean = leanTrack(full)
     expect(lean.beatgrid).toEqual([])
     expect(lean.analysedBeatgrid).toBeNull()
     expect(lean.embedding).toBeNull()
-    // everything else survives
     expect(lean.id).toBe(tid)
     expect(lean.title).toBe('keep me')
   })

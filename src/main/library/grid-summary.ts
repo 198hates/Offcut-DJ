@@ -17,14 +17,18 @@
 import type Database from 'better-sqlite3'
 
 /** Recomputed from the stored JSON, so it cannot drift from whatever was written. */
+/** Grids live in track_grids; a track with no row there simply has no grid. */
+const G = `(SELECT g.beatgrid FROM track_grids g WHERE g.track_id = tracks.id)`
+const A = `(SELECT g.analysed_beatgrid FROM track_grids g WHERE g.track_id = tracks.id)`
+
 export const GRID_SUMMARY_SQL = `
   beatgrid_markers = COALESCE(json_array_length(
-    CASE WHEN beatgrid IS NULL OR beatgrid = '' THEN '[]' ELSE beatgrid END), 0),
-  analysed_source = json_extract(analysed_beatgrid, '$.source'),
-  analysed_median_bpm = json_extract(analysed_beatgrid, '$.medianBpm'),
+    CASE WHEN ${G} IS NULL OR ${G} = '' THEN '[]' ELSE ${G} END), 0),
+  analysed_source = json_extract(${A}, '$.source'),
+  analysed_median_bpm = json_extract(${A}, '$.medianBpm'),
   analysed_confidence = (
     SELECT AVG(json_extract(b.value, '$.confidence'))
-    FROM json_each(COALESCE(json_extract(analysed_beatgrid, '$.beats'), '[]')) b
+    FROM json_each(COALESCE(json_extract(${A}, '$.beats'), '[]')) b
   )
 `
 
@@ -44,7 +48,9 @@ export function gridSummaryBackfillPending(db: Database.Database): number {
     db
       .prepare(
         `SELECT COUNT(*) AS c FROM tracks
-         WHERE beatgrid_markers = 0 AND beatgrid IS NOT NULL AND beatgrid != '' AND beatgrid != '[]'`
+         WHERE beatgrid_markers = 0
+         AND EXISTS (SELECT 1 FROM track_grids g WHERE g.track_id = tracks.id
+                     AND g.beatgrid IS NOT NULL AND g.beatgrid NOT IN ('', '[]'))`
       )
       .get() as { c: number }
   ).c
@@ -61,8 +67,7 @@ export function backfillGridSummaries(db: Database.Database): number {
 
   db.prepare(
     `UPDATE tracks SET ${GRID_SUMMARY_SQL}
-     WHERE (beatgrid IS NOT NULL AND beatgrid != '' AND beatgrid != '[]')
-        OR analysed_beatgrid IS NOT NULL`
+     WHERE EXISTS (SELECT 1 FROM track_grids g WHERE g.track_id = tracks.id)`
   ).run()
   return pending.c
 }

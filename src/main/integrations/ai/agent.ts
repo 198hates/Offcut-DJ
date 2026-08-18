@@ -102,7 +102,8 @@ function doSearch(input: SearchInput): { count: number; returned: number; tracks
   if (genre) r = r.filter((t) => (t.genre || '').toLowerCase().includes(genre))
   if (artist) r = r.filter((t) => (t.artist || '').toLowerCase().includes(artist))
   if (input.unplayed) r = r.filter((t) => t.playCount === 0)
-  if (input.hasGrid) r = r.filter((t) => t.beatgrid.length > 0)
+  // gridSummary, not the grid: this scans the whole library and the rows are lean.
+  if (input.hasGrid) r = r.filter((t) => t.gridSummary.markers > 0)
   // Cap returned rows tightly: every track here is re-sent on every later turn,
   // so a 200-row result is paid for many times over. `count` still reports the
   // true total so the model knows to narrow its filter.

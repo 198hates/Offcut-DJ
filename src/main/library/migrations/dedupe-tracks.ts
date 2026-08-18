@@ -75,6 +75,15 @@ export function isDedupeDone(db: Database.Database): boolean {
 export function dedupeTracksByFilePath(db: Database.Database): DedupeResult {
   const before = (db.prepare('SELECT COUNT(*) AS c FROM tracks').get() as { c: number }).c
 
+  // beatgrid / analysed_beatgrid are only on `tracks` before the move-grids-out
+  // migration. This runs first on an upgrade (so they're still there), but must
+  // also work on a database that never had them.
+  const trackCols = new Set(
+    (db.prepare(`SELECT name FROM pragma_table_info('tracks')`).all() as { name: string }[])
+      .map((c) => c.name)
+  )
+  const mergeColumns = MERGE_COLUMNS.filter((c) => trackCols.has(c.col))
+
   if (isDedupeDone(db)) {
     return { ran: false, before, after: before, removed: 0, playlistRefsRepointed: 0, timings: {} }
   }
@@ -134,7 +143,7 @@ export function dedupeTracksByFilePath(db: Database.Database): DedupeResult {
     const isEmpty = (t: string, col: string, empty: string | null): string =>
       empty === null ? `${t}.${col} IS NULL` : `(${t}.${col} IS NULL OR ${t}.${col} = ${empty})`
 
-    const assignments = MERGE_COLUMNS.map(({ col, empty }) => {
+    const assignments = mergeColumns.map(({ col, empty }) => {
       const donor = `(SELECT t2.${col} FROM tracks t2
                       WHERE t2.file_path = tracks.file_path AND NOT (${isEmpty('t2', col, empty)})
                       ORDER BY t2.updated_at DESC, t2.rowid ASC LIMIT 1)`
@@ -153,7 +162,7 @@ export function dedupeTracksByFilePath(db: Database.Database): DedupeResult {
     // whole row for any UPDATE — beatgrid included — so blanket-updating all
     // 15.6k survivors cost ~78s even when nearly all were already complete
     // (exact re-import duplicates). This guard skips those rewrites entirely.
-    const needsMerge = MERGE_COLUMNS.map(
+    const needsMerge = mergeColumns.map(
       ({ col, empty }) =>
         `(${isEmpty('tracks', col, empty)} AND NOT (${isEmpty('t2', col, empty)}))`
     ).join(' OR ')
@@ -187,6 +196,14 @@ export function dedupeTracksByFilePath(db: Database.Database): DedupeResult {
         SELECT m.winner_id FROM _dupe_map m WHERE m.loser_id = play_history.track_id
       )
       WHERE track_id IN (SELECT loser_id FROM _dupe_map)
+    `))
+
+    // track_grids cascades on delete, so a survivor with no grid would lose one
+    // that only a losing copy had. Claim it first.
+    phase('claimGrids', () => db.exec(`
+      INSERT OR IGNORE INTO track_grids (track_id, beatgrid, analysed_beatgrid)
+      SELECT m.winner_id, g.beatgrid, g.analysed_beatgrid
+      FROM track_grids g JOIN _dupe_map m ON m.loser_id = g.track_id
     `))
 
     phase('deleteLosers', () =>

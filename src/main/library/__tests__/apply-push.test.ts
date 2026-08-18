@@ -48,7 +48,8 @@ describe('applyPush — tracks', () => {
     const id = insertTrack(db, '2026-01-01T00:00:00Z')
     const grid = JSON.stringify([{ position: 0, bpm: 128 }])
     const analysed = JSON.stringify({ bpm: 128, anchorMs: 0, beatPhase: 0 })
-    db.prepare('UPDATE tracks SET beatgrid = ?, analysed_beatgrid = ? WHERE id = ?').run(grid, analysed, id)
+    db.prepare('INSERT OR REPLACE INTO track_grids (track_id, beatgrid, analysed_beatgrid) VALUES (?, ?, ?)')
+      .run(id, grid, analysed)
 
     const res = applyPush(db, {
       tracks: [
@@ -61,7 +62,7 @@ describe('applyPush — tracks', () => {
       ]
     })
     expect(res.appliedTracks).toBe(1)
-    const row = db.prepare('SELECT beatgrid, analysed_beatgrid FROM tracks WHERE id = ?').get(id) as {
+    const row = db.prepare('SELECT beatgrid, analysed_beatgrid FROM track_grids WHERE track_id = ?').get(id) as {
       beatgrid: string
       analysed_beatgrid: string
     }

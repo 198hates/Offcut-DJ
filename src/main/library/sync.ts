@@ -9,7 +9,7 @@
 // in-memory database, independent of Electron.
 
 import type { Database } from 'better-sqlite3'
-import { rowToTrack, rowToPlaylist } from './db'
+import { FULL_TRACK_SELECT, rowToTrack, rowToPlaylist } from './db'
 import type { Track, Playlist, SyncChange, SyncPull } from '../../shared/types'
 
 /**
@@ -50,7 +50,7 @@ export function getChangesSince(db: Database, cursor: number): SyncChange[] {
 }
 
 function loadTrack(db: Database, id: string): Track | null {
-  const row = db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown> | undefined
+  const row = db.prepare(`${FULL_TRACK_SELECT} WHERE t.id = ?`).get(id) as Record<string, unknown> | undefined
   return row ? rowToTrack(row) : null
 }
 

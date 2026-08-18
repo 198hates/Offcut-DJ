@@ -68,7 +68,10 @@ export function applySchema(db: import('better-sqlite3').Database): void {
       comment TEXT NOT NULL DEFAULT '',
       tags TEXT NOT NULL DEFAULT '[]',
       cue_points TEXT NOT NULL DEFAULT '[]',
-      beatgrid TEXT NOT NULL DEFAULT '[]',
+      /* No beatgrid / analysed_beatgrid here: the grids live in track_grids.
+         Inline they averaged ~54KB per row and made every scan of this table
+         read the whole ~820MB file. Existing databases have the columns dropped
+         by the move-grids-out migration. */
       source_ids TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -125,8 +128,9 @@ export function applySchema(db: import('better-sqlite3').Database): void {
      )`,
     "CREATE INDEX IF NOT EXISTS idx_play_history_played_at ON play_history(played_at)",
     "CREATE INDEX IF NOT EXISTS idx_play_history_track_id  ON play_history(track_id)",
-    // Beatgrid v2 — rich analysed grid stored alongside legacy beatgrid array
-    "ALTER TABLE tracks ADD COLUMN analysed_beatgrid TEXT",
+    /* NB: no "ALTER TABLE tracks ADD COLUMN analysed_beatgrid" here. This list
+       runs on every launch, so re-adding it would silently undo the
+       move-grids-out migration one launch after it ran. */
     // Cut history — extended play event columns
     "ALTER TABLE play_history ADD COLUMN mixed_from TEXT",
     "ALTER TABLE play_history ADD COLUMN mixed_into TEXT",
@@ -268,7 +272,19 @@ export function applySchema(db: import('better-sqlite3').Database): void {
     // on the dedupe migration having run. On a library that still holds
     // duplicates this throws, and the tolerated-error list below lets it pass:
     // dedupeTracksByFilePath collapses them and creates the index itself.
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_file_path_unique ON tracks(file_path)"
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_file_path_unique ON tracks(file_path)",
+    // ── Beat grids, stored OUT of line ──────────────────────────────────────
+    // These two blobs averaged ~54KB per track and used to live in `tracks`
+    // itself, which meant every scan of the table dragged the whole ~820MB file
+    // through disk even when selecting only small columns: "SELECT id" took
+    // 105ms, the same rows with a few more columns took 8081ms. Kept in a side
+    // table so `tracks` rows stay small and list reads stay cheap; the grids are
+    // fetched by id only when something actually draws or edits them.
+    `CREATE TABLE IF NOT EXISTS track_grids (
+       track_id          TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+       beatgrid          TEXT NOT NULL DEFAULT '[]',
+       analysed_beatgrid TEXT
+     )`
   ]) {
     try {
       db.exec(stmt)

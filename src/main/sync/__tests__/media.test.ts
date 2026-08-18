@@ -82,7 +82,7 @@ describe('media cache resolution', () => {
 
   it('attaches the compact grid from the analysed v2 beatgrid', async () => {
     insertTrack('tg', 'hashG', join(dir, 'nope.mp3'))
-    db.prepare('UPDATE tracks SET analysed_beatgrid = ? WHERE id = ?').run(
+    db.prepare('INSERT OR REPLACE INTO track_grids (track_id, analysed_beatgrid) SELECT id, ? FROM tracks WHERE id = ?').run(
       JSON.stringify({ medianBpm: 128, firstBeatMs: 250, downbeats: [250, 2125, 4000], isConstantTempo: true }),
       'tg'
     )

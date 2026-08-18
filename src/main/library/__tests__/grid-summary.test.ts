@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import Database from 'better-sqlite3'
 import { applySchema } from '../schema'
-import { rowToTrack, LIST_COLUMNS, insertOrUpdateTrack } from '../db'
+import { rowToTrack, LIST_COLUMNS, FULL_TRACK_SELECT, insertOrUpdateTrack } from '../db'
 import { refreshGridSummary, backfillGridSummaries } from '../grid-summary'
 import type { Beatgrid, TrackInput } from '../../../shared/types'
 
@@ -25,9 +25,11 @@ function seed(db: Database.Database, id: string, opts: {
 } = {}): void {
   const grid = Array.from({ length: opts.markers ?? 0 }, (_, i) => ({ positionMs: i * 500, bpm: 120 }))
   db.prepare(
-    `INSERT INTO tracks (id, file_path, title, date_added, beatgrid, analysed_beatgrid)
-     VALUES (?, ?, ?, datetime('now'), ?, ?)`
-  ).run(id, `/m/${id}.mp3`, id, JSON.stringify(grid), opts.analysed ? JSON.stringify(opts.analysed) : null)
+    `INSERT INTO tracks (id, file_path, title, date_added) VALUES (?, ?, ?, datetime('now'))`
+  ).run(id, `/m/${id}.mp3`, id)
+  db.prepare(
+    'INSERT INTO track_grids (track_id, beatgrid, analysed_beatgrid) VALUES (?, ?, ?)'
+  ).run(id, JSON.stringify(grid), opts.analysed ? JSON.stringify(opts.analysed) : null)
   refreshGridSummary(db, id)
 }
 
@@ -68,6 +70,9 @@ describe('grid summaries', () => {
     // the point of the exercise: the heavy columns are not even selected
     expect(row.beatgrid).toBeUndefined()
     expect(row.analysed_beatgrid).toBeUndefined()
+    // ...and they are not on `tracks` at all any more
+    const cols = (db.prepare(`SELECT name FROM pragma_table_info('tracks')`).all() as { name: string }[]).map((c) => c.name)
+    expect(cols).not.toContain('beatgrid')
 
     const t = rowToTrack(row)
     expect(t.beatgrid).toEqual([])       // safe default, not undefined
@@ -79,7 +84,7 @@ describe('grid summaries', () => {
   it('still returns real grids on a full row', () => {
     seed(db, 'd', { markers: 2, analysed: analysed('manual', 100, [0.5]) })
 
-    const t = rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get('d') as Record<string, unknown>)
+    const t = rowToTrack(db.prepare(`${FULL_TRACK_SELECT} WHERE t.id = ?`).get('d') as Record<string, unknown>)
 
     expect(t.beatgrid).toHaveLength(2)
     expect(t.analysedBeatgrid?.source).toBe('manual')
@@ -89,7 +94,7 @@ describe('grid summaries', () => {
   it('keeps the summary in step when a grid is replaced', () => {
     seed(db, 'e', { markers: 3, analysed: analysed('beat-this', 120, [0.4]) })
 
-    db.prepare("UPDATE tracks SET beatgrid = ?, analysed_beatgrid = ? WHERE id = 'e'")
+    db.prepare("UPDATE track_grids SET beatgrid = ?, analysed_beatgrid = ? WHERE track_id = 'e'")
       .run(JSON.stringify([{ positionMs: 0, bpm: 90 }]), JSON.stringify(analysed('manual', 90, [1, 1])))
     refreshGridSummary(db, 'e')
 
@@ -103,10 +108,12 @@ describe('grid summaries', () => {
   it('backfills libraries written before the summary columns existed', () => {
     // Simulate an old row: grids present, summaries never computed.
     db.prepare(
-      `INSERT INTO tracks (id, file_path, title, date_added, beatgrid, analysed_beatgrid)
-       VALUES ('old', '/m/old.mp3', 'old', datetime('now'), ?, ?)`
-    ).run(JSON.stringify([{ positionMs: 0, bpm: 128 }, { positionMs: 500, bpm: 128 }]),
-          JSON.stringify(analysed('tags', 128, [0.6, 0.4])))
+      `INSERT INTO tracks (id, file_path, title, date_added)
+       VALUES ('old', '/m/old.mp3', 'old', datetime('now'))`
+    ).run()
+    db.prepare('INSERT INTO track_grids (track_id, beatgrid, analysed_beatgrid) VALUES (?,?,?)')
+      .run('old', JSON.stringify([{ positionMs: 0, bpm: 128 }, { positionMs: 500, bpm: 128 }]),
+           JSON.stringify(analysed('tags', 128, [0.6, 0.4])))
     expect((listRow(db, 'old') as { beatgrid_markers: number }).beatgrid_markers).toBe(0)
 
     const filled = backfillGridSummaries(db)
@@ -138,10 +145,9 @@ describe('grid summaries', () => {
   })
 
   it('survives malformed grid JSON without throwing', () => {
-    db.prepare(
-      `INSERT INTO tracks (id, file_path, title, date_added, beatgrid)
-       VALUES ('bad', '/m/bad.mp3', 'bad', datetime('now'), 'not json')`
-    ).run()
+    db.prepare(`INSERT INTO tracks (id, file_path, title, date_added)
+                VALUES ('bad', '/m/bad.mp3', 'bad', datetime('now'))`).run()
+    db.prepare("INSERT INTO track_grids (track_id, beatgrid) VALUES ('bad', 'not json')").run()
 
     expect(() => refreshGridSummary(db, 'bad')).not.toThrow()
   })

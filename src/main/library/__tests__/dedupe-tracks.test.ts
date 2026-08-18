@@ -33,13 +33,17 @@ interface TrackSeed {
 function insert(db: Database.Database, t: TrackSeed): void {
   db.prepare(
     `INSERT INTO tracks (id, file_path, title, date_added, rating, play_count, comment,
-       cue_points, beatgrid, color, energy, updated_at)
-     VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?)`
+       cue_points, color, energy, updated_at)
+     VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     t.id, t.path, t.id, t.rating ?? 0, t.playCount ?? 0, t.comment ?? '',
-    t.cues ?? '[]', t.beatgrid ?? '[]', t.color ?? '', t.energy ?? null,
+    t.cues ?? '[]', t.color ?? '', t.energy ?? null,
     t.updatedAt ?? '2026-01-01 00:00:00'
   )
+  // Grids live out of line now (see move-grids-out).
+  if (t.beatgrid) {
+    db.prepare('INSERT INTO track_grids (track_id, beatgrid) VALUES (?, ?)').run(t.id, t.beatgrid)
+  }
 }
 
 let db: Database.Database
@@ -168,6 +172,31 @@ describe('dedupeTracksByFilePath', () => {
     expect(res.removed).toBe(0)
     expect((db.prepare('SELECT COUNT(*) AS c FROM tracks').get() as { c: number }).c).toBe(2)
     expect((db.prepare("SELECT rating FROM tracks WHERE id='a'").get() as { rating: number }).rating).toBe(3)
+  })
+
+  it("claims a losing copy's beat grid when the survivor has none", () => {
+    // track_grids cascades on delete, so without an explicit claim the grid on a
+    // losing row would vanish with it.
+    insert(db, { id: 'w', path: '/m/x.mp3', rating: 5 })
+    insert(db, { id: 'l', path: '/m/x.mp3', beatgrid: '[{"positionMs":0,"bpm":128}]' })
+
+    dedupeTracksByFilePath(db)
+
+    const rows = db.prepare('SELECT track_id, beatgrid FROM track_grids').all() as
+      { track_id: string; beatgrid: string }[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0].track_id).toBe('w')
+    expect(rows[0].beatgrid).toBe('[{"positionMs":0,"bpm":128}]')
+  })
+
+  it('does not overwrite a survivor that already has a grid', () => {
+    insert(db, { id: 'w', path: '/m/x.mp3', rating: 5, beatgrid: '[{"positionMs":1,"bpm":100}]' })
+    insert(db, { id: 'l', path: '/m/x.mp3', beatgrid: '[{"positionMs":0,"bpm":128}]' })
+
+    dedupeTracksByFilePath(db)
+
+    const row = db.prepare('SELECT beatgrid FROM track_grids').get() as { beatgrid: string }
+    expect(row.beatgrid).toBe('[{"positionMs":1,"bpm":100}]')
   })
 
   it('handles a group of more than two copies', () => {

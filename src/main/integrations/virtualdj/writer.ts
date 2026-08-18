@@ -17,11 +17,13 @@ import { writeFileSync } from 'fs'
 import Database from 'better-sqlite3'
 import { rowToTrack } from '../../library/db'
 import type { Track, CuePoint, ExportResult } from '../../../shared/types'
+// Grids live in track_grids now; the <Scan> beat offset below needs the real markers.
+import { FULL_TRACK_SELECT } from '../../library/db'
 
 export function exportToIntegration(appDb: Database.Database, outputPath: string): ExportResult {
   const result: ExportResult = { tracksExported: 0, playlistsExported: 0, errors: [], cancelled: false }
 
-  const trackRows = appDb.prepare('SELECT * FROM tracks ORDER BY artist, title').all() as Record<string, unknown>[]
+  const trackRows = appDb.prepare(`${FULL_TRACK_SELECT} ORDER BY t.artist, t.title`).all() as Record<string, unknown>[]
   const tracks = trackRows.map(rowToTrack)
 
   const lines: string[] = []

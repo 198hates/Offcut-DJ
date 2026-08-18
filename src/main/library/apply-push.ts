@@ -27,9 +27,10 @@ const TRACK_COLUMNS: { key: keyof TrackPatch; col: string; json?: boolean }[] = 
   { key: 'tags', col: 'tags', json: true },
   { key: 'customTags', col: 'custom_tags', json: true },
   { key: 'cuePoints', col: 'cue_points', json: true },
-  { key: 'beatgrid', col: 'beatgrid', json: true },
-  { key: 'analysedBeatgrid', col: 'analysed_beatgrid', json: true }
 ]
+
+/** Grid columns live in track_grids, so they're applied separately from `tracks`. */
+const GRID_KEYS = ['beatgrid', 'analysedBeatgrid'] as const
 
 function applyTrackPatch(db: Database, patch: TrackPatch): boolean {
   // Resolve identity: prefer the desktop id, fall back to content hash.
@@ -58,9 +59,24 @@ function applyTrackPatch(db: Database, patch: TrackPatch): boolean {
   values.push(patch.updatedAt)
   values.push(row.id)
   db.prepare(`UPDATE tracks SET ${sets.join(', ')} WHERE id = ?`).run(...values)
-  // Keep the denormalised grid badges in step with a grid pushed from a device.
-  if ('beatgrid' in patch || 'analysedBeatgrid' in patch) refreshGridSummary(db, row.id)
+  applyGridPatch(db, row.id, patch)
   return true
+}
+
+/** Write any pushed grid into track_grids and refresh the denormalised badges. */
+function applyGridPatch(db: Database, id: string, patch: TrackPatch): void {
+  if (!GRID_KEYS.some((k) => k in patch)) return
+  const grid = 'beatgrid' in patch ? JSON.stringify(patch.beatgrid ?? []) : null
+  const analysed = 'analysedBeatgrid' in patch
+    ? (patch.analysedBeatgrid == null ? null : JSON.stringify(patch.analysedBeatgrid))
+    : null
+  db.prepare(`
+    INSERT INTO track_grids (track_id, beatgrid, analysed_beatgrid) VALUES (?, COALESCE(?, '[]'), ?)
+    ON CONFLICT(track_id) DO UPDATE SET
+      beatgrid = COALESCE(?, track_grids.beatgrid),
+      analysed_beatgrid = CASE WHEN ? THEN ? ELSE track_grids.analysed_beatgrid END
+  `).run(id, grid, analysed, grid, 'analysedBeatgrid' in patch ? 1 : 0, analysed)
+  refreshGridSummary(db, id)
 }
 
 function replaceMembership(db: Database, playlistId: string, trackIds: string[]): void {

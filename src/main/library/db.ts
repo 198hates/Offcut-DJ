@@ -4,6 +4,7 @@ import { join } from 'path'
 import { applySchema } from './schema'
 import { dedupeTracksByFilePath, isDedupeDone } from './migrations/dedupe-tracks'
 import { dedupePlaylistsBySource } from './migrations/dedupe-playlists'
+import { moveGridsOutOfTracks, areGridsMovedOut } from './migrations/move-grids-out'
 import { backfillGridSummaries, gridSummaryBackfillPending } from './grid-summary'
 import { compactSyncLog, syncLogCompactionPending } from './sync-log-compact'
 import type { Track, TrackInput, Playlist } from '../../shared/types'
@@ -44,6 +45,7 @@ function pendingPhases(db: Database.Database): string[] {
   const out: string[] = []
   try { if (!isDedupeDone(db)) out.push('dedupe') } catch { /* ignore */ }
   try { if (duplicatePlaylistCount(db) > 0) out.push('playlists') } catch { /* ignore */ }
+  try { if (!areGridsMovedOut(db)) out.push('grids') } catch { /* ignore */ }
   try { if (gridSummaryBackfillPending(db) > 0) out.push('summaries') } catch { /* ignore */ }
   try { if (syncLogCompactionPending(db)) out.push('journal') } catch { /* ignore */ }
   return out
@@ -64,6 +66,7 @@ function duplicatePlaylistCount(db: Database.Database): number {
 const PHASE_LABEL: Record<string, string> = {
   dedupe: 'Removing duplicate tracks…',
   playlists: 'Merging duplicate playlists…',
+  grids: 'Compacting the library file…',
   summaries: 'Indexing beat grids…',
   journal: 'Tidying the change journal…'
 }
@@ -95,6 +98,19 @@ function runMaintenance(db: Database.Database, only?: string): void {
       }
     } catch (err) {
       console.error('[library] playlist de-duplication failed:', (err as Error).message)
+    }
+  }
+  if (!only || only === 'grids') {
+    try {
+      const res = moveGridsOutOfTracks(db)
+      if (res.ran) {
+        console.info(
+          `[library] moved ${res.rowsMoved} beat grids out of line; ` +
+          `library file ${res.sizeBeforeMb}MB → ${res.sizeAfterMb}MB`
+        )
+      }
+    } catch (err) {
+      console.error('[library] moving grids out of tracks failed:', (err as Error).message)
     }
   }
   if (!only || only === 'summaries') {
@@ -171,14 +187,23 @@ export const LIST_COLUMNS = `
   last_played_at, date_added, updated_at, comment, tags, custom_tags,
   cue_points, edit_lineage, source_ids, file_size, file_type, sample_rate,
   bit_depth, gain_db, phrases, overview_peaks, content_hash, embedding,
-  beatgrid_markers, analysed_source, analysed_median_bpm, analysed_confidence,
-  (analysed_beatgrid IS NOT NULL) AS has_analysed
+  beatgrid_markers, analysed_source, analysed_median_bpm, analysed_confidence
 `
 // `embedding` stays in the list despite being a blob-ish column: similarity
 // search (TrackDetail candidates, roadNotTaken, Health duplicate detection,
 // SetBuilder) scans it across the WHOLE library, so fetching it per-track would
 // mean fetching all of it anyway. It measures 0.0MB today. If that changes,
 // move it behind an on-demand fetch like the grids rather than growing this list.
+
+/**
+ * A complete track INCLUDING its grids. The blobs live in `track_grids` (see the
+ * move-grids-out migration), so anything that needs real markers has to join —
+ * `SELECT * FROM tracks` alone no longer returns them.
+ */
+export const FULL_TRACK_SELECT = `
+  SELECT t.*, g.beatgrid, g.analysed_beatgrid
+  FROM tracks t LEFT JOIN track_grids g ON g.track_id = t.id
+`
 
 export function rowToTrack(row: Record<string, unknown>): Track {
   return {
@@ -214,10 +239,9 @@ export function rowToTrack(row: Record<string, unknown>): Track {
       : null,
     gridSummary: {
       markers: (row.beatgrid_markers as number | null) ?? 0,
-      // `has_analysed` on lean rows; on a full row fall back to the grid itself.
-      hasAnalysed: row.has_analysed != null
-        ? Boolean(row.has_analysed)
-        : row.analysed_beatgrid != null,
+      // Derived from the summary columns rather than the grid, which lean rows
+      // don't carry. analysed_source is written whenever an analysed grid is.
+      hasAnalysed: row.analysed_beatgrid != null || row.analysed_source != null,
       analysedSource: (row.analysed_source as string | null) ?? null,
       analysedMedianBpm: (row.analysed_median_bpm as number | null) ?? null,
       analysedConfidence: (row.analysed_confidence as number | null) ?? null
@@ -263,12 +287,12 @@ export function insertOrUpdateTrack(db: Database.Database, track: TrackInput): v
     INSERT INTO tracks (
       id, file_path, title, artist, album, genre, year, label, bpm, key,
       duration_seconds, rating, energy, danceability, date_added, comment,
-      tags, cue_points, beatgrid, source_ids,
+      tags, cue_points, source_ids,
       file_size, file_type, sample_rate, bit_depth, beatgrid_markers
     ) VALUES (
       @id, @filePath, @title, @artist, @album, @genre, @year, @label, @bpm, @key,
       @durationSeconds, @rating, @energy, @danceability, @dateAdded, @comment,
-      @tags, @cuePoints, @beatgrid, @sourceIds,
+      @tags, @cuePoints, @sourceIds,
       @fileSize, @fileType, @sampleRate, @bitDepth,
       /* Derived inline rather than via a follow-up refreshGridSummary() call:
          importers run this once per track, and a second UPDATE per row would
@@ -305,10 +329,6 @@ export function insertOrUpdateTrack(db: Database.Database, track: TrackInput): v
       comment = CASE WHEN comment IS NULL OR comment = '' THEN excluded.comment ELSE comment END,
       tags = CASE WHEN tags IS NULL OR tags = '' OR tags = '[]' THEN excluded.tags ELSE tags END,
       cue_points = CASE WHEN cue_points IS NULL OR cue_points = '' OR cue_points = '[]' THEN excluded.cue_points ELSE cue_points END,
-      beatgrid = CASE WHEN beatgrid IS NULL OR beatgrid = '' OR beatgrid = '[]' THEN excluded.beatgrid ELSE beatgrid END,
-      /* Must mirror the CASE above exactly, or the badge disagrees with the grid. */
-      beatgrid_markers = COALESCE(json_array_length(NULLIF(
-        CASE WHEN beatgrid IS NULL OR beatgrid = '' OR beatgrid = '[]' THEN excluded.beatgrid ELSE beatgrid END, '')), 0),
       source_ids = excluded.source_ids,
       /* file info: fill in if not yet set */
       file_size   = COALESCE(file_size,   excluded.file_size),
@@ -342,4 +362,26 @@ export function insertOrUpdateTrack(db: Database.Database, track: TrackInput): v
     sampleRate: track.sampleRate ?? null,
     bitDepth: track.bitDepth ?? null,
   })
+
+  // Grids live in the side table now. Only importers that actually carry markers
+  // (serato, the USB backup reader) pay for this second statement — everything
+  // else passes an empty array and skips it entirely, which matters when this
+  // runs once per track across a 15k-track import.
+  if (track.beatgrid.length > 0) {
+    // The upsert keys on file_path and keeps the EXISTING row's id, so re-read
+    // it rather than assuming the id we just tried to insert.
+    const row = db.prepare('SELECT id FROM tracks WHERE file_path = ?').get(track.filePath) as
+      | { id: string }
+      | undefined
+    if (row) {
+      // Same "fill only when empty" rule the track upsert uses: a re-import must
+      // not clobber a grid the user edited or the analyser produced.
+      db.prepare(`
+        INSERT INTO track_grids (track_id, beatgrid) VALUES (?, ?)
+        ON CONFLICT(track_id) DO UPDATE SET
+          beatgrid = CASE WHEN track_grids.beatgrid IS NULL OR track_grids.beatgrid IN ('', '[]')
+                          THEN excluded.beatgrid ELSE track_grids.beatgrid END
+      `).run(row.id, JSON.stringify(track.beatgrid))
+    }
+  }
 }

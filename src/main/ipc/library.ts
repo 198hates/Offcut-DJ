@@ -3,7 +3,7 @@ import { existsSync, writeFileSync, mkdirSync, watch, readFileSync, renameSync, 
 import { execFile } from 'child_process'
 import { join, dirname, basename, extname, relative, isAbsolute } from 'path'
 import { randomUUID } from 'crypto'
-import { getLibraryDb, rowToTrack, rowToPlaylist, LIST_COLUMNS } from '../library/db'
+import { getLibraryDb, rowToTrack, rowToPlaylist, LIST_COLUMNS, FULL_TRACK_SELECT } from '../library/db'
 import { refreshGridSummary } from '../library/grid-summary'
 import { computeOverviewPeaks } from '../library/overview-peaks'
 import { resolveSmartPlaylist } from '../library/smart-playlist'
@@ -137,6 +137,38 @@ function fetchTracksInOrder(db: Database.Database, ids: string[]): Track[] {
   return ids.map((id) => byId.get(id)).filter((t): t is Track => t !== undefined)
 }
 
+/**
+ * Persist any grid fields from a track patch into `track_grids` and refresh the
+ * denormalised summary. Kept separate because `tracks` no longer has these
+ * columns — a patch naming them would otherwise build invalid SQL.
+ */
+function writeGridPatch(
+  db: ReturnType<typeof getLibraryDb>,
+  id: string,
+  fields: Record<string, unknown>
+): void {
+  const hasGrid = 'beatgrid' in fields
+  const hasAnalysed = 'analysedBeatgrid' in fields
+  if (!hasGrid && !hasAnalysed) return
+  const sets: string[] = []
+  const vals: unknown[] = []
+  if (hasGrid) { sets.push('beatgrid = ?'); vals.push(JSON.stringify(fields.beatgrid ?? [])) }
+  if (hasAnalysed) {
+    sets.push('analysed_beatgrid = ?')
+    vals.push(fields.analysedBeatgrid == null ? null : JSON.stringify(fields.analysedBeatgrid))
+  }
+  db.prepare(`
+    INSERT INTO track_grids (track_id, beatgrid, analysed_beatgrid) VALUES (?, ?, ?)
+    ON CONFLICT(track_id) DO UPDATE SET ${sets.join(', ')}
+  `).run(
+    id,
+    hasGrid ? JSON.stringify(fields.beatgrid ?? []) : '[]',
+    hasAnalysed && fields.analysedBeatgrid != null ? JSON.stringify(fields.analysedBeatgrid) : null,
+    ...vals
+  )
+  refreshGridSummary(db, id)
+}
+
 export function registerLibraryHandlers(): void {
   const db = getLibraryDb()
 
@@ -164,8 +196,8 @@ export function registerLibraryHandlers(): void {
       const chunk = ids.slice(i, i + 500)
       const rows = db
         .prepare(
-          `SELECT id, beatgrid, analysed_beatgrid FROM tracks
-           WHERE id IN (${chunk.map(() => '?').join(',')})`
+          `SELECT track_id AS id, beatgrid, analysed_beatgrid FROM track_grids
+           WHERE track_id IN (${chunk.map(() => '?').join(',')})`
         )
         .all(...chunk) as Record<string, unknown>[]
       for (const r of rows) {
@@ -205,15 +237,18 @@ export function registerLibraryHandlers(): void {
   // ── Write: single track ───────────────────────────────────────────────────
   ipcMain.handle('library:updateTrack', (_e, patch: Partial<Track> & { id: string }): Track => {
     const { id, ...fields } = patch
+    // Grids live in track_grids, so peel them off before building the tracks UPDATE.
+    writeGridPatch(db, id, fields)
+    delete (fields as Record<string, unknown>).beatgrid
+    delete (fields as Record<string, unknown>).analysedBeatgrid
     if (Object.keys(fields).length > 0) {
       const setClauses = patchEntries(fields).map(([k, col]) => `${col} = @${k}`).join(', ')
       db.prepare(`UPDATE tracks SET ${setClauses}, updated_at = datetime('now') WHERE id = @id`)
         .run({ ...patchParams(fields), id })
       // Recompute before re-reading, so the row returned to the renderer carries
       // a gridSummary that matches the grid just written.
-      if ('beatgrid' in fields || 'analysedBeatgrid' in fields) refreshGridSummary(db, id)
     }
-    return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown>)
+    return rowToTrack(db.prepare(`${FULL_TRACK_SELECT} WHERE t.id = ?`).get(id) as Record<string, unknown>)
   })
 
   // ── Mini-waveform overview peaks ──────────────────────────────────────────
@@ -356,7 +391,7 @@ export function registerLibraryHandlers(): void {
       db.prepare(
         "INSERT INTO play_history (id, track_id, played_at, mixed_from, deck_id) VALUES (?, ?, datetime('now'), ?, ?)"
       ).run(randomUUID(), id, opts?.mixedFrom ?? null, opts?.deckId ?? null)
-      return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(id) as Record<string, unknown>)
+      return rowToTrack(db.prepare(`${FULL_TRACK_SELECT} WHERE t.id = ?`).get(id) as Record<string, unknown>)
     }
   )
 
@@ -623,7 +658,7 @@ export function registerLibraryHandlers(): void {
 
   // ── Write tags to audio file ──────────────────────────────────────────────
   ipcMain.handle('library:writeTagsToFile', async (_e, trackId: string) => {
-    const row = db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown> | undefined
+    const row = db.prepare(`${FULL_TRACK_SELECT} WHERE t.id = ?`).get(trackId) as Record<string, unknown> | undefined
     if (!row) return { success: false, error: 'Track not found' }
     return writeTagsToFile(rowToTrack(row))
   })
@@ -902,18 +937,21 @@ export function registerLibraryHandlers(): void {
   })
 
   ipcMain.handle('library:analyzeBeats', async (_e, trackId: string): Promise<Track> => {
-    const row = db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>
+    const row = db.prepare(`${FULL_TRACK_SELECT} WHERE t.id = ?`).get(trackId) as Record<string, unknown>
     if (!row) throw new Error(`Track not found: ${trackId}`)
     const track = rowToTrack(row)
 
     const result = await analyzeBeats(track.filePath)
 
-    db.prepare(
-      "UPDATE tracks SET beatgrid = ?, bpm = ?, updated_at = datetime('now') WHERE id = ?"
-    ).run(JSON.stringify(result.markers), result.detectedBpm || track.bpm, trackId)
+    db.prepare(`
+      INSERT INTO track_grids (track_id, beatgrid) VALUES (?, ?)
+      ON CONFLICT(track_id) DO UPDATE SET beatgrid = excluded.beatgrid
+    `).run(trackId, JSON.stringify(result.markers))
+    db.prepare("UPDATE tracks SET bpm = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(result.detectedBpm || track.bpm, trackId)
     refreshGridSummary(db, trackId)
 
-    return rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>)
+    return rowToTrack(db.prepare(`${FULL_TRACK_SELECT} WHERE t.id = ?`).get(trackId) as Record<string, unknown>)
   })
 
   ipcMain.handle(
@@ -1147,7 +1185,7 @@ ${rows}
 
   // ── Discogs metadata fetch ───────────────────────────────────────────────────
   ipcMain.handle('library:fetchDiscogsMetadata', async (_e, trackId: string): Promise<{ ok: boolean; updated?: Track; error?: string }> => {
-    const track = rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>)
+    const track = rowToTrack(db.prepare(`${FULL_TRACK_SELECT} WHERE t.id = ?`).get(trackId) as Record<string, unknown>)
     const query = [track.artist, track.title].filter(Boolean).join(' ')
     if (!query) return { ok: false, error: 'No artist or title to search' }
 
@@ -1168,7 +1206,7 @@ ${rows}
 
       const setClauses = Object.keys(patch).filter((k) => k !== 'id').map((k) => `${COL_MAP[k] ?? k} = @${k}`).join(', ')
       db.prepare(`UPDATE tracks SET ${setClauses}, updated_at = datetime('now') WHERE id = @id`).run(patch)
-      const updated = rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>)
+      const updated = rowToTrack(db.prepare(`${FULL_TRACK_SELECT} WHERE t.id = ?`).get(trackId) as Record<string, unknown>)
       return { ok: true, updated }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
@@ -1177,7 +1215,7 @@ ${rows}
 
   // ── AcoustID / MusicBrainz fingerprint lookup ────────────────────────────────
   ipcMain.handle('library:lookupAcoustId', async (_e, trackId: string, fingerprint: string, durationSecs: number): Promise<{ ok: boolean; updated?: Track; error?: string }> => {
-    const track = rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>)
+    const track = rowToTrack(db.prepare(`${FULL_TRACK_SELECT} WHERE t.id = ?`).get(trackId) as Record<string, unknown>)
     try {
       // AcoustID API — honour a user-configured key (Settings) over the shared default
       const apiKey = loadSettings().acoustidKey?.trim() || 'yVHjbHFuM7'
@@ -1203,7 +1241,7 @@ ${rows}
 
       const setClauses = Object.keys(patch).filter((k) => k !== 'id').map((k) => `${COL_MAP[k] ?? k} = @${k}`).join(', ')
       db.prepare(`UPDATE tracks SET ${setClauses}, updated_at = datetime('now') WHERE id = @id`).run(patch)
-      const updated = rowToTrack(db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as Record<string, unknown>)
+      const updated = rowToTrack(db.prepare(`${FULL_TRACK_SELECT} WHERE t.id = ?`).get(trackId) as Record<string, unknown>)
       return { ok: true, updated }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
