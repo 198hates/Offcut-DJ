@@ -38,18 +38,25 @@ export function refreshGridSummary(db: Database.Database, trackId: string): void
   }
 }
 
+/** How many rows still need summaries — 0 means the backfill is a no-op. */
+export function gridSummaryBackfillPending(db: Database.Database): number {
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM tracks
+         WHERE beatgrid_markers = 0 AND beatgrid IS NOT NULL AND beatgrid != '' AND beatgrid != '[]'`
+      )
+      .get() as { c: number }
+  ).c
+}
+
 /**
  * One-time backfill for libraries written before the summary columns existed.
  * Detected by "no row has a marker count yet" rather than a version flag, so it
  * self-heals if a write path ever misses one.
  */
 export function backfillGridSummaries(db: Database.Database): number {
-  const pending = db
-    .prepare(
-      `SELECT COUNT(*) AS c FROM tracks
-       WHERE beatgrid_markers = 0 AND beatgrid IS NOT NULL AND beatgrid != '' AND beatgrid != '[]'`
-    )
-    .get() as { c: number }
+  const pending = { c: gridSummaryBackfillPending(db) }
   if (pending.c === 0) return 0
 
   db.prepare(

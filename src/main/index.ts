@@ -17,6 +17,10 @@ import { warmModel } from './integrations/beat-analysis'
 import { startWatcher } from './integrations/watch-folder'
 import { loadSettings, saveSettings } from './settings'
 import { migrateUserDataFromCrate } from './migrate-userdata'
+import { prepareLibrary } from './library/db'
+import {
+  prepareMaintenanceSplash, reportMaintenancePhase, closeMaintenanceSplash
+} from './maintenance-splash'
 
 function createWindow(): void {
   const settings = loadSettings()
@@ -127,7 +131,7 @@ function setupAutoUpdater(): void {
   autoUpdater.on('update-downloaded', () => notifyRenderer('updater:update-downloaded'))
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // One-time: carry library/settings over from the old "Crate" data folder.
   migrateUserDataFromCrate()
   electronApp.setAppUserModelId('com.offcut.app')
@@ -136,7 +140,26 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  // registerLibraryHandlers() opens the database, which is where one-time
+  // maintenance runs — up to ~95s of synchronous SQLite on a big library, with
+  // the main process blocked throughout. Load a splash FIRST (it cannot be
+  // loaded once we're blocked) and let the DB layer drive it. It stays hidden
+  // unless a phase actually reports, so an ordinary launch shows nothing.
+  try {
+    await prepareMaintenanceSplash()
+    // yieldToUi gives the main thread a real run-loop turn so the splash is
+    // actually painted before we vanish into a blocking phase. Without it the
+    // window is created and "visible" but never reaches the screen.
+    await prepareLibrary(reportMaintenancePhase, () => new Promise((r) => setTimeout(r, 180)))
+  } catch (err) {
+    console.error('[startup] library preparation failed:', (err as Error).message)
+  } finally {
+    // Always tear down, even if preparation threw — a stuck splash with no main
+    // window would leave the app unusable and unquittable.
+    closeMaintenanceSplash()
+  }
   registerLibraryHandlers()
+
   registerSettingsHandlers()
   registerAudioHandlers()
   registerLineageHandlers()
@@ -149,6 +172,7 @@ app.whenReady().then(() => {
   loadNativeEngine()    // non-fatal: logs warning if .node not compiled yet
   setupAutoUpdater()
   createWindow()
+  startupComplete = true
   warmModel() // preload beat model into memory if installed
   startWatcher(loadSettings().watchFolders)
   void startSyncServerIfEnabled() // resume phone-sync if it was left on
@@ -158,7 +182,17 @@ app.whenReady().then(() => {
   })
 })
 
+/**
+ * The maintenance splash is a real BrowserWindow, and closing it happens BEFORE
+ * the main window is created. Without this guard that moment counts as "all
+ * windows closed" and quits the app outright on Windows and Linux — the app
+ * would appear to launch and immediately vanish, and only for users whose
+ * library needed migrating.
+ */
+let startupComplete = false
+
 app.on('window-all-closed', () => {
+  if (!startupComplete) return
   if (process.platform !== 'darwin') app.quit()
 })
 

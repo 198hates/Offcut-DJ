@@ -65,7 +65,7 @@ export interface DedupeResult {
 }
 
 /** True once the UNIQUE index exists, which is what makes duplicates impossible. */
-function alreadyDeduped(db: Database.Database): boolean {
+export function isDedupeDone(db: Database.Database): boolean {
   const row = db
     .prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type='index' AND name='idx_tracks_file_path_unique'`)
     .get() as { ok: number } | undefined
@@ -75,7 +75,7 @@ function alreadyDeduped(db: Database.Database): boolean {
 export function dedupeTracksByFilePath(db: Database.Database): DedupeResult {
   const before = (db.prepare('SELECT COUNT(*) AS c FROM tracks').get() as { c: number }).c
 
-  if (alreadyDeduped(db)) {
+  if (isDedupeDone(db)) {
     return { ran: false, before, after: before, removed: 0, playlistRefsRepointed: 0, timings: {} }
   }
 

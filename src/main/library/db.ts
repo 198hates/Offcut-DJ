@@ -2,61 +2,119 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
 import { applySchema } from './schema'
-import { dedupeTracksByFilePath } from './migrations/dedupe-tracks'
-import { backfillGridSummaries } from './grid-summary'
-import { compactSyncLog } from './sync-log-compact'
+import { dedupeTracksByFilePath, isDedupeDone } from './migrations/dedupe-tracks'
+import { backfillGridSummaries, gridSummaryBackfillPending } from './grid-summary'
+import { compactSyncLog, syncLogCompactionPending } from './sync-log-compact'
 import type { Track, TrackInput, Playlist } from '../../shared/types'
 
 let _db: Database.Database | null = null
 
+/** A one-time maintenance step, reported so the UI can say what's happening. */
+export interface MaintenancePhase {
+  /** Stable id: 'dedupe' | 'summaries' | 'journal' */
+  id: string
+  /** Human-readable, shown to the user. */
+  label: string
+  /** Roughly how far through the whole maintenance run we are, 0–1. */
+  progress: number
+}
+
+
+
 export function getLibraryDb(): Database.Database {
   if (_db) return _db
 
+  openDb()
+  runMaintenance(_db!)
+  return _db!
+}
+
+function openDb(): void {
+  if (_db) return
   const dbPath = join(app.getPath('userData'), 'library.db')
   _db = new Database(dbPath)
   _db.pragma('journal_mode = WAL')
   _db.pragma('foreign_keys = ON')
   applySchema(_db)
+}
 
-  // Repair libraries duplicated by the old ON CONFLICT(id) upsert, and install
-  // the UNIQUE(file_path) index the new upsert keys on. Self-skipping once the
-  // index exists, so this costs one index lookup on every later launch.
-  try {
-    const res = dedupeTracksByFilePath(_db)
-    if (res.ran && res.removed > 0) {
-      console.info(
-        `[library] de-duplicated ${res.removed} track rows (${res.before} → ${res.after}); ` +
-        `repointed ${res.playlistRefsRepointed} playlist entries`
-      )
+/** Which one-time phases still have work to do. Cheap: index and count lookups. */
+function pendingPhases(db: Database.Database): string[] {
+  const out: string[] = []
+  try { if (!isDedupeDone(db)) out.push('dedupe') } catch { /* ignore */ }
+  try { if (gridSummaryBackfillPending(db) > 0) out.push('summaries') } catch { /* ignore */ }
+  try { if (syncLogCompactionPending(db)) out.push('journal') } catch { /* ignore */ }
+  return out
+}
+
+const PHASE_LABEL: Record<string, string> = {
+  dedupe: 'Removing duplicate tracks…',
+  summaries: 'Indexing beat grids…',
+  journal: 'Tidying the change journal…'
+}
+
+function runMaintenance(db: Database.Database, only?: string): void {
+  if (!only || only === 'dedupe') {
+    try {
+      const res = dedupeTracksByFilePath(db)
+      if (res.ran && res.removed > 0) {
+        console.info(
+          `[library] de-duplicated ${res.removed} track rows (${res.before} → ${res.after}); ` +
+          `repointed ${res.playlistRefsRepointed} playlist entries`
+        )
+      }
+    } catch (err) {
+      // A library that can't be de-duplicated is still usable — it just stays
+      // slow and keeps duplicating. Better than refusing to open at all.
+      console.error('[library] track de-duplication failed:', (err as Error).message)
     }
-  } catch (err) {
-    // A library that can't be de-duplicated is still usable — it just stays
-    // slow and keeps duplicating. Better than refusing to open at all.
-    console.error('[library] track de-duplication failed:', (err as Error).message)
   }
-
-  // Populate the grid summary columns for libraries written before they existed.
-  // One pass; afterwards the write paths keep them current.
-  try {
-    const filled = backfillGridSummaries(_db)
-    if (filled > 0) console.info(`[library] backfilled grid summaries for ${filled} tracks`)
-  } catch (err) {
-    console.error('[library] grid summary backfill failed:', (err as Error).message)
-  }
-
-  // The change journal is append-only and nothing ever pruned it; a single
-  // library-wide import adds a row per track. Collapsing to the newest row per
-  // entity is invisible to any client (see compactSyncLog) and bounds the table.
-  try {
-    const res = compactSyncLog(_db)
-    if (res.removed > 0) {
-      console.info(`[library] compacted sync journal: ${res.before} → ${res.after} rows`)
+  if (!only || only === 'summaries') {
+    try {
+      const filled = backfillGridSummaries(db)
+      if (filled > 0) console.info(`[library] backfilled grid summaries for ${filled} tracks`)
+    } catch (err) {
+      console.error('[library] grid summary backfill failed:', (err as Error).message)
     }
-  } catch (err) {
-    console.error('[library] sync journal compaction failed:', (err as Error).message)
   }
+  if (!only || only === 'journal') {
+    try {
+      const res = compactSyncLog(db)
+      if (res.removed > 0) {
+        console.info(`[library] compacted sync journal: ${res.before} → ${res.after} rows`)
+      }
+    } catch (err) {
+      console.error('[library] sync journal compaction failed:', (err as Error).message)
+    }
+  }
+}
 
-  return _db
+/**
+ * Run one-time maintenance with the UI able to keep up.
+ *
+ * Each phase blocks the main process outright (~95s in total on a real library),
+ * and a window only actually reaches the screen once the main thread turns its
+ * run loop. Calling show() and then immediately blocking leaves the splash
+ * created, visible per isVisible(), and never painted — verified by screenshot.
+ * So this awaits a real gap after announcing a phase, before disappearing into it.
+ *
+ * Returns true if anything ran, so the caller knows whether a splash was needed.
+ */
+export async function prepareLibrary(
+  onPhase: (phase: MaintenancePhase) => void,
+  yieldToUi: () => Promise<void>
+): Promise<boolean> {
+  openDb()
+  const pending = pendingPhases(_db!)
+  if (pending.length === 0) return false
+
+  for (let i = 0; i < pending.length; i++) {
+    const id = pending[i]
+    onPhase({ id, label: PHASE_LABEL[id] ?? 'Working…', progress: i / pending.length })
+    await yieldToUi()
+    runMaintenance(_db!, id)
+  }
+  return true
 }
 
 /** Absolute path to the library database file. */

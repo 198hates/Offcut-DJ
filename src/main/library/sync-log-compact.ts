@@ -29,6 +29,16 @@ export interface CompactResult {
   removed: number
 }
 
+/** True when there's enough redundancy to be worth a pass — mirrors the check below. */
+export function syncLogCompactionPending(db: Database): boolean {
+  const before = (db.prepare('SELECT COUNT(*) AS c FROM sync_log').get() as { c: number }).c
+  const distinct = (
+    db.prepare('SELECT COUNT(*) AS c FROM (SELECT 1 FROM sync_log GROUP BY entity, entity_id)')
+      .get() as { c: number }
+  ).c
+  return before - distinct >= MIN_REDUNDANT_ROWS
+}
+
 export function compactSyncLog(db: Database): CompactResult {
   const before = (db.prepare('SELECT COUNT(*) AS c FROM sync_log').get() as { c: number }).c
   const distinct = (
