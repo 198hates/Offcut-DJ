@@ -2,11 +2,11 @@
 // — it's pure logic with type-only imports, so vitest can exercise it here. This
 // guards the in-memory port against the desktop SQL evaluator's semantics.
 //
-// Requires `apps/mobile/node_modules` to exist (run `npm install` there once —
-// see apps/mobile/README.md). apps/mobile is an isolated npm project, so a root
-// `npm install` alone won't fetch it. Without it, vitest's oxc transform can't
-// resolve apps/mobile/tsconfig.json's `extends: "expo/tsconfig.base"` and this
-// file fails to load with a cryptic "[TSCONFIG_ERROR] Tsconfig not found".
+// Runs off a plain root checkout — no `npm install` in apps/mobile needed. That
+// relies on apps/mobile/tsconfig.json staying self-contained: if it ever regains
+// an `extends` onto an uninstalled package, vitest's oxc transform fails this
+// whole file with "[TSCONFIG_ERROR] Tsconfig not found" and every test below is
+// silently skipped rather than reported as failing. See that file's comment.
 
 import { describe, it, expect } from 'vitest'
 import { matchesAllRules, playlistTracks } from '../../../../apps/mobile/src/smartRules'
