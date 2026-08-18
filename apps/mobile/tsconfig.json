@@ -1,8 +1,31 @@
 {
-  "extends": "expo/tsconfig.base",
+  // Deliberately NOT `"extends": "expo/tsconfig.base"`. apps/mobile is an
+  // isolated npm project, so a root `npm install` never fetches expo — and the
+  // root vitest suite transforms apps/mobile/src/smartRules.ts (see
+  // src/main/library/__tests__/smart-rules-mobile.test.ts). An unresolvable
+  // `extends` makes vitest's oxc transform fail that whole file with a cryptic
+  // "[TSCONFIG_ERROR] Tsconfig not found", silently skipping its tests.
+  //
+  // The compilerOptions below mirror expo/tsconfig.base from expo@54.0.35 (the
+  // version apps/mobile/package-lock.json pins). Re-check them against
+  // node_modules/expo/tsconfig.base.json when bumping the Expo SDK.
   "compilerOptions": {
+    "allowJs": true,
+    "esModuleInterop": true,
+    "lib": ["DOM", "ESNext"],
+    "module": "preserve",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "customConditions": ["react-native"],
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "target": "ESNext",
+
+    // App-level overrides (these were already set here, on top of the base).
     "strict": true,
     "jsx": "react-jsx"
   },
-  "include": ["**/*.ts", "**/*.tsx"]
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", "babel.config.js", "metro.config.js", "jest.config.js", "android", "ios"]
 }
