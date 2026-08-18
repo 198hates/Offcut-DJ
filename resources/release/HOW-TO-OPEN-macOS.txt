@@ -1,22 +1,46 @@
 Offcut for macOS — first launch
 ================================
 
-Offcut isn't signed with an Apple Developer certificate yet, so the first time
-you open it macOS Gatekeeper will warn you. This is expected. Here's how:
+Offcut isn't signed with an Apple Developer certificate, so macOS Gatekeeper
+blocks it the first time. This is expected, and you only have to do it once.
 
+Which steps you need depends on your macOS version — Apple changed this in
+macOS 15 (Sequoia). Check with:  Apple menu  → About This Mac.
+
+
+macOS 15 (Sequoia) and later  — including macOS 26
+--------------------------------------------------
+Control-clicking the app no longer works on these versions; Apple removed that
+override. Use System Settings instead:
+
+  1. Open the .dmg and drag Offcut into your Applications folder.
+  2. Double-click Offcut. macOS says it can't be opened — click "Done".
+     (This first attempt is required: it's what puts Offcut in the list below.)
+  3. Open System Settings → Privacy & Security, and scroll down to Security.
+  4. There'll be a line about Offcut having been blocked, with an "Open Anyway"
+     button next to it — click that.
+  5. Authenticate, then confirm "Open Anyway" if asked again.
+
+After that, launch it normally from Applications or the Dock.
+
+
+macOS 14 (Sonoma) and earlier
+------------------------------
   1. Open the .dmg and drag Offcut into your Applications folder.
   2. In Applications, RIGHT-CLICK (or Control-click) Offcut and choose "Open".
   3. macOS warns it's from an unidentified developer — click "Open".
 
-You only need to do this once. After that, launch it normally from Applications
-or the Dock.
 
-If macOS instead says Offcut "is damaged and can't be opened" (this happens when
-the browser quarantines the download), open the Terminal app and run:
+If macOS says Offcut "is damaged and can't be opened"
+-----------------------------------------------------
+That message means your browser quarantined the download — it doesn't mean the
+file is actually corrupt. Open the Terminal app and run:
 
     xattr -dr com.apple.quarantine /Applications/Offcut.app
 
-then open Offcut again.
+then open Offcut again. This clears the download flag on Offcut alone; it does
+not change any security setting on your Mac.
+
 
 Notes
 -----
@@ -25,6 +49,11 @@ Notes
     – Intel:                              the "-mac-x64.dmg"
   Not sure which you have? Apple menu  → About This Mac — "Apple M…" means
   Apple Silicon, "Intel" means Intel.
-• The .zip is only for the app's built-in auto-updater — to install, use the .dmg.
-• Code signing / notarisation is on the roadmap; until then the steps above are
-  the normal way to open it.
+• Updates are manual on macOS. Offcut will tell you when a new version is out
+  and link you to the download, but it can't install it for you: macOS only
+  lets an app update itself in place if it's code-signed. Installing a new
+  version is the same as installing this one — drag it over the old copy. Your
+  library and settings are kept separately and aren't touched.
+• The .zip isn't something you need — install from the .dmg.
+• Code signing / notarisation is on the roadmap. It would remove all of the
+  above, and let Offcut update itself.
