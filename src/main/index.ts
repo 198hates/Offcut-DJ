@@ -10,6 +10,7 @@ import { registerStemHandlers } from './ipc/stems'
 import { registerBackupHandlers } from './ipc/backup'
 import { registerAiHandlers } from './ipc/ai'
 import { registerSyncHandlers, startSyncServerIfEnabled, stopSyncServer } from './ipc/sync'
+import { registerSyncClientHandlers } from './ipc/sync-client'
 import { killAllSeparations } from './stems'
 import { loadNativeEngine, registerEngineHandlers } from './engine'
 import { registerCastHandlers } from './cast'
@@ -167,6 +168,7 @@ app.whenReady().then(async () => {
   registerBackupHandlers()
   registerAiHandlers()
   registerSyncHandlers()
+  registerSyncClientHandlers()
   registerEngineHandlers()
   registerCastHandlers()
   loadNativeEngine()    // non-fatal: logs warning if .node not compiled yet

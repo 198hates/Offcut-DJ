@@ -203,6 +203,17 @@ const api = {
       return () => ipcRenderer.removeListener('sync:libraryChanged', h)
     }
   },
+  syncClient: {
+    status:       () => ipcRenderer.invoke('syncClient:status'),
+    configure:    (cfg: { host: string; port?: number; token?: string; enabled?: boolean }) =>
+      ipcRenderer.invoke('syncClient:configure', cfg),
+    pairFromUri:  (uri: string) => ipcRenderer.invoke('syncClient:pairFromUri', uri),
+    probe:        () => ipcRenderer.invoke('syncClient:probe'),
+    pull:         () => ipcRenderer.invoke('syncClient:pull'),
+    push:         () => ipcRenderer.invoke('syncClient:push'),
+    syncNow:      () => ipcRenderer.invoke('syncClient:syncNow'),
+    reset:        () => ipcRenderer.invoke('syncClient:reset')
+  },
   updater: {
     // The check usually resolves before the renderer mounts, so ask for any
     // already-found update on startup rather than relying on the event alone.

@@ -132,6 +132,16 @@ declare global {
         removeDevice: (id: string) => Promise<SyncStatus>
         onLibraryChanged: (cb: () => void) => () => void
       }
+      syncClient: {
+        status: () => Promise<Record<string, unknown>>
+        configure: (cfg: { host: string; port?: number; token?: string; enabled?: boolean }) => Promise<Record<string, unknown>>
+        pairFromUri: (uri: string) => Promise<{ ok: boolean; error?: string; status?: Record<string, unknown> }>
+        probe: () => Promise<{ ok: boolean; name?: string; version?: string; error?: string }>
+        pull: () => Promise<{ ok: boolean; error?: string; result?: Record<string, number> }>
+        push: () => Promise<{ ok: boolean; error?: string; result?: Record<string, number> }>
+        syncNow: () => Promise<{ ok: boolean; error?: string; pushed?: Record<string, number>; pulled?: Record<string, number> }>
+        reset: () => Promise<Record<string, unknown>>
+      }
       updater: {
         getAvailable: () => Promise<{ version: string; downloadUrl: string | null } | null>
         onUpdateAvailable: (
