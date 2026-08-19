@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { PageHeader } from '../../components/PageHeader'
 import { RekordboxSync } from '../../components/RekordboxSync'
+import { SyncClientPanel } from '../../components/SyncClientPanel'
 import type { IntegrationId } from '@shared/types'
 
 const INTEGRATIONS: { id: IntegrationId; label: string; canImport: boolean; canExport: boolean }[] = [
@@ -103,6 +104,12 @@ export function SyncPage(): JSX.Element {
         <section>
           <SectionLabel num="↕" label="live sync" />
           <RekordboxSync />
+        </section>
+
+        {/* Mirror another machine's library onto this one */}
+        <section>
+          <SectionLabel num="⇄" label="mirror another machine" />
+          <SyncClientPanel />
         </section>
       </div>
     </div>
