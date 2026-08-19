@@ -21,6 +21,7 @@ import { rbScaleNameToCamelot } from '../key-notation'
 import type { Track, TrackInput, CuePoint, ImportResult, ExportResult } from '../../../shared/types'
 import { findPlaylistIdBySource } from '../../library/migrations/dedupe-playlists'
 import { resolvePlaylistTree, type RbPlaylistRow } from './playlist-tree'
+import { guardRekordboxWrite } from './write-guard'
 
 export const RB_KEY = '402fd482c38817c35ffa8ffb8c7d93143b749e7d315df7a81732a1ff43608497'
 
@@ -232,6 +233,15 @@ export function exportToRekordboxDb(
   masterDbPath: string
 ): ExportResult {
   const result: ExportResult = { tracksExported: 0, playlistsExported: 0, errors: [], cancelled: false }
+
+  // This is the ONLY path that writes to someone's rekordbox library. Refuse if
+  // rekordbox is open, and take a copy first — the write is not reversible.
+  const guard = guardRekordboxWrite(masterDbPath)
+  if (!guard.ok) {
+    result.errors.push(guard.error ?? 'Rekordbox write blocked')
+    return result
+  }
+  console.info(`[rekordbox] backed up master.db before export → ${guard.backupPath}`)
 
   let rb: InstanceType<typeof SqlCipherDatabase>
   try {
