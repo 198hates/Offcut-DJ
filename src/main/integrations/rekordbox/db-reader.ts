@@ -20,6 +20,7 @@ import { rowToTrack, insertOrUpdateTrack } from '../../library/db'
 import { rbScaleNameToCamelot } from '../key-notation'
 import type { Track, TrackInput, CuePoint, ImportResult, ExportResult } from '../../../shared/types'
 import { findPlaylistIdBySource } from '../../library/migrations/dedupe-playlists'
+import { resolvePlaylistTree, type RbPlaylistRow } from './playlist-tree'
 
 export const RB_KEY = '402fd482c38817c35ffa8ffb8c7d93143b749e7d315df7a81732a1ff43608497'
 
@@ -166,25 +167,30 @@ export function importFromRekordboxDb(
       `)
       .all() as Record<string, unknown>[]
 
-    const rbPlaylistIdToInternal = new Map<string, string>()
+    // Resolve ids and parents up front. `ORDER BY Seq` is rekordbox's DISPLAY
+    // order, not a topological one, so a child is routinely read before its
+    // parent — resolving inline against a half-built map silently dropped those
+    // links and flattened the folder tree (143 of 286 survived on a real
+    // library). See playlist-tree.ts.
+    const resolved = resolvePlaylistTree(
+      playlists as unknown as RbPlaylistRow[],
+      (rbId) => findPlaylistIdBySource(appDb, 'rekordbox', rbId),
+      () => randomUUID()
+    )
 
-    for (let i = 0; i < playlists.length; i++) {
+    for (let i = 0; i < resolved.length; i++) {
       const pl = playlists[i]
-      const rbPlId = String(pl.ID)
-      // Reuse the existing row's id, else INSERT OR REPLACE inserts a duplicate
-      // on every re-import (a fresh UUID can never collide with the primary key).
-      const internalId = findPlaylistIdBySource(appDb, 'rekordbox', rbPlId) ?? randomUUID()
-      rbPlaylistIdToInternal.set(rbPlId, internalId)
+      const rbPlId = resolved[i].rbId
+      const internalId = resolved[i].internalId
+      const isFolder = resolved[i].isFolder
 
-      const isFolder = Number(pl.Attribute) === 1
-      const parentId = pl.ParentID
-        ? rbPlaylistIdToInternal.get(String(pl.ParentID)) ?? null
-        : null
-
+      // parent_id is written in a second pass below, NOT here: now that the tree
+      // is resolved up front, a child can be inserted before its parent exists,
+      // and parent_id is a foreign key — inserting it inline would fail.
       appDb.prepare(`
         INSERT OR REPLACE INTO playlists (id, name, is_folder, parent_id, sort_order, source_ids)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(internalId, String(pl.Name), isFolder ? 1 : 0, parentId, i, JSON.stringify({ rekordbox: rbPlId }))
+        VALUES (?, ?, ?, NULL, ?, ?)
+      `).run(internalId, String(pl.Name), isFolder ? 1 : 0, i, JSON.stringify({ rekordbox: rbPlId }))
 
       if (!isFolder) {
         const songs = rb
@@ -204,6 +210,12 @@ export function importFromRekordboxDb(
         }
         result.playlistsImported++
       }
+    }
+
+    // Second pass: every playlist row now exists, so the foreign key resolves.
+    const setParent = appDb.prepare('UPDATE playlists SET parent_id = ? WHERE id = ?')
+    for (const r of resolved) {
+      if (r.parentInternalId) setParent.run(r.parentInternalId, r.internalId)
     }
   } finally {
     rb.close()
