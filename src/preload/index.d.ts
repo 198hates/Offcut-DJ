@@ -72,6 +72,7 @@ declare global {
         applyPathMapping: (from: string, to: string) => Promise<number>
         getWatchFolders: () => Promise<string[]>
         setWatchFolders: (paths: string[]) => Promise<void>
+        planConsolidate: (trackIds: string[], root?: string) => Promise<OrganizeMove[]>
         scanForOrganize: (sourceDirs: string[], libraryRoot: string) => Promise<OrganizeMove[]>
         organizeFiles: (moves: OrganizeMove[]) => Promise<OrganizeMoveResult[]>
         scanMissingFiles: () => Promise<Track[]>

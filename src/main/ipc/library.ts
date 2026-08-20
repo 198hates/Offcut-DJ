@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto'
 import { getLibraryDb, rowToTrack, rowToPlaylist, LIST_COLUMNS, FULL_TRACK_SELECT } from '../library/db'
 import { refreshGridSummary } from '../library/grid-summary'
 import { computeOverviewPeaks } from '../library/overview-peaks'
+import { planConsolidation } from '../library/track-destination'
 import { resolveSmartPlaylist } from '../library/smart-playlist'
 import { buildFilenameMap, walkAudioFiles } from '../library/file-scan'
 import { importFromIntegration as importRekordbox } from '../integrations/rekordbox/reader'
@@ -732,6 +733,27 @@ export function registerLibraryHandlers(): void {
     }
     return moves
   })
+
+  /**
+   * Plan moves that file the given tracks as <root>/<Artist>/<Album>/<file>.
+   *
+   * Deliberately returns a plan rather than doing anything: the caller shows it,
+   * then executes it through organizeFiles, which already handles never-
+   * overwrite, cross-volume moves and relinking. One risky executor, two
+   * planners (flat organise, and this).
+   *
+   * `root` defaults to the configured musicLibraryRoot — point that at the Apple
+   * Music media folder to consolidate there.
+   */
+  ipcMain.handle(
+    'library:planConsolidate',
+    (_e, trackIds: string[], rootOverride?: string): OrganizeMove[] => {
+      const root = (rootOverride || loadSettings().musicLibraryRoot || '').trim()
+      if (!root || !trackIds.length) return []
+      const tracks = fetchTracksInOrder(db, trackIds)
+      return planConsolidation(tracks, root, existsSync)
+    }
+  )
 
   // ── Organize: move scattered files into the music library root ────────────
   // The renderer already resolved collisions (Offcut never overwrites a file

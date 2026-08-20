@@ -78,6 +78,8 @@ const api = {
       ipcRenderer.invoke('library:applyPathMapping', from, to),
     getWatchFolders: () => ipcRenderer.invoke('library:getWatchFolders'),
     setWatchFolders: (paths: string[]) => ipcRenderer.invoke('library:setWatchFolders', paths),
+    planConsolidate: (trackIds: string[], root?: string) =>
+      ipcRenderer.invoke('library:planConsolidate', trackIds, root) as Promise<import('../shared/types').OrganizeMove[]>,
     scanForOrganize: (sourceDirs: string[], libraryRoot: string) =>
       ipcRenderer.invoke('library:scanForOrganize', sourceDirs, libraryRoot) as Promise<import('../shared/types').OrganizeMove[]>,
     organizeFiles: (moves: import('../shared/types').OrganizeMove[]) =>

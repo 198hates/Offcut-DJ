@@ -5,6 +5,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useLibraryStore } from '../../store/libraryStore'
 import { useTrackMenuContext } from '../../hooks/useTrackMenu'
+import { useTrackPreview } from '../../store/trackPreviewStore'
 import { PageHeader } from '../../components/PageHeader'
 import { StatCard } from '../../components/StatCard'
 import { tabClass, btnGhost, btnPrimary } from '../../lib/ui'
@@ -140,6 +141,10 @@ function DuplicateGroupCard({ group, selected, playlists, onToggle, onSelectExtr
 }): JSX.Element {
   const hasKept = group.some((t) => !selected.has(t.id))
   const openTrackMenu = useTrackMenuContext()
+  // Duplicates are often different masters, edits or bitrates — metadata alone
+  // can't tell you which to keep, so let the user hear them.
+  const previewId = useTrackPreview((s) => s.previewId)
+  const togglePreview = useTrackPreview((s) => s.toggle)
   return (
     <div className="bg-ink/[0.03] border border-border/30 rounded overflow-hidden">
       <div className="px-3 py-2 bg-yellow-400/5 border-b border-border/20 flex items-center justify-between">
@@ -159,6 +164,18 @@ function DuplicateGroupCard({ group, selected, playlists, onToggle, onSelectExtr
             onContextMenu={(e) => openTrackMenu(e, { ids: [track.id], track })}
             className={`flex items-start gap-3 px-3 py-2.5 border-b border-border/10 last:border-0 hover:bg-ink/5 ${isSelected ? 'bg-red-500/5' : ''}`}>
             <input type="checkbox" checked={isSelected} onChange={() => onToggle(track.id)} className="accent-accent shrink-0 mt-0.5" />
+            {/* Audition before deciding — duplicates are often different masters,
+                edits or bitrates, and the metadata alone can't tell you which. */}
+            <button
+              onClick={(e) => { e.stopPropagation(); void togglePreview(track) }}
+              title={previewId === track.id ? 'Stop preview' : 'Preview this file'}
+              className={`shrink-0 mt-0.5 w-5 h-5 rounded-sm border font-mono text-[10px] leading-none transition-colors ${
+                previewId === track.id
+                  ? 'border-accent/60 text-accent bg-accent/10'
+                  : 'border-border/40 text-muted hover:text-ink hover:border-border'
+              }`}>
+              {previewId === track.id ? '■' : '▶'}
+            </button>
             <div className="flex-1 min-w-0">
               <p className="font-sans text-xs text-ink-soft truncate">{track.filePath.split('/').pop()}</p>
               <p className="font-mono text-[12px] text-muted truncate">{track.filePath}</p>
@@ -199,6 +216,12 @@ function DuplicatesSection({ tracks, playlists, deleteTracks }: {
   const [scanning, setScanning]         = useState(false)
   const [selected, setSelected]         = useState(new Set<string>())
   const [deleteFilesToo, setDeleteFilesToo] = useState(false)
+  // Opt-in: after removing duplicates, file the survivors into the configured
+  // music root as Artist/Album. Off by default — it moves real files.
+  const [consolidateKept, setConsolidateKept] = useState(false)
+  const [consolidateNote, setConsolidateNote] = useState<string | null>(null)
+  const [musicRoot, setMusicRoot] = useState('')
+  useEffect(() => { void window.api.settings.get().then((s) => setMusicRoot(s.musicLibraryRoot || '')) }, [])
   const [trashErrors, setTrashErrors]   = useState<string[] | null>(null)
 
   const scan = useCallback(() => {
@@ -230,11 +253,23 @@ function DuplicatesSection({ tracks, playlists, deleteTracks }: {
     }
     const nonSmartPlaylists = playlists.filter((p) => !p.isSmart)
     const inPlaylists = [...selected].filter((id) => nonSmartPlaylists.some((p) => p.trackIds.includes(id))).length
+    // Split the count: only tracks WITH a keeper get their playlist entries
+    // moved across. Selecting every copy in a group leaves nothing to replace
+    // them with, and those entries are simply deleted — say so rather than
+    // promising a replacement that cannot happen.
+    const orphaned = [...selected].filter(
+      (id) => !keepMap.has(id) && nonSmartPlaylists.some((p) => p.trackIds.includes(id))
+    ).length
+    const replaced = inPlaylists - orphaned
     const suffix = selected.size !== 1 ? 's' : ''
     const fileNote = deleteFilesToo ? '\n\nThe underlying files will also be moved to the Trash.' : ''
-    const msg = (inPlaylists > 0
-      ? `Remove ${selected.size} track${suffix} from library?\n\n${inPlaylists} of them appear in playlists — they will be replaced with the kept version.`
-      : `Remove ${selected.size} track${suffix} from library?`) + fileNote
+    const consolidateNote = consolidateKept && musicRoot
+      ? `\n\nKept tracks will be moved into ${musicRoot} as Artist/Album.`
+      : ''
+    const parts = [`Remove ${selected.size} track${suffix} from library?`]
+    if (replaced > 0) parts.push(`${replaced} playlist entr${replaced === 1 ? 'y' : 'ies'} will be moved to the kept version.`)
+    if (orphaned > 0) parts.push(`⚠ ${orphaned} playlist entr${orphaned === 1 ? 'y' : 'ies'} will be LOST — every copy in that group is selected, so there is no kept version.`)
+    const msg = parts.join('\n\n') + fileNote + consolidateNote
     if (!window.confirm(msg)) return
     for (const [removeId, keepId] of keepMap) await window.api.library.replaceTrackInPlaylists(removeId, keepId)
     const toDelete = [...selected]
@@ -246,6 +281,29 @@ function DuplicatesSection({ tracks, playlists, deleteTracks }: {
       if (failed.length) setTrashErrors(failed.map((f) => `${f.path}: ${f.error}`))
     }
     await deleteTracks(toDelete)
+
+    // Consolidate the survivors into the configured music root, as
+    // Artist/Album. Planned then executed through the same organiser used
+    // elsewhere, so it never overwrites and relinks the library as it goes.
+    if (consolidateKept && musicRoot) {
+      const keepIds = [...new Set([...keepMap.values()])]
+      try {
+        const plan = await window.api.library.planConsolidate(keepIds, musicRoot)
+        if (plan.length) {
+          const res = await window.api.library.organizeFiles(plan)
+          const failed = res.filter((r) => !r.ok)
+          setConsolidateNote(
+            `Moved ${res.length - failed.length} of ${plan.length} kept file(s) into ${musicRoot}` +
+            (failed.length ? ` — ${failed.length} failed` : '')
+          )
+        } else {
+          setConsolidateNote('Kept files were already in place — nothing to move.')
+        }
+      } catch (err) {
+        setConsolidateNote(`Consolidation failed: ${(err as Error).message}`)
+      }
+    }
+
     await useLibraryStore.getState().loadLibrary()
     const deletedSet = new Set(toDelete)
     setSelected(new Set())
@@ -292,10 +350,24 @@ function DuplicatesSection({ tracks, playlists, deleteTracks }: {
                       <input type="checkbox" checked={deleteFilesToo} onChange={(e) => setDeleteFilesToo(e.target.checked)} />
                       also delete files (to Trash)
                     </label>
+                    <label
+                      title={musicRoot
+                        ? `Kept files move to ${musicRoot}/<Artist>/<Album>/`
+                        : 'Set a music library root in Settings first'}
+                      className={`flex items-center gap-1.5 font-mono text-[12px] transition-colors ${
+                        musicRoot ? 'text-muted hover:text-ink cursor-pointer' : 'text-muted/40 cursor-not-allowed'
+                      }`}>
+                      <input type="checkbox" disabled={!musicRoot} checked={consolidateKept}
+                        onChange={(e) => setConsolidateKept(e.target.checked)} />
+                      file kept tracks into library root
+                    </label>
                     <button onClick={deleteSelected}
                       className="px-3 py-1.5 bg-red-600/15 hover:bg-red-600/25 text-red-500 font-mono text-[13px] uppercase tracking-[0.1em] rounded border border-red-600/25 transition-colors">
                       remove {selected.size} selected
                     </button>
+                    {consolidateNote && (
+                      <span className="font-mono text-[11px] text-muted/70">{consolidateNote}</span>
+                    )}
                   </>
                 )}
               </div>
