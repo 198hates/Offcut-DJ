@@ -9,6 +9,7 @@ import { useTrackPreview } from '../../store/trackPreviewStore'
 import { PageHeader } from '../../components/PageHeader'
 import { StatCard } from '../../components/StatCard'
 import { tabClass, btnGhost, btnPrimary } from '../../lib/ui'
+import { duplicateMatch, DUPLICATE_MATCH_THRESHOLD } from '../../lib/similarity'
 import type { Track, Playlist } from '@shared/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -24,18 +25,15 @@ function normalize(s: string): string {
 
 type DuplicateGroup = Track[]
 
-/** Raw cosine of two equal-length vectors. Identical audio → ~1.0. */
-function cosine(a: number[], b: number[]): number {
-  let dot = 0, na = 0, nb = 0
-  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
-  const den = Math.sqrt(na) * Math.sqrt(nb)
-  return den ? dot / den : 0
-}
-
 /**
  * Group tracks by AUDIO content (Phase-2 embeddings) — catches re-tagged /
  * re-encoded copies that metadata misses. Duration-bucketed to stay near-linear;
- * a high cosine threshold (+ tight duration match) keeps false positives down.
+ * a high match threshold (+ tight duration match) keeps false positives down.
+ *
+ * Uses duplicateMatch rather than a plain cosine: the raw vector is dominated by
+ * MFCC c0 (loudness), which made this pass miss two copies of one track that
+ * differed by as little as 1 dB while flagging unrelated tracks of similar
+ * level. See the comment on duplicateMatch in lib/similarity.ts.
  */
 function scanAudioDuplicates(tracks: Track[], skip: Set<string>): DuplicateGroup[] {
   const cands = tracks.filter((t) => !skip.has(t.id) && t.embedding && t.durationSeconds)
@@ -55,7 +53,8 @@ function scanAudioDuplicates(tracks: Track[], skip: Set<string>): DuplicateGroup
         const b = bucket[j]
         if (used.has(b.id)) continue
         const durRatio = Math.abs(a.durationSeconds! - b.durationSeconds!) / a.durationSeconds!
-        if (durRatio < 0.03 && cosine(a.embedding!, b.embedding!) >= 0.995) group.push(b)
+        if (durRatio < 0.03 && duplicateMatch(a.embedding!, b.embedding!) >= DUPLICATE_MATCH_THRESHOLD)
+          group.push(b)
       }
       if (group.length > 1) { for (const t of group) used.add(t.id); groups.push(group) }
     }
@@ -220,12 +219,16 @@ function DuplicatesSection({ tracks, playlists, deleteTracks }: {
   // music root as Artist/Album. Off by default — it moves real files.
   const [consolidateKept, setConsolidateKept] = useState(false)
   const [consolidateNote, setConsolidateNote] = useState<string | null>(null)
+  // What the merge rescued from the removed copies — worth saying out loud, it's
+  // the difference between this tool and one that just deletes rows.
+  const [mergeNote, setMergeNote] = useState<string | null>(null)
   const [musicRoot, setMusicRoot] = useState('')
   useEffect(() => { void window.api.settings.get().then((s) => setMusicRoot(s.musicLibraryRoot || '')) }, [])
   const [trashErrors, setTrashErrors]   = useState<string[] | null>(null)
 
   const scan = useCallback(() => {
     setScanning(true)
+    setMergeNote(null)
     setTimeout(() => { setDupes(scanForDuplicates(tracks)); setSelected(new Set()); setScanning(false) }, 100)
   }, [tracks])
 
@@ -268,10 +271,30 @@ function DuplicatesSection({ tracks, playlists, deleteTracks }: {
       : ''
     const parts = [`Remove ${selected.size} track${suffix} from library?`]
     if (replaced > 0) parts.push(`${replaced} playlist entr${replaced === 1 ? 'y' : 'ies'} will be moved to the kept version.`)
+    // Say this even when no playlists are involved: it is the reason removing a
+    // duplicate is safe, and the user is about to click through a destructive
+    // confirmation.
+    if (keepMap.size > 0) parts.push('Cues, beatgrid, rating, tags and play history from the removed copies will be merged into the kept version wherever it has none.')
     if (orphaned > 0) parts.push(`⚠ ${orphaned} playlist entr${orphaned === 1 ? 'y' : 'ies'} will be LOST — every copy in that group is selected, so there is no kept version.`)
     const msg = parts.join('\n\n') + fileNote + consolidateNote
     if (!window.confirm(msg)) return
-    for (const [removeId, keepId] of keepMap) await window.api.library.replaceTrackInPlaylists(removeId, keepId)
+    // Fold each removed copy into its keeper BEFORE deleting it: cues, grid,
+    // rating, tags and playlist entries all move across, and track_grids /
+    // playlist_tracks cascade on delete so nothing can be claimed afterwards.
+    let fieldsRescued = 0
+    let gridsRescued = 0
+    for (const [removeId, keepId] of keepMap) {
+      const merged = await window.api.library.mergeDuplicate(removeId, keepId)
+      fieldsRescued += merged.fieldsFilled.length
+      if (merged.gridClaimed) gridsRescued++
+    }
+    setMergeNote(
+      fieldsRescued || gridsRescued
+        ? `merged ${fieldsRescued} field${fieldsRescued !== 1 ? 's' : ''}` +
+          (gridsRescued ? ` and ${gridsRescued} beatgrid${gridsRescued !== 1 ? 's' : ''}` : '') +
+          ' into the kept tracks'
+        : null
+    )
     const toDelete = [...selected]
     setTrashErrors(null)
     if (deleteFilesToo) {
@@ -365,13 +388,20 @@ function DuplicatesSection({ tracks, playlists, deleteTracks }: {
                       className="px-3 py-1.5 bg-red-600/15 hover:bg-red-600/25 text-red-500 font-mono text-[13px] uppercase tracking-[0.1em] rounded border border-red-600/25 transition-colors">
                       remove {selected.size} selected
                     </button>
-                    {consolidateNote && (
-                      <span className="font-mono text-[11px] text-muted/70">{consolidateNote}</span>
-                    )}
                   </>
                 )}
               </div>
             </div>
+            {/* Outcome of the last removal. Rendered here rather than beside the
+                remove button: that button lives behind `selected.size > 0`, and
+                removing clears the selection, so anything reported in there was
+                unreachable the moment it had something to say. */}
+            {(mergeNote || consolidateNote) && (
+              <div className="space-y-1">
+                {mergeNote && <p className="font-mono text-[12px] text-muted">{mergeNote}</p>}
+                {consolidateNote && <p className="font-mono text-[12px] text-muted">{consolidateNote}</p>}
+              </div>
+            )}
             {trashErrors && (
               <div className="space-y-1">
                 <p className="font-mono text-[12px] text-red-500">{trashErrors.length} file{trashErrors.length !== 1 ? 's' : ''} failed to move to Trash:</p>

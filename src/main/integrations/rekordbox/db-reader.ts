@@ -12,7 +12,7 @@
  *   node scripts/rebuild-sqlcipher.js after npm install)
  */
 import { existsSync } from 'fs'
-import { join } from 'path'
+import { join, basename } from 'path'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import SqlCipherDatabase from 'better-sqlite3-multiple-ciphers'
@@ -21,6 +21,13 @@ import { rbScaleNameToCamelot } from '../key-notation'
 import type { Track, TrackInput, CuePoint, ImportResult, ExportResult } from '../../../shared/types'
 import { findPlaylistIdBySource } from '../../library/migrations/dedupe-playlists'
 import { resolvePlaylistTree, type RbPlaylistRow } from './playlist-tree'
+import {
+  planOrphanPrune, type RekordboxRow, type PlaylistMembership, type Replacements
+} from './prune-orphans'
+import {
+  planPlaylistWriteback, planSongPlaylistInsert,
+  type PlaylistEntry, type ColumnInfo
+} from './playlist-writeback'
 import { guardRekordboxWrite } from './write-guard'
 import { rbTimestamp, newCueId } from './cue-format'
 
@@ -95,7 +102,13 @@ export function importFromRekordboxDb(
         LEFT JOIN djmdGenre  g  ON g.ID  = c.GenreID
         LEFT JOIN djmdKey    k  ON k.ID  = c.KeyID
         LEFT JOIN djmdLabel  lb ON lb.ID = c.LabelID
+        /* rb_local_deleted is rekordbox's soft delete, and it is also what the
+           orphan prune below sets. Without this filter an import re-created every
+           row the last export had just retired — the removed duplicate came back
+           as a fresh track pointing at a file in the Trash, so dedupe was undone
+           by the next sync. */
         WHERE c.FolderPath IS NOT NULL AND c.FolderPath != ''
+          AND COALESCE(c.rb_local_deleted, 0) = 0
       `)
       .all() as Record<string, unknown>[]
 
@@ -110,7 +123,7 @@ export function importFromRekordboxDb(
           .prepare(`
             SELECT InMsec, Kind, ColorTableIndex, Color, Comment
             FROM djmdCue
-            WHERE ContentID = ?
+            WHERE ContentID = ? AND COALESCE(rb_local_deleted, 0) = 0
             ORDER BY Kind, InMsec
           `)
           .all(rbId) as Record<string, unknown>[]
@@ -164,7 +177,7 @@ export function importFromRekordboxDb(
       .prepare(`
         SELECT p.ID, p.Name, p.ParentID, p.Attribute, p.Seq
         FROM djmdPlaylist p
-        WHERE p.Name IS NOT NULL
+        WHERE p.Name IS NOT NULL AND COALESCE(p.rb_local_deleted, 0) = 0
         ORDER BY p.Seq
       `)
       .all() as Record<string, unknown>[]
@@ -196,7 +209,11 @@ export function importFromRekordboxDb(
 
       if (!isFolder) {
         const songs = rb
-          .prepare('SELECT ContentID, TrackNo FROM djmdSongPlaylist WHERE PlaylistID = ? ORDER BY TrackNo')
+          .prepare(
+            `SELECT ContentID, TrackNo FROM djmdSongPlaylist
+             WHERE PlaylistID = ? AND COALESCE(rb_local_deleted, 0) = 0
+             ORDER BY TrackNo`
+          )
           .all(rbPlId) as { ContentID: string; TrackNo: number }[]
 
         for (const song of songs) {
@@ -231,11 +248,30 @@ export function importFromRekordboxDb(
 
 export function exportToRekordboxDb(
   appDb: Database.Database,
-  masterDbPath: string
+  masterDbPath: string,
+  /* Off by default, and deliberately ONE switch for both halves of the playlist
+     story. Reporting what is out of step is always safe; changing it is the
+     caller's call, because it is the only part of this export that takes
+     something away rather than filling something in.
+
+     The two must not be separable. The prune retires a dead row's playlist
+     entries, and that is only safe once the surviving copy has been inserted in
+     its place — so enabling the prune without the writeback is exactly the
+     configuration that makes playlists lose tracks. */
+  syncPlaylists = false
 ): ExportResult {
-  const result: ExportResult = { tracksExported: 0, playlistsExported: 0, errors: [], cancelled: false }
+  const result: ExportResult = {
+    tracksExported: 0, playlistsExported: 0, errors: [], cancelled: false,
+    orphansFound: 0, orphansPruned: 0,
+    playlistEntriesFound: 0, playlistEntriesAdded: 0, playlistEntriesUnplaceable: 0,
+    titlesKept: 0, ratingsKept: 0, commentsKept: 0
+  }
   /** Tracks left alone because rekordbox already had cues for them. */
   let cuesSkipped = 0
+  /** Tracks whose rekordbox title/rating/comment differed from Offcut's and was kept. */
+  let titlesKept = 0
+  let ratingsKept = 0
+  let commentsKept = 0
 
   // This is the ONLY path that writes to someone's rekordbox library. Refuse if
   // rekordbox is open, and take a copy first — the write is not reversible.
@@ -266,12 +302,45 @@ export function exportToRekordboxDb(
       `)
       .all() as Record<string, unknown>[]
 
+    /* Read only to REPORT what the guards above left alone — the UPDATE decides
+       for itself in SQL. Skipped entirely unless Offcut has something to push,
+       so a library with no ratings or comments pays nothing for this. */
+    const readUserFields = rb.prepare('SELECT Title, Rating, Commnt FROM djmdContent WHERE ID = ?')
+
     const updateTrack = rb.transaction((track: Track, rbId: string) => {
+      if (track.title !== '' || track.rating > 0 || track.comment !== '') {
+        const cur = readUserFields.get(rbId) as
+          | { Title: string | null; Rating: number | null; Commnt: string | null }
+          | undefined
+        if (cur) {
+          // Only a DIFFERING value is worth reporting; an identical one was
+          // never going to change anything either way.
+          if (
+            track.title !== '' && cur.Title != null && cur.Title !== '' &&
+            cur.Title !== track.title
+          ) titlesKept++
+          if (
+            track.rating > 0 && cur.Rating != null && cur.Rating !== 0 &&
+            cur.Rating !== starsToRbRating(track.rating)
+          ) ratingsKept++
+          if (
+            track.comment !== '' && cur.Commnt != null && cur.Commnt !== '' &&
+            cur.Commnt !== track.comment
+          ) commentsKept++
+        }
+      }
       // RB7: ArtistName/AlbumName/GenreName/Tonality are now in lookup tables —
       // only update fields that still live directly on djmdContent
       rb.prepare(`
         UPDATE djmdContent SET
-          Title = ?,
+          /* Title is guarded on the same principle as Rating and Commnt below,
+             with one consequence worth being explicit about: rekordbox has a
+             title for very nearly every track, so in practice this write now
+             almost never fires. That is the intended outcome — Offcut does not
+             rename tracks in someone else's library — but it does mean a retitle
+             done in Offcut will not reach rekordbox. FolderPath/FileNameL are
+             what the relink needs, and they stay unconditional below. */
+          Title = CASE WHEN Title IS NULL OR Title = '' THEN ? ELSE Title END,
           /* BPM only when rekordbox has none. Offcut's analyser and rekordbox's
              disagree on some tracks — one measured case read 136.00 as 90.90
              (a two-thirds-time error) — and writing unconditionally let a bad
@@ -279,9 +348,24 @@ export function exportToRekordboxDb(
              Filling a blank is useful; overwriting an existing reading is not
              ours to do. */
           BPM = CASE WHEN BPM IS NULL OR BPM = 0 THEN ? ELSE BPM END,
-          Rating = ?,
-          Commnt = ?,
+          /* Rating and Commnt follow the same rule, and for the same reason.
+             These are things the user typed, on either side, and the export had
+             no idea which side typed them last: it pushed Offcut's copy every
+             time, so a star rating or a comment edited IN REKORDBOX since the
+             previous import was silently reverted on the next sync. Worse, a
+             track Offcut had never carried a rating or comment for pushed 0 and
+             '' over whatever rekordbox held, destroying it outright for no gain.
+
+             Rating 0 is rekordbox's "unrated", so it doubles as the blank here
+             (starsToRbRating maps stars onto 0/20/.../100). */
+          Rating = CASE WHEN Rating IS NULL OR Rating = 0 THEN ? ELSE Rating END,
+          Commnt = CASE WHEN Commnt IS NULL OR Commnt = '' THEN ? ELSE Commnt END,
           FolderPath = ?,
+          /* FolderPath is the full path INCLUDING the filename, and FileNameL
+             is that same basename held separately. The organiser renames on
+             collision ("track (1).mp3"), so writing only FolderPath left the
+             two disagreeing about what the file is called. */
+          FileNameL = ?,
           updated_at = datetime('now')
         WHERE ID = ?
       `).run(
@@ -290,6 +374,7 @@ export function exportToRekordboxDb(
         starsToRbRating(track.rating),
         track.comment,
         encodeRbPath(track.filePath),
+        basename(track.filePath),
         rbId
       )
 
@@ -346,14 +431,246 @@ export function exportToRekordboxDb(
       }
     })
 
+    const liveRbIds = new Set<string>()
     for (const row of tracks) {
       try {
         const track = rowToTrack(row)
         const rbId = String((track.sourceIds as Record<string, string>).rekordbox)
         updateTrack(track, rbId)
+        liveRbIds.add(rbId)
         result.tracksExported++
       } catch (err) {
         result.errors.push(`Track sync error: ${(err as Error).message}`)
+      }
+    }
+
+    /* ── Playlist membership ──────────────────────────────────────────────
+       Offcut's view of which tracks are in which playlist, for playlists that
+       came from rekordbox. After a duplicate is resolved this is where the
+       kept copy sits in place of the removed one, and it is the whole reason
+       the writeback exists. Folders hold no tracks and smart playlists compute
+       theirs, so neither has membership to push. */
+    const wanted = (
+      appDb
+        .prepare(`
+          SELECT json_extract(p.source_ids, '$.rekordbox') AS playlistId,
+                 json_extract(t.source_ids, '$.rekordbox') AS contentId,
+                 pt.sort_order                             AS trackNo
+          FROM playlist_tracks pt
+          JOIN playlists p ON p.id = pt.playlist_id
+          JOIN tracks    t ON t.id = pt.track_id
+          WHERE json_extract(p.source_ids, '$.rekordbox') IS NOT NULL
+            AND json_extract(t.source_ids, '$.rekordbox') IS NOT NULL
+            AND p.is_folder = 0 AND p.is_smart = 0
+          ORDER BY pt.sort_order
+        `)
+        .all() as { playlistId: string; contentId: string; trackNo: number | null }[]
+    ).map((r) => ({
+      playlistId: String(r.playlistId),
+      contentId: String(r.contentId),
+      trackNo: r.trackNo ?? 0
+    }))
+
+    // rekordbox's live membership, and the ids that exist at all. Foreign keys
+    // are ON, so inserting against a playlist or track rekordbox has since
+    // deleted would abort the transaction rather than skip a row.
+    const asPair = (e: { PlaylistID: string; ContentID: string }): PlaylistEntry => ({
+      playlistId: String(e.PlaylistID),
+      contentId: String(e.ContentID),
+      trackNo: 0
+    })
+    /* TWO views of rekordbox's membership, and the difference matters.
+
+       `existingAny` includes soft-deleted rows, and is what decides whether to
+       insert: a retired row still occupies the (PlaylistID, ContentID) unique
+       key, so inserting over it fails and — inside one transaction — rolls back
+       every other entry with it. That is not hypothetical: remove a track from a
+       playlist in rekordbox while Offcut still has it there, and this is exactly
+       the collision you get. Skipping those pairs is right in its own terms too;
+       rekordbox retired that entry deliberately and re-adding it would be Offcut
+       overruling the user.
+
+       `existingLive` is only the rows that count as present, and feeds the prune's
+       playlist-coverage rule below. */
+    const existingAny = (
+      rb.prepare('SELECT PlaylistID, ContentID FROM djmdSongPlaylist').all() as {
+        PlaylistID: string
+        ContentID: string
+      }[]
+    ).map(asPair)
+    const existingLive = (
+      rb
+        .prepare(
+          `SELECT PlaylistID, ContentID FROM djmdSongPlaylist
+           WHERE COALESCE(rb_local_deleted, 0) = 0`
+        )
+        .all() as { PlaylistID: string; ContentID: string }[]
+    ).map(asPair)
+    const livePlaylistIds = new Set(
+      (rb.prepare(
+        `SELECT ID FROM djmdPlaylist WHERE COALESCE(rb_local_deleted, 0) = 0`
+      ).all() as { ID: string }[]).map((r) => String(r.ID))
+    )
+    const liveContentIds = new Set(
+      (rb.prepare(
+        `SELECT ID FROM djmdContent WHERE COALESCE(rb_local_deleted, 0) = 0`
+      ).all() as { ID: string }[]).map((r) => String(r.ID))
+    )
+
+    /* Entries whose PLAYLIST came from rekordbox but whose TRACK has no rekordbox
+       row at all. `wanted` filters these out before they are ever considered, so
+       without counting them here they were invisible — a keeper imported from a
+       folder simply went missing from the rekordbox playlist and nothing said so.
+       This is the number to watch: each one is a track rekordbox has never heard
+       of, and importing those files into rekordbox once makes them sync normally. */
+    const noRekordboxRow = (
+      appDb
+        .prepare(`
+          SELECT COUNT(*) AS c
+          FROM playlist_tracks pt
+          JOIN playlists p ON p.id = pt.playlist_id
+          JOIN tracks    t ON t.id = pt.track_id
+          WHERE json_extract(p.source_ids, '$.rekordbox') IS NOT NULL
+            AND json_extract(t.source_ids, '$.rekordbox') IS NULL
+            AND p.is_folder = 0 AND p.is_smart = 0
+        `)
+        .get() as { c: number }
+    ).c
+
+    const pending = planPlaylistWriteback(wanted, existingAny)
+    /* Entries we cannot place: the kept copy has no rekordbox row of its own
+       (it was imported from a folder, not from rekordbox), or the playlist is
+       gone. Counted and surfaced rather than dropped — an unplaceable entry is
+       precisely the case where pruning the copy it replaces would make the
+       track vanish from that playlist, and rule 4 below relies on knowing. */
+    const placeable = pending.filter(
+      (e) => livePlaylistIds.has(e.playlistId) && liveContentIds.has(e.contentId)
+    )
+    result.playlistEntriesFound = pending.length
+    // Both flavours of "cannot be written": a stale rekordbox id, and no id at all.
+    result.playlistEntriesUnplaceable = pending.length - placeable.length + noRekordboxRow
+    result.playlistEntriesNoRekordboxRow = noRekordboxRow
+
+    if (syncPlaylists && placeable.length > 0) {
+      const cols = rb
+        .prepare(`SELECT name, notnull, dflt_value FROM pragma_table_info('djmdSongPlaylist')`)
+        .all() as ColumnInfo[]
+      // Values we are willing to supply. Everything else — rekordbox's own sync
+      // bookkeeping (usn, rb_data_status and friends) — is left to its defaults.
+      const values: Record<string, (e: PlaylistEntry) => unknown> = {
+        ID: () => newCueId(),
+        PlaylistID: (e) => e.playlistId,
+        ContentID: (e) => e.contentId,
+        TrackNo: (e) => Math.max(0, Math.round(e.trackNo)),
+        UUID: () => randomUUID(),
+        created_at: () => rbTimestamp(),
+        updated_at: () => rbTimestamp()
+      }
+      const plan = planSongPlaylistInsert(cols, Object.keys(values))
+
+      if (plan.blockedBy.length > 0) {
+        result.errors.push(
+          `Playlist sync skipped: djmdSongPlaylist requires column(s) ` +
+          `${plan.blockedBy.join(', ')} that Offcut has no value for. ` +
+          `Tracks and cues were still synced.`
+        )
+      } else {
+        /* OR IGNORE as a backstop, not as the plan: `existingAny` should already
+           have excluded every colliding pair, but this is someone's library and
+           a constraint we did not predict must cost one skipped row rather than
+           the whole batch. Counted from `changes` so the report stays truthful
+           about what actually landed. */
+        const insert = rb.prepare(
+          `INSERT OR IGNORE INTO djmdSongPlaylist (${plan.columns.join(', ')})
+           VALUES (${plan.columns.map(() => '?').join(', ')})`
+        )
+        const added: PlaylistEntry[] = []
+        const addEntries = rb.transaction((entries: PlaylistEntry[]) => {
+          for (const e of entries) {
+            const info = insert.run(...plan.columns.map((c) => values[c](e)))
+            if (info.changes > 0) added.push(e)
+          }
+        })
+        try {
+          addEntries(placeable)
+          result.playlistEntriesAdded = added.length
+          result.playlistsExported = new Set(added.map((e) => e.playlistId)).size
+          // Only rows that really landed may vouch for a prune below.
+          for (const e of added) existingLive.push(e)
+        } catch (err) {
+          result.errors.push(`Playlist sync failed: ${(err as Error).message}`)
+        }
+      }
+    }
+
+    /* Rows the duplicate tool retired. planOrphanPrune acts only on pairings
+       mergeDuplicateInto recorded — this row was replaced by that track — never
+       on a guess about a missing file, so an unmounted drive cannot look like a
+       pile of deletions. */
+    const candidates = rb
+      .prepare(
+        `SELECT ID, FolderPath, Title, FileSize FROM djmdContent
+         WHERE COALESCE(rb_local_deleted, 0) = 0`
+      )
+      .all() as RekordboxRow[]
+    /* Membership AFTER the inserts above (they were appended to `existing`), so
+       rule 4 sees the replacement that was just placed. Live rows only: a
+       soft-deleted entry is not a replacement, and with the writeback off
+       nothing was added, so a row whose replacement is not already there
+       simply is not prunable. */
+    const membership: PlaylistMembership = new Map()
+    for (const e of existingLive) {
+      const set = membership.get(e.contentId)
+      if (set) set.add(e.playlistId)
+      else membership.set(e.contentId, new Set([e.playlistId]))
+    }
+    /* The recorded pairings, resolved through each keeper's CURRENT rekordbox id
+       so a keeper that only gained a rekordbox row after the dedupe still works. */
+    const replacements: Replacements = new Map()
+    for (const r of appDb
+      .prepare(`
+        SELECT r.removed_rb_id AS removedId,
+               json_extract(t.source_ids, '$.rekordbox') AS keeperId
+        FROM duplicate_replacements r
+        JOIN tracks t ON t.id = r.keeper_track_id
+      `)
+      .all() as { removedId: string; keeperId: string | null }[]) {
+      // Keep the null: a keeper with no rekordbox row is the case worth reporting.
+      replacements.set(String(r.removedId), r.keeperId == null ? null : String(r.keeperId))
+    }
+
+    const decision = planOrphanPrune(candidates, liveRbIds, replacements, membership)
+    const orphans = decision.prunable
+    result.orphansFound = orphans.length
+    result.orphansBlocked = decision.blocked.length
+    if (decision.blocked.length > 0) {
+      const notCovered = decision.blocked.filter((b) => b.reason === 'playlist-not-covered').length
+      const noKeeper = decision.blocked.length - notCovered
+      console.info(
+        `[rekordbox] left ${decision.blocked.length} retired duplicate(s) in place — ` +
+        `${noKeeper} whose kept copy has no rekordbox row, ${notCovered} whose kept copy ` +
+        `is not yet in every playlist the old one was in`
+      )
+    }
+
+    if (orphans.length > 0 && syncPlaylists) {
+      // rb_local_deleted is rekordbox's own soft delete — recoverable, and the
+      // row keeps its analysis. Playlist entries go too, or the playlists show
+      // entries that resolve to nothing.
+      const markContent = rb.prepare(
+        `UPDATE djmdContent SET rb_local_deleted = 1, updated_at = datetime('now') WHERE ID = ?`
+      )
+      const markEntries = rb.prepare(
+        `UPDATE djmdSongPlaylist SET rb_local_deleted = 1, updated_at = datetime('now') WHERE ContentID = ?`
+      )
+      const prune = rb.transaction((ids: string[]) => {
+        for (const id of ids) { markContent.run(id); markEntries.run(id) }
+      })
+      try {
+        prune(orphans)
+        result.orphansPruned = orphans.length
+      } catch (err) {
+        result.errors.push(`Orphan cleanup failed: ${(err as Error).message}`)
       }
     }
   } finally {
@@ -364,6 +681,16 @@ export function exportToRekordboxDb(
   if (cuesSkipped > 0) {
     console.info(
       `[rekordbox] kept existing cues on ${cuesSkipped} track(s) — Offcut only fills tracks that have none`
+    )
+  }
+  result.titlesKept = titlesKept
+  result.ratingsKept = ratingsKept
+  result.commentsKept = commentsKept
+  if (titlesKept > 0 || ratingsKept > 0 || commentsKept > 0) {
+    console.info(
+      `[rekordbox] kept rekordbox's own value on ${titlesKept} title(s), ` +
+      `${ratingsKept} rating(s) and ${commentsKept} comment(s) — Offcut only fills ` +
+      `a blank, it does not replace something you typed in rekordbox`
     )
   }
 

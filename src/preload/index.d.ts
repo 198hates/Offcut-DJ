@@ -10,7 +10,7 @@ import type {
   SyncStatus, SyncPairingInfo,
   SetSummary, SetDetail, SetPatch, SetListFilter, UsbHistoryPreview, UsbImportResult,
   Residency, ResidencyPatch, ResidencyDashboard, SetComparison,
-  OrganizeMove, OrganizeMoveResult, TrashResult,
+  OrganizeMove, OrganizeMoveResult, TrashResult, MergeDuplicateResult,
 } from '../shared/types'
 
 /** USB history types — mirrored from pioneer-usb/history-reader */
@@ -57,7 +57,7 @@ declare global {
         deletePlaylist: (id: string) => Promise<void>
         reorderPlaylistTracks: (playlistId: string, orderedIds: string[]) => Promise<void>
         addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<void>
-        replaceTrackInPlaylists: (removeId: string, keepId: string) => Promise<number>
+        mergeDuplicate: (removeId: string, keepId: string) => Promise<MergeDuplicateResult>
         removeTracksFromPlaylist: (playlistId: string, trackIds: string[]) => Promise<void>
         beatModelStatus: () => Promise<{ available: boolean; path: string }>
         warmBeatModel: () => Promise<void>
@@ -79,7 +79,7 @@ declare global {
         autoLocateMissing: (searchDir?: string) => Promise<{ trackId: string; foundPath: string }[]>
         rekordboxDbStatus: () => Promise<{ available: boolean; path: string }>
         importFromRekordboxDb: (dbPath?: string) => Promise<ImportResult>
-        exportToRekordboxDb: (dbPath?: string) => Promise<ExportResult>
+        exportToRekordboxDb: (dbPath?: string, syncPlaylists?: boolean) => Promise<ExportResult>
         runAutoGroup: (clusters: { name: string; trackIds: string[] }[]) => Promise<void>
         createSet: (name: string) => Promise<Playlist>
         createChapter: (setId: string, name: string, color: string) => Promise<Playlist>

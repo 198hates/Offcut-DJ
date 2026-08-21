@@ -5,6 +5,7 @@ import { join, dirname, basename, extname, relative, isAbsolute } from 'path'
 import { randomUUID } from 'crypto'
 import { getLibraryDb, rowToTrack, rowToPlaylist, LIST_COLUMNS, FULL_TRACK_SELECT } from '../library/db'
 import { refreshGridSummary } from '../library/grid-summary'
+import { mergeDuplicateInto } from '../library/merge-duplicate'
 import { computeOverviewPeaks } from '../library/overview-peaks'
 import { planConsolidation } from '../library/track-destination'
 import { resolveSmartPlaylist } from '../library/smart-playlist'
@@ -45,7 +46,7 @@ import { importFromUsbBackup } from '../integrations/rekordbox-usb/backup-import
 import { startWatcher } from '../integrations/watch-folder'
 import { loadSettings, saveSettings, getSettings } from '../settings'
 import { autoBackup } from '../backup'
-import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule, UsbExport, UsbPreflight, OrganizeMove, OrganizeMoveResult, TrashResult } from '../../shared/types'
+import type { Track, Playlist, LibraryStats, ImportResult, ExportResult, IntegrationId, SmartRule, UsbExport, UsbPreflight, OrganizeMove, OrganizeMoveResult, TrashResult, MergeDuplicateResult } from '../../shared/types'
 import type Database from 'better-sqlite3'
 
 type IntegrationReader = (db: Database.Database, path: string) => ImportResult
@@ -504,35 +505,16 @@ export function registerLibraryHandlers(): void {
   //   - if keepId is not already there: update the row (preserving sort_order)
   //   - if keepId is already there: just delete the removeId row
   // Returns the number of playlists that were modified.
-  ipcMain.handle('library:replaceTrackInPlaylists', (_e, removeId: string, keepId: string): number => {
-    const rows = db.prepare(
-      'SELECT playlist_id FROM playlist_tracks WHERE track_id = ?'
-    ).all(removeId) as { playlist_id: string }[]
-
-    if (!rows.length) return 0
-
-    let count = 0
-    const op = db.transaction(() => {
-      for (const { playlist_id } of rows) {
-        const keepExists = db.prepare(
-          'SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?'
-        ).get(playlist_id, keepId)
-
-        if (!keepExists) {
-          db.prepare(
-            'UPDATE playlist_tracks SET track_id = ? WHERE playlist_id = ? AND track_id = ?'
-          ).run(keepId, playlist_id, removeId)
-          count++
-        } else {
-          db.prepare(
-            'DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?'
-          ).run(playlist_id, removeId)
-        }
-      }
-    })
-    op()
-    return count
-  })
+  /* Resolving a duplicate: fold the copy being removed into the one being kept.
+     Supersedes the old replaceTrackInPlaylists, which moved playlist entries and
+     threw away the losing row's cues, grid, rating and analysis — see
+     merge-duplicate.ts. Call this BEFORE deleteTrack(s): playlist_tracks and
+     track_grids both cascade on delete, so anything not claimed first is gone. */
+  ipcMain.handle(
+    'library:mergeDuplicate',
+    (_e, removeId: string, keepId: string): MergeDuplicateResult =>
+      mergeDuplicateInto(db, removeId, keepId)
+  )
 
   ipcMain.handle('library:removeTracksFromPlaylist', (_e, playlistId: string, trackIds: string[]): void => {
     if (!trackIds.length) return
@@ -978,7 +960,7 @@ export function registerLibraryHandlers(): void {
 
   ipcMain.handle(
     'library:exportToRekordboxDb',
-    async (_e, dbPath?: string): Promise<ExportResult> => {
+    async (_e, dbPath?: string, syncPlaylists?: boolean): Promise<ExportResult> => {
       let resolvedPath = dbPath ?? getDefaultRekordboxDbPath()
       if (!existsSync(resolvedPath)) {
         const res = await dialog.showOpenDialog({
@@ -988,7 +970,7 @@ export function registerLibraryHandlers(): void {
         if (res.canceled) return { tracksExported: 0, playlistsExported: 0, errors: [], cancelled: true }
         resolvedPath = res.filePaths[0]
       }
-      return exportToRekordboxDb(db, resolvedPath)
+      return exportToRekordboxDb(db, resolvedPath, syncPlaylists === true)
     }
   )
 
