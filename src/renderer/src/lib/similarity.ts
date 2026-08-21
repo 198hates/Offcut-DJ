@@ -75,3 +75,68 @@ export function audioSimilarity(
   const { mean, std } = distribution(ref.length ? ref : [a, b])
   return (cosine(zNorm(a, mean, std), zNorm(b, mean, std)) + 1) / 2
 }
+
+/**
+ * Audio-content match for DUPLICATE detection, which is a different question to
+ * "sounds like this" and needs a different comparison.
+ *
+ * The feature vector starts with the 13 MFCC means, and MFCC coefficient 0 is
+ * the log of total frame energy — loudness. Scaling a signal by g adds a
+ * constant to every log-mel band, and the DCT funnels that constant almost
+ * entirely into c0, so c0 moves with gain while c1..c12 barely shift. It is also
+ * by far the largest-magnitude dimension in the vector (measured at ~32% of the
+ * squared norm on synthetic audio, c0 swinging 42.0 → -68.6 across a 12 dB
+ * drop), which means a raw cosine over all 43 dims is mostly a comparison of
+ * loudness.
+ *
+ * Measured on a bench of 10 synthetic tracks, each with a dithered copy and
+ * copies at -1/-3/-6/-12 dB (150 true-duplicate pairs, 1620 different-track
+ * pairs):
+ *
+ *   raw cosine, all 43 dims   true dupes down to -0.210, different tracks up to
+ *                             0.9998 — the two ranges overlap completely, so no
+ *                             threshold separates them. A 1 dB level difference
+ *                             between two copies of one track was enough to miss
+ *                             it at 0.995.
+ *   raw cosine, c0 dropped    true dupes >= 0.999999, different tracks <= 0.9862.
+ *   z-normalised, c0 dropped  marginally wider (>= 0.999997 vs <= 0.9816) but
+ *                             the score then depends on library composition, so
+ *                             a fixed threshold stops meaning the same thing
+ *                             from one collection to the next.
+ *   z-normalised, all dims    still overlaps — standardising does not rescue c0,
+ *                             it just gives loudness an equal vote.
+ *
+ * Hence: drop c0, keep the raw cosine, keep the threshold. Every other dimension
+ * is already gain-invariant by construction (c1..c12 and the MFCC standard
+ * deviations are unaffected by a constant offset; chroma is normalised to sum 1;
+ * the spectral descriptors are ratios or divided by Nyquist), so the result is a
+ * timbre-and-harmony match that survives re-encoding, re-tagging, ReplayGain and
+ * a differently-mastered rip.
+ *
+ * Note this is the opposite trade-off to findSimilar above: there, loudness and
+ * library-relative standardisation are wanted, because the question is which
+ * tracks sit near each other in a collection. Here anything that moves with a
+ * gain change is noise.
+ */
+export const DUPLICATE_MATCH_THRESHOLD = 0.995
+
+/** Index of the MFCC-0 (loudness) dimension excluded from duplicate matching. */
+const LOUDNESS_DIM = 0
+
+/**
+ * Cosine similarity for duplicate detection: raw, but blind to loudness. 1.0
+ * means the same audio. Returns 0 for missing or mismatched vectors so callers
+ * can compare against the threshold without a null check.
+ */
+export function duplicateMatch(a: number[], b: number[]): number {
+  if (!a?.length || !b?.length || a.length !== b.length) return 0
+  let dot = 0, na = 0, nb = 0
+  for (let i = 0; i < a.length; i++) {
+    if (i === LOUDNESS_DIM) continue
+    dot += a[i] * b[i]
+    na += a[i] * a[i]
+    nb += b[i] * b[i]
+  }
+  const den = Math.sqrt(na) * Math.sqrt(nb)
+  return den ? dot / den : 0
+}

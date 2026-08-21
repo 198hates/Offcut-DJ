@@ -52,8 +52,8 @@ const api = {
       ipcRenderer.invoke('library:reorderPlaylistTracks', playlistId, orderedIds),
     addTracksToPlaylist: (playlistId: string, trackIds: string[]) =>
       ipcRenderer.invoke('library:addTracksToPlaylist', playlistId, trackIds),
-    replaceTrackInPlaylists: (removeId: string, keepId: string) =>
-      ipcRenderer.invoke('library:replaceTrackInPlaylists', removeId, keepId),
+    mergeDuplicate: (removeId: string, keepId: string) =>
+      ipcRenderer.invoke('library:mergeDuplicate', removeId, keepId),
     removeTracksFromPlaylist: (playlistId: string, trackIds: string[]) =>
       ipcRenderer.invoke('library:removeTracksFromPlaylist', playlistId, trackIds),
     beatModelStatus: () => ipcRenderer.invoke('library:beatModelStatus'),
@@ -89,8 +89,8 @@ const api = {
     rekordboxDbStatus: () => ipcRenderer.invoke('library:rekordboxDbStatus'),
     importFromRekordboxDb: (dbPath?: string) =>
       ipcRenderer.invoke('library:importFromRekordboxDb', dbPath),
-    exportToRekordboxDb: (dbPath?: string) =>
-      ipcRenderer.invoke('library:exportToRekordboxDb', dbPath),
+    exportToRekordboxDb: (dbPath?: string, syncPlaylists?: boolean) =>
+      ipcRenderer.invoke('library:exportToRekordboxDb', dbPath, syncPlaylists),
     runAutoGroup: (clusters: { name: string; trackIds: string[] }[]) =>
       ipcRenderer.invoke('library:runAutoGroup', clusters),
     createSet: (name: string) => ipcRenderer.invoke('library:createSet', name),

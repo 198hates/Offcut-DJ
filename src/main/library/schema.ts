@@ -280,6 +280,30 @@ export function applySchema(db: import('better-sqlite3').Database): void {
     // 105ms, the same rows with a few more columns took 8081ms. Kept in a side
     // table so `tracks` rows stay small and list reads stay cheap; the grids are
     // fetched by id only when something actually draws or edits them.
+    /* Which rekordbox row a resolved duplicate was replaced BY.
+       The rekordbox export used to infer this: a row whose file had vanished and
+       which had a same-Title-same-FileSize twin still on disk was assumed to be
+       a duplicate the user had removed. That inference does not survive contact
+       with real duplicates — two copies of one track are different encodes with
+       different byte sizes, so the twin never matched and the prune never fired
+       for the one case it existed for. Measured on the scenario: rekordbox kept
+       3 playlist entries where Offcut had 2, two of them pointing at the Trash.
+
+       Recording the pair at the moment the user resolves it replaces the guess
+       with a fact. It also removes the unmounted-drive hazard by construction:
+       nothing is inferred from a missing file any more, so an unplugged volume
+       produces no pairings and therefore no deletions.
+
+       keeper_track_id, not the keeper's rekordbox id: the keeper may have no
+       rekordbox row today and gain one later, and resolving it at export time
+       means the pairing starts working when that happens. ON DELETE CASCADE
+       because a pairing that points at a deleted keeper is not a pairing. */
+    `CREATE TABLE IF NOT EXISTS duplicate_replacements (
+       removed_rb_id   TEXT PRIMARY KEY,
+       keeper_track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+       created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+     )`,
+    "CREATE INDEX IF NOT EXISTS idx_dupe_repl_keeper ON duplicate_replacements(keeper_track_id)",
     `CREATE TABLE IF NOT EXISTS track_grids (
        track_id          TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
        beatgrid          TEXT NOT NULL DEFAULT '[]',

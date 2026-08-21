@@ -499,6 +499,34 @@ export interface ExportResult {
   playlistsExported: number
   errors: string[]
   cancelled: boolean
+  /** Rekordbox rows left pointing at a trashed file after Offcut removed the
+   *  duplicate — counted on every export, whether or not they were removed. */
+  orphansFound?: number
+  /** How many of those were soft-deleted. Zero unless cleanup was requested. */
+  orphansPruned?: number
+  /** Retired duplicates left in place because their replacement is not in
+   *  rekordbox, or not yet in every playlist the old copy was in. */
+  orphansBlocked?: number
+  /** Playlist entries Offcut has that rekordbox does not — counted on every
+   *  export, whether or not they were written. */
+  playlistEntriesFound?: number
+  /** How many were inserted. Zero unless playlist sync was requested. */
+  playlistEntriesAdded?: number
+  /** Entries that cannot be written because the kept track has no rekordbox row
+   *  of its own, or the playlist no longer exists there. */
+  playlistEntriesUnplaceable?: number
+  /** The subset of those whose track has no rekordbox row at all — the tracks
+   *  rekordbox has never heard of. Import them there once and they sync after. */
+  playlistEntriesNoRekordboxRow?: number
+  /** Tracks whose rekordbox title differed from Offcut's and was left alone.
+   *  The export fills a blank title but never replaces an existing one — and
+   *  rekordbox has a title for nearly everything, so this write rarely fires. */
+  titlesKept?: number
+  /** Tracks whose rekordbox rating differed from Offcut's and was left alone.
+   *  The export fills a blank rating but never replaces an existing one. */
+  ratingsKept?: number
+  /** Same, for comments. */
+  commentsKept?: number
 }
 
 /** A single file move planned by the Organize page — `trackId` set only if the
@@ -519,6 +547,26 @@ export interface TrashResult {
   path: string
   ok: boolean
   error?: string
+}
+
+/** What folding a duplicate into its keeper actually changed (see
+ *  main/library/merge-duplicate.ts). Reported back so the UI can say what was
+ *  rescued instead of claiming a merge that was a no-op. */
+export interface MergeDuplicateResult {
+  /** Columns that were empty on the keeper and took the loser's value. */
+  fieldsFilled: string[]
+  /** Playlist entries moved across (excludes ones the keeper already had). */
+  playlistRefsMoved: number
+  /** Play-history rows repointed at the keeper. */
+  playHistoryRepointed: number
+  /** The keeper had no beatgrid and took the loser's. */
+  gridClaimed: boolean
+  ratingRaised: boolean
+  playCountRaised: boolean
+  /** A rekordbox replacement pairing was recorded, so the export can retire the
+   *  removed copy's rekordbox row precisely instead of inferring it. False when
+   *  the removed copy had no rekordbox row to begin with. */
+  replacementRecorded: boolean
 }
 
 /** Pioneer device settings written to DEVSETTING.DAT on USB export (mirrors the
