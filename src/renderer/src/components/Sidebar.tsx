@@ -5,6 +5,7 @@ import { ContextMenu } from './ContextMenu'
 import { SmartPlaylistEditor } from './SmartPlaylistEditor'
 import { acceptsTrackDrop, readTrackIds } from '../lib/trackDrag'
 import type { Playlist, SmartRule, Track } from '@shared/types'
+import { buildPlaylistTree, expandableIds, type PlaylistNode } from '../lib/playlistTree'
 
 function fmtPlaylistDuration(secs: number): string {
   if (secs < 60) return '<1m'
@@ -636,6 +637,14 @@ function PlaylistItem({
 // ── FoldersSection ────────────────────────────────────────────────────────────
 // Shows folder-type playlists (sets from Set Builder) with their children
 
+/**
+ * The playlist/folder tree, nested to any depth.
+ *
+ * This used to render one level: top-level folders, and of their children only
+ * the non-folders. rekordbox nests arbitrarily — a real library has `LEM`
+ * containing `Bristol`, `Drumsheds` and `Daft Punk VS Justice`, all folders —
+ * so anything below the first level was simply invisible.
+ */
 function FoldersSection({ folders, playlists, activePlaylistId, onSelect }: {
   folders: Playlist[]
   playlists: Playlist[]
@@ -643,15 +652,34 @@ function FoldersSection({ folders, playlists, activePlaylistId, onSelect }: {
   onSelect: (id: string) => void
 }): JSX.Element {
   const [open, setOpen] = useState(true)
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
-  const toggleFolder = (id: string) => {
+  // Folders and their contents at any depth. Smart lists and auto-groups have
+  // their own sections, so they are left out here.
+  const tree = useMemo(
+    () => buildPlaylistTree(playlists, (p) => !p.isSmart && !p.isAutoGroup),
+    [playlists]
+  )
+  const treeWithChildren = useMemo(
+    () => tree.filter((n) => n.children.length > 0 || n.playlist.isFolder),
+    [tree]
+  )
+
+  // Start with the top level open, so the tree reads as a tree at a glance
+  // rather than a row of closed folders.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    setExpanded((prev) => (prev.size ? prev : new Set(treeWithChildren.map((n) => n.playlist.id))))
+  }, [treeWithChildren])
+
+  const toggle = (id: string): void =>
     setExpanded((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
-  }
+
+  const expandAll = (): void => setExpanded(new Set(expandableIds(tree)))
+  const collapseAll = (): void => setExpanded(new Set())
 
   return (
     <>
@@ -664,48 +692,88 @@ function FoldersSection({ folders, playlists, activePlaylistId, onSelect }: {
           <span className="ml-1 text-muted/60">· {folders.length}</span>
           <span className="ml-1 text-muted/40">{open ? '▾' : '▸'}</span>
         </button>
+        {open && treeWithChildren.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <button onClick={expandAll} title="Expand all"
+              className="font-mono text-[11px] text-muted/50 hover:text-ink transition-colors">＋</button>
+            <button onClick={collapseAll} title="Collapse all"
+              className="font-mono text-[11px] text-muted/50 hover:text-ink transition-colors">－</button>
+          </div>
+        )}
       </div>
       {open && (
         <div className="space-y-px">
-          {folders.map((folder) => {
-            const children = playlists.filter((p) => p.parentId === folder.id && !p.isFolder)
-            const isExpanded = expanded.has(folder.id)
-            return (
-              <div key={folder.id}>
-                {/* Folder row */}
-                <button
-                  onClick={() => toggleFolder(folder.id)}
-                  className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left hover:bg-ink/[0.04] transition-colors group"
-                >
-                  <span className="font-mono text-[12px] text-muted/50">{isExpanded ? '▾' : '▸'}</span>
-                  <span className="font-mono text-[13px] font-bold text-ink-soft truncate flex-1">{folder.name}</span>
-                  <span className="font-mono text-[12px] text-muted/50 tabular-nums shrink-0">{children.length}</span>
-                </button>
-                {/* Children */}
-                {isExpanded && children.map((ch) => (
-                  <button
-                    key={ch.id}
-                    onClick={() => onSelect(ch.id)}
-                    className={`w-full flex items-center gap-2 pl-6 pr-2.5 py-1 text-left transition-colors ${
-                      activePlaylistId === ch.id
-                        ? 'bg-accent/[0.07] text-ink'
-                        : 'text-ink-soft hover:bg-ink/[0.04] hover:text-ink'
-                    }`}
-                  >
-                    <span
-                      className="w-1.5 h-1.5 rounded-sm shrink-0"
-                      style={{ background: ch.color || '#8A8474' }}
-                    />
-                    <span className="font-mono text-[13px] truncate flex-1">{ch.name}</span>
-                    <span className="font-mono text-[12px] text-muted/50 tabular-nums">{ch.trackIds.length}</span>
-                  </button>
-                ))}
-              </div>
-            )
-          })}
+          {treeWithChildren.map((node) => (
+            <PlaylistTreeRow
+              key={node.playlist.id}
+              node={node}
+              expanded={expanded}
+              onToggle={toggle}
+              activePlaylistId={activePlaylistId}
+              onSelect={onSelect}
+            />
+          ))}
         </div>
       )}
     </>
+  )
+}
+
+/** One row, plus its subtree when expanded. Recursive — depth is unbounded. */
+function PlaylistTreeRow({ node, expanded, onToggle, activePlaylistId, onSelect }: {
+  node: PlaylistNode
+  expanded: Set<string>
+  onToggle: (id: string) => void
+  activePlaylistId: string | null
+  onSelect: (id: string) => void
+}): JSX.Element {
+  const { playlist, children, depth } = node
+  const isOpen = expanded.has(playlist.id)
+  const hasChildren = children.length > 0
+  // Indent by depth, capped so deep nesting can't push names out of a narrow rail.
+  const indent = 10 + Math.min(depth, 6) * 12
+
+  return (
+    <div>
+      <button
+        onClick={() => (playlist.isFolder || hasChildren ? onToggle(playlist.id) : onSelect(playlist.id))}
+        style={{ paddingLeft: indent }}
+        className={`w-full flex items-center gap-1.5 pr-2.5 py-1.5 text-left transition-colors ${
+          activePlaylistId === playlist.id
+            ? 'bg-accent/[0.07] text-ink'
+            : 'text-ink-soft hover:bg-ink/[0.04] hover:text-ink'
+        }`}
+      >
+        {/* Twisty for anything that can open; a spacer otherwise, so names line up. */}
+        {playlist.isFolder || hasChildren ? (
+          <span className="font-mono text-[12px] text-muted/50 w-2.5 shrink-0">{isOpen ? '▾' : '▸'}</span>
+        ) : (
+          <span className="w-2.5 shrink-0" />
+        )}
+        {playlist.isFolder ? (
+          <span className="font-mono text-[12px] text-muted/60 shrink-0">{isOpen ? '▼' : '▶'}</span>
+        ) : (
+          <span className="w-1.5 h-1.5 rounded-sm shrink-0"
+            style={{ background: playlist.color || '#8A8474' }} />
+        )}
+        <span className={`font-mono text-[13px] truncate flex-1 ${playlist.isFolder ? 'font-bold text-ink-soft' : ''}`}>
+          {playlist.name}
+        </span>
+        <span className="font-mono text-[12px] text-muted/50 tabular-nums shrink-0">
+          {playlist.isFolder ? node.descendantPlaylists : playlist.trackIds.length}
+        </span>
+      </button>
+      {isOpen && hasChildren && children.map((child) => (
+        <PlaylistTreeRow
+          key={child.playlist.id}
+          node={child}
+          expanded={expanded}
+          onToggle={onToggle}
+          activePlaylistId={activePlaylistId}
+          onSelect={onSelect}
+        />
+      ))}
+    </div>
   )
 }
 
