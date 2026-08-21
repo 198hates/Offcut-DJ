@@ -22,6 +22,7 @@ import type { Track, TrackInput, CuePoint, ImportResult, ExportResult } from '..
 import { findPlaylistIdBySource } from '../../library/migrations/dedupe-playlists'
 import { resolvePlaylistTree, type RbPlaylistRow } from './playlist-tree'
 import { guardRekordboxWrite } from './write-guard'
+import { rbTimestamp, newCueId } from './cue-format'
 
 export const RB_KEY = '402fd482c38817c35ffa8ffb8c7d93143b749e7d315df7a81732a1ff43608497'
 
@@ -269,7 +270,13 @@ export function exportToRekordboxDb(
       rb.prepare(`
         UPDATE djmdContent SET
           Title = ?,
-          BPM = ?,
+          /* BPM only when rekordbox has none. Offcut's analyser and rekordbox's
+             disagree on some tracks — one measured case read 136.00 as 90.90
+             (a two-thirds-time error) — and writing unconditionally let a bad
+             analysis silently replace a correct value the user had relied on.
+             Filling a blank is useful; overwriting an existing reading is not
+             ours to do. */
+          BPM = CASE WHEN BPM IS NULL OR BPM = 0 THEN ? ELSE BPM END,
           Rating = ?,
           Commnt = ?,
           FolderPath = ?,
@@ -286,19 +293,41 @@ export function exportToRekordboxDb(
 
       if (track.cuePoints.length > 0) {
         rb.prepare('DELETE FROM djmdCue WHERE ContentID = ?').run(rbId)
+        /* Every column rekordbox actually populates, not the minimum that
+           parses. The previous insert omitted created_at — NOT NULL with no
+           default — so EVERY track carrying cues failed with "NOT NULL
+           constraint failed: djmdCue.created_at" and silently exported nothing
+           but its title. ID is a VARCHAR primary key that SQLite will not
+           generate and (being non-INTEGER) will happily leave NULL, and
+           UUID/ContentUUID are what rekordbox's own sync keys on. */
+        const contentUuid = (
+          rb.prepare('SELECT UUID FROM djmdContent WHERE ID = ?').get(rbId) as { UUID?: string } | undefined
+        )?.UUID ?? null
         const insertCue = rb.prepare(`
-          INSERT INTO djmdCue (ContentID, InMsec, Kind, ColorTableIndex, Color, Comment, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+          INSERT INTO djmdCue (
+            ID, ContentID, ContentUUID, InMsec, Kind, ColorTableIndex, Color,
+            Comment, UUID, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         for (const cue of track.cuePoints) {
           const kind = cue.type === 'loop' ? 4 : cue.type === 'hotcue' ? 1 : 0
           insertCue.run(
+            newCueId(),
             rbId,
-            cue.positionMs,
+            contentUuid,
+            /* Rounded: djmdCue.InMsec is INTEGER and rekordbox's own rows are
+               whole milliseconds, but Offcut carries sub-millisecond positions.
+               SQLite's type affinity only coerces a float when it is lossless,
+               so 6900.162034151814 was being stored AS a float in an integer
+               column — 36,640 of 37,746 rows in a measured export. */
+            Math.round(cue.positionMs),
             kind,
             cue.type === 'hotcue' ? cue.index : null,
             hexToRbColor(cue.color),
-            cue.label
+            cue.label,
+            randomUUID(),
+            rbTimestamp(),
+            rbTimestamp()
           )
         }
       }
